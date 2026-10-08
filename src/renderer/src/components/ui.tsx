@@ -31,6 +31,18 @@ const paths: Record<string, string> = {
   skip: 'M5 5v14l9-7zM17 5v14',
   reset: 'M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5',
   calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  note: 'M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h5',
+  mindmap: 'M12 12m-2.5 0a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0M5 5m-2 0a2 2 0 1 0 4 0 2 2 0 1 0-4 0M19 5m-2 0a2 2 0 1 0 4 0 2 2 0 1 0-4 0M12 20m-2 0a2 2 0 1 0 4 0 2 2 0 1 0-4 0M6.5 6.5l3.6 3.6M17.5 6.5l-3.6 3.6M12 14.5V18',
+  cards: 'M7 4h12v14H7zM4 7v13h12',
+  grades: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+  link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
+  bold: 'M7 4h6a4 4 0 0 1 0 8H7zM7 12h7a4 4 0 0 1 0 8H7z',
+  italic: 'M14 4h-4M14 20h-4M14 4l-4 16',
+  list: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
+  olist: 'M10 6h10M10 12h10M10 18h10M4 4v4M3 18h3l-3 3h3',
+  checklist: 'M3 6l2 2 3-3M3 16l2 2 3-3M11 7h10M11 17h10',
+  quote: 'M6 17c-2 0-3-1.5-3-4 0-3 2-6 5-7M16 17c-2 0-3-1.5-3-4 0-3 2-6 5-7',
+  code: 'M8 7l-5 5 5 5M16 7l5 5-5 5',
   pencil: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
   upload: 'M12 16V4M7 9l5-5 5 5M4 20h16'
 }

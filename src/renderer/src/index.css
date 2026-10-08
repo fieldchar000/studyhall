@@ -62,7 +62,7 @@ body {
   @apply w-full rounded-md border border-line bg-panel px-2 py-1.5 outline-none focus:border-accent;
 }
 .btn {
-  @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium;
+  @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium whitespace-nowrap;
   @apply hover:bg-canvas disabled:opacity-50;
 }
 .btn-primary {
@@ -93,6 +93,101 @@ body {
 ::-webkit-scrollbar-track,
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* Rich-text note content (TipTap) */
+.note-content {
+  font-size: 15px;
+  line-height: 1.65;
+  min-height: 100%;
+}
+.note-content > * + * {
+  margin-top: 0.6em;
+}
+.note-content h1 {
+  font-size: 1.6em;
+  font-weight: 650;
+  line-height: 1.25;
+  margin-top: 1em;
+}
+.note-content h2 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin-top: 0.9em;
+}
+.note-content h3 {
+  font-size: 1.05em;
+  font-weight: 600;
+}
+.note-content ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.note-content ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
+.note-content li > p {
+  margin: 0;
+}
+.note-content ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.2em;
+}
+.note-content ul[data-type='taskList'] li {
+  display: flex;
+  gap: 0.5em;
+  align-items: flex-start;
+}
+.note-content ul[data-type='taskList'] li > label {
+  margin-top: 0.3em;
+}
+.note-content ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--color-muted);
+  text-decoration: line-through;
+}
+.note-content blockquote {
+  border-left: 3px solid var(--color-line);
+  padding-left: 1em;
+  color: var(--color-muted);
+}
+.note-content code {
+  background: var(--color-canvas);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+  font-size: 0.9em;
+}
+.note-content pre {
+  background: var(--color-canvas);
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  padding: 0.8em 1em;
+  font-size: 0.85em;
+  overflow-x: auto;
+}
+.note-content pre code {
+  background: none;
+  padding: 0;
+}
+.note-content a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.note-content hr {
+  border-color: var(--color-line);
+}
+.note-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* React Flow (mindmaps) follows our panel colours */
+.react-flow {
+  --xy-background-color: var(--color-canvas);
 }
 
 /* FullCalendar theming via its CSS variables */

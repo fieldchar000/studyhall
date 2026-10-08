@@ -190,5 +190,81 @@ export const migrations: string[] = [
 
   -- Local-only: which reminders were already shown (so each fires once)
   CREATE TABLE notifications_sent (key TEXT PRIMARY KEY, sent_at TEXT NOT NULL);
+  `,
+
+  // 3 — Phase 3: timetable, notes, mindmaps, flashcards, final grades
+  `
+  ALTER TABLE modules ADD COLUMN final_grade REAL;
+
+  CREATE TABLE timetable_slots (${base},
+    module_id TEXT NOT NULL REFERENCES modules(id),
+    kind TEXT NOT NULL DEFAULT 'lecture' CHECK (kind IN ('lecture','tutorial','lab','seminar','other')),
+    weekday INTEGER NOT NULL CHECK (weekday BETWEEN 1 AND 7),
+    start_time TEXT NOT NULL DEFAULT '09:00',
+    end_time TEXT NOT NULL DEFAULT '10:00',
+    location TEXT NOT NULL DEFAULT '',
+    valid_from TEXT,
+    valid_to TEXT
+  );
+  CREATE INDEX idx_slots_module ON timetable_slots(module_id);
+
+  CREATE TABLE notes (${base},
+    title TEXT NOT NULL DEFAULT 'Untitled note',
+    content TEXT NOT NULL DEFAULT '',
+    plain_text TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'note' CHECK (kind IN ('note','meeting')),
+    mode TEXT NOT NULL DEFAULT 'study' CHECK (mode IN ('study','work')),
+    module_id TEXT REFERENCES modules(id),
+    week_id TEXT REFERENCES weeks(id),
+    project_id TEXT REFERENCES projects(id),
+    client_id TEXT REFERENCES clients(id),
+    meeting_at TEXT,
+    pinned INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX idx_notes_module ON notes(module_id);
+  CREATE INDEX idx_notes_mode ON notes(mode);
+
+  CREATE TABLE mindmaps (${base},
+    title TEXT NOT NULL DEFAULT 'Untitled mindmap',
+    mode TEXT NOT NULL DEFAULT 'study' CHECK (mode IN ('study','work')),
+    module_id TEXT REFERENCES modules(id)
+  );
+
+  CREATE TABLE mindmap_nodes (${base},
+    mindmap_id TEXT NOT NULL REFERENCES mindmaps(id),
+    label TEXT NOT NULL DEFAULT 'Idea',
+    x REAL NOT NULL DEFAULT 0,
+    y REAL NOT NULL DEFAULT 0,
+    color TEXT,
+    link_type TEXT CHECK (link_type IN ('module','note','task')),
+    link_id TEXT
+  );
+  CREATE INDEX idx_mmnodes_map ON mindmap_nodes(mindmap_id);
+
+  CREATE TABLE mindmap_edges (${base},
+    mindmap_id TEXT NOT NULL REFERENCES mindmaps(id),
+    source_node_id TEXT NOT NULL REFERENCES mindmap_nodes(id),
+    target_node_id TEXT NOT NULL REFERENCES mindmap_nodes(id),
+    label TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX idx_mmedges_map ON mindmap_edges(mindmap_id);
+
+  CREATE TABLE flashcard_decks (${base},
+    name TEXT NOT NULL DEFAULT 'New deck',
+    module_id TEXT REFERENCES modules(id)
+  );
+
+  CREATE TABLE flashcards (${base},
+    deck_id TEXT NOT NULL REFERENCES flashcard_decks(id),
+    front TEXT NOT NULL DEFAULT '',
+    back TEXT NOT NULL DEFAULT '',
+    ease REAL NOT NULL DEFAULT 2.5,
+    interval_days INTEGER NOT NULL DEFAULT 0,
+    repetitions INTEGER NOT NULL DEFAULT 0,
+    due_at TEXT,
+    last_reviewed_at TEXT
+  );
+  CREATE INDEX idx_cards_deck ON flashcards(deck_id);
+  CREATE INDEX idx_cards_due ON flashcards(due_at);
   `
 ]

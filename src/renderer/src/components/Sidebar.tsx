@@ -19,6 +19,12 @@ const items: NavItem[] = [
   { label: 'Projects', icon: 'projects', route: { name: 'projects' }, match: ['projects', 'project'], modes: ['study', 'work'] },
   { label: 'Modules', icon: 'modules', route: { name: 'modules' }, match: ['modules', 'module'], modes: ['study'] },
   { label: 'Clients', icon: 'clients', route: { name: 'clients' }, match: ['clients', 'client'], modes: ['work'] },
+  { label: 'Timetable', icon: 'calendar', route: { name: 'timetable' }, match: ['timetable'], modes: ['study'] },
+  { label: 'Notes', icon: 'note', route: { name: 'notes' }, match: ['notes'], modes: ['study'] },
+  { label: 'Meeting notes', icon: 'note', route: { name: 'notes' }, match: ['notes'], modes: ['work'] },
+  { label: 'Mindmaps', icon: 'mindmap', route: { name: 'mindmaps' }, match: ['mindmaps', 'mindmap'], modes: ['study', 'work'] },
+  { label: 'Flashcards', icon: 'cards', route: { name: 'flashcards' }, match: ['flashcards', 'deck'], modes: ['study'] },
+  { label: 'Grades', icon: 'grades', route: { name: 'grades' }, match: ['grades'], modes: ['study'] },
   { label: 'Focus', icon: 'focus', route: { name: 'focus' }, match: ['focus'], modes: ['study', 'work'] },
   { label: 'Settings', icon: 'settings', route: { name: 'settings' }, match: ['settings'], modes: ['study', 'work'] }
 ]

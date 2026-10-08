@@ -4,6 +4,7 @@ import { AutoText } from '@/components/AutoField'
 import { Icon, Modal } from '@/components/ui'
 import { api, db, notifyChanged, track, useRows } from '@/lib/data'
 import { formatBytes } from '@/lib/dates'
+import { openWeekNote } from '../Notes'
 
 const KIND_LABEL: Record<Material['kind'], string> = { pdf: 'PDF', html: 'HTML', slides: 'Slides', other: 'File' }
 const KIND_COLOR: Record<Material['kind'], string> = {
@@ -92,6 +93,13 @@ function WeekCard({ week, onPreview }: { week: Week; onPreview: (m: Material) =>
           onChange={(e) => void db.update('weeks', week.id, { start_date: e.target.value || null })}
         />
         <span className="text-xs whitespace-nowrap text-muted">{materials?.length ?? 0} files</span>
+        <button
+          className="btn-ghost"
+          title="Open this week's notes"
+          onClick={() => void openWeekNote(week.module_id, week.id, `Week ${week.number}${week.title ? `: ${week.title}` : ''}`)}
+        >
+          <Icon name="note" /> Notes
+        </button>
         <button className="btn-ghost hover:text-danger" onClick={remove} title="Delete week">
           <Icon name="trash" />
         </button>

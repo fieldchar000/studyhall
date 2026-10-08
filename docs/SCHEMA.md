@@ -11,7 +11,7 @@ Status: ✅ built (migration 1) · ⏳ planned phase
 | Table | Fields → links | Status |
 |---|---|---|
 | profiles | username, display_name, mode (study/work), grade_scale (JSON), target_gpa, leaderboard_opt_in | ✅ |
-| modules | code, name, color, term, credits, target_grade, archived, sort | ✅ |
+| modules | code, name, color, term, credits, target_grade, final_grade (transcript override), archived, sort | ✅ |
 | weeks | → module, number, title, start_date | ✅ |
 | materials | → week, → module, title, kind (pdf/html/slides/other), file_name, local_path, size_bytes, sha256, sync_file, storage_path, sort | ✅ |
 | assessments | → module, title, kind, due_at, weight_pct, score_pct, is_final, auto_revision | ✅ |
@@ -22,13 +22,13 @@ Status: ✅ built (migration 1) · ⏳ planned phase
 | milestones | → project, title, due_at, done_at, sort | ✅ |
 | tasks | title, notes, status (inbox/todo/doing/done), priority, due_at, labels (JSON), → parent_task, → project, → milestone, → module, → assessment, → client, today_rank, today_date, sort, completed_at | ✅ |
 | focus_sessions | started_at, ended_at, planned_minutes, focused_seconds, kind, completed, mode, → module, → task, → project, → shared_timer | ✅ |
-| timetable_slots | → module, kind, weekday, start/end time, location, valid_from/to (expanded virtually onto the calendar) | ⏳ 3 |
-| notes | title, content (TipTap JSON), plain_text, kind (note/meeting), → module, → week, → project, → client | ⏳ 3 |
-| mindmaps | title, → module? | ⏳ 3 |
-| mindmap_nodes | → mindmap, label, x, y, color, link_type + link_id | ⏳ 3 |
-| mindmap_edges | → mindmap, source_node, target_node, label | ⏳ 3 |
-| flashcard_decks | name, → module? | ⏳ 3 |
-| flashcards | → deck, front, back, ease, interval_days, repetitions, due_at, last_reviewed_at (SM-2) | ⏳ 3 |
+| timetable_slots | → module, kind (lecture/tutorial/lab/seminar/other), weekday (1=Mon…7=Sun), start/end time, location, valid_from/to (expanded virtually onto the calendar) | ✅ |
+| notes | title, content (TipTap JSON), plain_text, kind (note/meeting), mode, pinned, meeting_at, → module, → week, → project, → client | ✅ |
+| mindmaps | title, mode, → module? | ✅ |
+| mindmap_nodes | → mindmap, label, x, y, color, link_type + link_id | ✅ |
+| mindmap_edges | → mindmap, source_node, target_node, label | ✅ |
+| flashcard_decks | name, → module? | ✅ |
+| flashcards | → deck, front, back, ease, interval_days, repetitions, due_at, last_reviewed_at (SM-2) | ✅ |
 | videos | url, youtube_id, title, thumbnail, author, tags (JSON), notes, → module? | ⏳ 4 |
 | inbox_items | text, processed_at, converted_to_type + id | ⏳ 4 |
 | game_state | currency, state (JSON) — one row per profile | ⏳ 4 |

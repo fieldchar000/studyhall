@@ -9,6 +9,8 @@ import * as timer from './timer'
 import type {
   AssessmentWithModule,
   CalendarRange,
+  ClassOccurrence,
+  TimetableSlot,
   Deadline,
   Mode,
   Prefs,
@@ -20,6 +22,52 @@ import type {
 } from '@shared/types'
 
 const asMode = (m: unknown): Mode => (m === 'work' ? 'work' : 'study')
+
+const SLOT_LABEL: Record<string, string> = {
+  lecture: 'Lecture',
+  tutorial: 'Tutorial',
+  lab: 'Lab',
+  seminar: 'Seminar',
+  other: 'Class'
+}
+
+/** Turn weekly timetable slots into concrete classes for each day in the range. */
+function expandTimetable(startIso: string, endIso: string): ClassOccurrence[] {
+  const slots = getDb()
+    .prepare(
+      `SELECT s.*, m.code AS module_code, m.name AS module_name, m.color AS module_color
+       FROM timetable_slots s JOIN modules m ON m.id = s.module_id
+       WHERE s.deleted_at IS NULL AND m.deleted_at IS NULL AND m.archived = 0`
+    )
+    .all() as unknown as (TimetableSlot & { module_code: string; module_name: string; module_color: string })[]
+  if (!slots.length) return []
+
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  const out: ClassOccurrence[] = []
+  const day = new Date(startIso)
+  day.setHours(0, 0, 0, 0)
+  const end = new Date(endIso)
+  for (; day < end; day.setDate(day.getDate() + 1)) {
+    const weekday = ((day.getDay() + 6) % 7) + 1 // Mon=1 … Sun=7
+    const date = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`
+    for (const s of slots) {
+      if (s.weekday !== weekday) continue
+      if (s.valid_from && date < s.valid_from) continue
+      if (s.valid_to && date > s.valid_to) continue
+      out.push({
+        id: `${s.id}:${date}`,
+        slot_id: s.id,
+        module_id: s.module_id,
+        title: `${s.module_code || s.module_name} ${SLOT_LABEL[s.kind] ?? 'Class'}`,
+        start_at: new Date(`${date}T${s.start_time}`).toISOString(),
+        end_at: new Date(`${date}T${s.end_time}`).toISOString(),
+        location: s.location,
+        color: s.module_color
+      })
+    }
+  }
+  return out
+}
 
 /** Only accept calls from our own UI (never from material iframes or anything else). */
 function isTrusted(e: IpcMainInvokeEvent | Electron.IpcMainEvent, origins: string[]): boolean {
@@ -87,12 +135,14 @@ export function registerIpc(trustedOrigins: string[], onCalendarUpdated: () => v
       )
       .all(start, end) as unknown as AssessmentWithModule[]
     const plain = <T>(rows: T[]): T[] => rows.map((r) => ({ ...r }))
+    const study = asMode(mode) === 'study'
     return {
       events: plain(events),
       external: plain(external),
-      // Assessments are a study thing; work mode doesn't show them.
-      assessments: asMode(mode) === 'study' ? plain(assessments) : [],
-      tasks: plain(tasks)
+      // Assessments and classes are a study thing; work mode doesn't show them.
+      assessments: study ? plain(assessments) : [],
+      tasks: plain(tasks),
+      classes: study ? expandTimetable(startIso, endIso) : []
     }
   })
   handle('calendar:refresh', async (_e, id?: string) => {
@@ -142,6 +192,17 @@ export function registerIpc(trustedOrigins: string[], onCalendarUpdated: () => v
     const safe: Partial<Profile> = {}
     if (patch.mode) safe.mode = asMode(patch.mode)
     if (typeof patch.display_name === 'string') safe.display_name = patch.display_name
+    if ('target_gpa' in patch) {
+      const n = Number(patch.target_gpa)
+      safe.target_gpa = patch.target_gpa == null || !Number.isFinite(n) ? null : n
+    }
+    if (typeof patch.grade_scale === 'string') {
+      try {
+        if (Array.isArray(JSON.parse(patch.grade_scale))) safe.grade_scale = patch.grade_scale
+      } catch {
+        /* ignore invalid JSON */
+      }
+    }
     return update<Profile>('profiles', getProfileId(), safe)
   })
 

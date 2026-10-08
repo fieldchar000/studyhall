@@ -18,6 +18,7 @@ export interface Module extends BaseRow {
   target_grade: number | null // percent, e.g. 70
   archived: number // 0 | 1
   sort: number
+  final_grade: number | null // optional override, e.g. from a transcript (percent)
 }
 
 export interface Week extends BaseRow {
@@ -165,6 +166,82 @@ export interface FocusSession extends BaseRow {
   shared_timer_id: string | null
 }
 
+export type SlotKind = 'lecture' | 'tutorial' | 'lab' | 'seminar' | 'other'
+
+/** A weekly recurring class. Shown on the calendar for every matching week. */
+export interface TimetableSlot extends BaseRow {
+  module_id: string
+  kind: SlotKind
+  weekday: number // 1 = Monday … 7 = Sunday
+  start_time: string // HH:MM local
+  end_time: string
+  location: string
+  valid_from: string | null // YYYY-MM-DD (term start)
+  valid_to: string | null // YYYY-MM-DD (term end)
+}
+
+export interface Note extends BaseRow {
+  title: string
+  content: string // TipTap JSON document
+  plain_text: string // for search
+  kind: 'note' | 'meeting'
+  mode: Mode
+  module_id: string | null
+  week_id: string | null
+  project_id: string | null
+  client_id: string | null
+  meeting_at: string | null // ISO, meeting notes only
+  pinned: number
+}
+
+export interface Mindmap extends BaseRow {
+  title: string
+  mode: Mode
+  module_id: string | null
+}
+
+export type NodeLinkType = 'module' | 'note' | 'task'
+
+export interface MindmapNode extends BaseRow {
+  mindmap_id: string
+  label: string
+  x: number
+  y: number
+  color: string | null
+  link_type: NodeLinkType | null
+  link_id: string | null
+}
+
+export interface MindmapEdge extends BaseRow {
+  mindmap_id: string
+  source_node_id: string
+  target_node_id: string
+  label: string
+}
+
+export interface FlashcardDeck extends BaseRow {
+  name: string
+  module_id: string | null
+}
+
+export interface Flashcard extends BaseRow {
+  deck_id: string
+  front: string
+  back: string
+  ease: number // SM-2 ease factor (starts at 2.5)
+  interval_days: number
+  repetitions: number
+  due_at: string | null // null = new card, due now
+  last_reviewed_at: string | null
+}
+
+/** One row of a grade scale: at or above `min` percent you get `label` / `points`. */
+export interface GradeBand {
+  min: number
+  label: string
+  points: number
+}
+
 /** Maps each table the UI may read/write through the generic API to its row type. */
 export interface TableMap {
   profiles: Profile
@@ -179,6 +256,13 @@ export interface TableMap {
   milestones: Milestone
   tasks: Task
   focus_sessions: FocusSession
+  timetable_slots: TimetableSlot
+  notes: Note
+  mindmaps: Mindmap
+  mindmap_nodes: MindmapNode
+  mindmap_edges: MindmapEdge
+  flashcard_decks: FlashcardDeck
+  flashcards: Flashcard
 }
 export type TableName = keyof TableMap
 
@@ -195,6 +279,18 @@ export interface CalendarRange {
   external: (SubscriptionEvent & { color: string; subscription_name: string })[]
   assessments: AssessmentWithModule[]
   tasks: Task[] // open tasks with a due date in range (current mode)
+  classes: ClassOccurrence[] // timetable slots expanded into this range (study mode)
+}
+
+export interface ClassOccurrence {
+  id: string // slot id + date
+  slot_id: string
+  module_id: string
+  title: string
+  start_at: string // ISO
+  end_at: string
+  location: string
+  color: string
 }
 
 /** One row of the "Upcoming deadlines" panel: an assessment or a task. */

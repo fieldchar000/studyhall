@@ -2,13 +2,45 @@ import { useState } from 'react'
 import type { Module } from '@shared/types'
 import { AutoNumber, AutoText } from '@/components/AutoField'
 import { Board } from '@/components/Board'
+import { newNote } from './Notes'
 import { ColorPicker, Icon } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { navigate } from '@/lib/nav'
 import { AssessmentsTab } from './module/AssessmentsTab'
 import { WeeksTab } from './module/WeeksTab'
 
-export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'weeks' | 'assessments' | 'tasks' }): React.JSX.Element {
+/** Notes linked to this module, newest first. */
+function ModuleNotes({ moduleId }: { moduleId: string }): React.JSX.Element {
+  const { data } = useLive(
+    ['notes', 'weeks'],
+    async () => {
+      const [notes, weeks] = await Promise.all([api.list('notes', { module_id: moduleId }, 'updated_at'), api.list('weeks', { module_id: moduleId })])
+      return notes.reverse().map((n) => ({ note: n, week: weeks.find((w) => w.id === n.week_id) }))
+    },
+    [moduleId]
+  )
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <button className="btn" onClick={() => void newNote({ mode: 'study', module_id: moduleId })}>
+          <Icon name="plus" /> New note
+        </button>
+      </div>
+      {data?.length === 0 && <div className="card p-8 text-center text-muted">No notes for this module yet. Each week also has a “Notes” button.</div>}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3">
+        {data?.map(({ note, week }) => (
+          <button key={note.id} className="card p-4 text-left hover:shadow-md" onClick={() => navigate({ name: 'notes', id: note.id })}>
+            <div className="truncate font-medium">{note.title}</div>
+            <div className="mt-0.5 text-xs text-muted">{week ? `Week ${week.number}${week.title ? ` · ${week.title}` : ''}` : 'Whole module'}</div>
+            <div className="mt-2 line-clamp-3 text-xs text-muted">{note.plain_text || 'Empty note'}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'weeks' | 'assessments' | 'tasks' | 'notes' }): React.JSX.Element {
   const [tab, setTab] = useState(initialTab ?? 'weeks')
   const [showColors, setShowColors] = useState(false)
   const { data: module } = useLive(['modules'], () => api.get('modules', id), [id])
@@ -113,7 +145,8 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
           [
             ['weeks', 'Weeks & materials'],
             ['assessments', 'Assessments'],
-            ['tasks', 'Tasks']
+            ['tasks', 'Tasks'],
+            ['notes', 'Notes']
           ] as const
         ).map(([key, label]) => (
           <button
@@ -131,6 +164,7 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
       {tab === 'weeks' && <WeeksTab moduleId={id} />}
       {tab === 'assessments' && <AssessmentsTab module={module} />}
       {tab === 'tasks' && <Board filter={{ module_id: id }} />}
+      {tab === 'notes' && <ModuleNotes moduleId={id} />}
     </div>
   )
 }

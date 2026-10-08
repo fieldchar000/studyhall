@@ -12,6 +12,7 @@ import { addDays, formatDateTime, isoToLocalInput, localInputToIso, relativeDue 
 import { navigate } from '@/lib/nav'
 import { useMode } from '@/lib/profile'
 import { addToTop3, isOverdue, openTask, removeFromTop3, setDone, todayStr } from '@/lib/tasks'
+import { ExamCountdownPanel } from '@/components/RevisionPlanner'
 
 export function HomePage(): React.JSX.Element {
   // Task rows in the side panels can be dragged onto the calendar to block out time.
@@ -37,6 +38,7 @@ export function HomePage(): React.JSX.Element {
       </div>
       <div ref={sideRef} className="flex w-80 shrink-0 flex-col gap-5 overflow-auto">
         <Top3Panel />
+        <ExamCountdownPanel />
         <PlanPanel />
         <DeadlinesPanel />
         <SubscriptionsPanel />
@@ -180,14 +182,25 @@ function CalendarView(): React.JSX.Element {
 
   // Reload calendar data when events/assessments/tasks/feeds change.
   useLive(
-    ['events', 'assessments', 'tasks', 'calendar_subscriptions', 'modules'],
+    ['events', 'assessments', 'tasks', 'calendar_subscriptions', 'modules', 'timetable_slots'],
     async () => ref.current?.getApi().refetchEvents(),
     []
   )
 
   const loadEvents = async (info: { startStr: string; endStr: string }): Promise<EventInput[]> => {
-    const { events, external, assessments, tasks } = await api.calendar.range(info.startStr, info.endStr, mode)
+    const { events, external, assessments, tasks, classes } = await api.calendar.range(info.startStr, info.endStr, mode)
     return [
+      // Weekly classes from the timetable (edit them on the Timetable page)
+      ...classes.map((c) => ({
+        id: `class:${c.id}`,
+        title: c.location ? `${c.title} · ${c.location}` : c.title,
+        start: c.start_at,
+        end: c.end_at,
+        backgroundColor: c.color,
+        classNames: ['opacity-85'],
+        editable: false,
+        extendedProps: { kind: 'class' }
+      })),
       ...events.map((e) => ({
         id: e.id,
         // Time blocks for tasks show a tick once the task is done
@@ -278,6 +291,7 @@ function CalendarView(): React.JSX.Element {
     const p = event.extendedProps
     if (p.kind === 'local') setEditing(event.id)
     else if (p.kind === 'task') openTask(p.taskId)
+    else if (p.kind === 'class') navigate({ name: 'timetable' })
     else if (p.kind === 'assessment') navigate({ name: 'module', id: p.moduleId, tab: 'assessments' })
     else
       setExternal({

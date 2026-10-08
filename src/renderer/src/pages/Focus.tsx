@@ -1,10 +1,12 @@
 // Focus room: Pomodoro timer (runs in the main process), what you're working on,
 // timer settings and today's sessions.
 
+import { useState } from 'react'
 import type { TimerPhase, TimerSettings } from '@shared/types'
 import { AutoNumber } from '@/components/AutoField'
 import { Icon } from '@/components/ui'
-import { api, notifyChanged, track, useLive } from '@/lib/data'
+import { api, db, notifyChanged, track, useLive } from '@/lib/data'
+import { NoteView } from './Notes'
 import { formatTime, localDate } from '@/lib/dates'
 import { useMode } from '@/lib/profile'
 import { openTask, setDone } from '@/lib/tasks'
@@ -22,6 +24,7 @@ export function FocusPage(): React.JSX.Element {
       <div className="flex flex-col gap-5">
         <TimerCard />
         <WorkingOn />
+        <FocusNotes />
       </div>
       <div className="flex flex-col gap-5">
         <TodayCard />
@@ -173,7 +176,57 @@ function WorkingOn(): React.JSX.Element {
           </button>
         </div>
       )}
-      <p className="text-xs text-muted">Notes for the current module and Spotify will appear here in later phases.</p>
+      <p className="text-xs text-muted">Spotify will appear here in Phase 4.</p>
+    </div>
+  )
+}
+
+/** Notes for the module (study) or project (work) you're focusing on, editable in place. */
+function FocusNotes(): React.JSX.Element | null {
+  const mode = useMode()
+  const s = useTimerState()
+  const groupId = mode === 'study' ? s?.moduleId : s?.projectId
+  const [noteId, setNoteId] = useState<string | null>(null)
+  const { data: notes } = useLive(
+    ['notes'],
+    async () => (groupId ? (await api.list('notes', mode === 'study' ? { module_id: groupId } : { project_id: groupId }, 'updated_at')).reverse() : []),
+    [groupId, mode]
+  )
+  if (!groupId) {
+    return (
+      <div className="card p-5 text-sm text-muted">
+        Pick a {mode === 'study' ? 'module' : 'project'} under “Working on” to see its notes here while you focus.
+      </div>
+    )
+  }
+  const current = notes?.find((n) => n.id === noteId) ?? notes?.[0]
+  const create = async (): Promise<void> => {
+    const n = await db.create('notes', mode === 'study' ? { mode, module_id: groupId, title: 'Focus notes' } : { mode, project_id: groupId, title: 'Focus notes' })
+    setNoteId(n.id)
+  }
+  return (
+    <div className="card flex h-[28rem] flex-col overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+        <Icon name="note" className="text-muted" />
+        <select className="field min-w-0 flex-1 text-sm" value={current?.id ?? ''} onChange={(e) => setNoteId(e.target.value)}>
+          {!notes?.length && <option value="">No notes yet</option>}
+          {notes?.map((n) => (
+            <option key={n.id} value={n.id}>
+              {n.title}
+            </option>
+          ))}
+        </select>
+        <button className="btn-ghost px-1" title="New note" onClick={() => void create()}>
+          <Icon name="plus" />
+        </button>
+      </div>
+      {current ? (
+        <NoteView key={current.id} id={current.id} compact />
+      ) : (
+        <button className="m-auto text-sm text-accent" onClick={() => void create()}>
+          + Start a note
+        </button>
+      )}
     </div>
   )
 }

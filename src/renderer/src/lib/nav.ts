@@ -9,9 +9,16 @@ export type Route =
   | { name: 'projects' }
   | { name: 'project'; id: string }
   | { name: 'modules' }
-  | { name: 'module'; id: string; tab?: 'weeks' | 'assessments' | 'tasks' }
+  | { name: 'module'; id: string; tab?: 'weeks' | 'assessments' | 'tasks' | 'notes' }
   | { name: 'clients' }
   | { name: 'client'; id: string }
+  | { name: 'timetable' }
+  | { name: 'notes'; id?: string }
+  | { name: 'mindmaps' }
+  | { name: 'mindmap'; id: string }
+  | { name: 'flashcards' }
+  | { name: 'deck'; id: string; review?: boolean }
+  | { name: 'grades' }
   | { name: 'focus' }
   | { name: 'settings' }
 

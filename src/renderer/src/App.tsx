@@ -10,6 +10,11 @@ import { ProjectDetailPage } from './pages/ProjectDetail'
 import { ProjectsPage } from './pages/Projects'
 import { SettingsPage } from './pages/Settings'
 import { TasksPage } from './pages/Tasks'
+import { TimetablePage } from './pages/Timetable'
+import { NotesPage } from './pages/Notes'
+import { MindmapEditorPage, MindmapsPage } from './pages/Mindmaps'
+import { DeckPage, FlashcardsPage } from './pages/Flashcards'
+import { GradesPage } from './pages/Grades'
 
 export function App(): React.JSX.Element {
   const route = useRoute()
@@ -25,6 +30,13 @@ export function App(): React.JSX.Element {
         {route.name === 'module' && <ModuleDetailPage key={route.id} id={route.id} tab={route.tab} />}
         {route.name === 'clients' && <ClientsPage />}
         {route.name === 'client' && <ClientDetailPage key={route.id} id={route.id} />}
+        {route.name === 'timetable' && <TimetablePage />}
+        {route.name === 'notes' && <NotesPage id={route.id} />}
+        {route.name === 'mindmaps' && <MindmapsPage />}
+        {route.name === 'mindmap' && <MindmapEditorPage key={route.id} id={route.id} />}
+        {route.name === 'flashcards' && <FlashcardsPage />}
+        {route.name === 'deck' && <DeckPage key={route.id} id={route.id} review={route.review} />}
+        {route.name === 'grades' && <GradesPage />}
         {route.name === 'focus' && <FocusPage />}
         {route.name === 'settings' && <SettingsPage />}
       </main>

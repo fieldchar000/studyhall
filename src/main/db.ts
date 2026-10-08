@@ -26,7 +26,14 @@ const TABLES: readonly TableName[] = [
   'projects',
   'milestones',
   'tasks',
-  'focus_sessions'
+  'focus_sessions',
+  'timetable_slots',
+  'notes',
+  'mindmaps',
+  'mindmap_nodes',
+  'mindmap_edges',
+  'flashcard_decks',
+  'flashcards'
 ]
 
 /** When a parent is soft-deleted, these children are soft-deleted too. */
@@ -34,8 +41,18 @@ const CHILDREN: Partial<Record<TableName, { table: TableName; fk: string }[]>> =
   modules: [
     { table: 'weeks', fk: 'module_id' },
     { table: 'materials', fk: 'module_id' },
-    { table: 'assessments', fk: 'module_id' }
+    { table: 'assessments', fk: 'module_id' },
+    { table: 'timetable_slots', fk: 'module_id' }
   ],
+  mindmaps: [
+    { table: 'mindmap_nodes', fk: 'mindmap_id' },
+    { table: 'mindmap_edges', fk: 'mindmap_id' }
+  ],
+  mindmap_nodes: [
+    { table: 'mindmap_edges', fk: 'source_node_id' },
+    { table: 'mindmap_edges', fk: 'target_node_id' }
+  ],
+  flashcard_decks: [{ table: 'flashcards', fk: 'deck_id' }],
   weeks: [{ table: 'materials', fk: 'week_id' }],
   projects: [
     { table: 'milestones', fk: 'project_id' },

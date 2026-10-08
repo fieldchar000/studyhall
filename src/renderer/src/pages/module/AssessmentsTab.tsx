@@ -1,6 +1,7 @@
 import type { Assessment, AssessmentKind, Module } from '@shared/types'
 import { AutoNumber, AutoText } from '@/components/AutoField'
 import { Icon } from '@/components/ui'
+import { PlanRevisionButton } from '@/components/RevisionPlanner'
 import { db, useRows } from '@/lib/data'
 import { isoToLocalInput, localInputToIso } from '@/lib/dates'
 import { fmtPct, summarize } from '@/lib/grades'
@@ -108,7 +109,8 @@ function Row({ a }: { a: Assessment }): React.JSX.Element {
       <td className="px-2 py-1 text-center">
         <input type="checkbox" checked={!!a.is_final} onChange={(e) => void save({ is_final: e.target.checked ? 1 : 0 })} />
       </td>
-      <td className="px-1 py-1 text-right">
+      <td className="px-1 py-1 text-right whitespace-nowrap">
+        <PlanRevisionButton exam={a} />
         <button
           className="btn-ghost opacity-0 group-hover:opacity-100 hover:text-danger"
           onClick={() => void db.remove('assessments', a.id)}
