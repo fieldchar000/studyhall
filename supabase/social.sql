@@ -384,6 +384,33 @@ create trigger studyhall_after_signup after insert on auth.users for each row ex
 -- Keep-alive target for the GitHub Action (any API call counts as activity).
 create or replace function public.ping() returns text language sql stable as $$ select 'ok' $$;
 
+-- Sign-up. Supabase's sign-up endpoint rejects the placeholder email domain, so accounts are
+-- created here instead (the triggers above still check the invite code and username), already
+-- confirmed — no email is involved at all. The app then signs in with the normal password login.
+create or replace function public.signup_with_invite(p_username text, p_password text, p_display_name text, p_code text) returns uuid
+language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_id uuid := gen_random_uuid();
+  v_user text := lower(trim(coalesce(p_username, '')));
+  v_email text := lower(trim(coalesce(p_username, ''))) || '@users.studyhall.invalid';
+begin
+  if length(coalesce(p_password, '')) < 8 then raise exception 'Password must be at least 8 characters'; end if;
+  if octet_length(p_password) > 72 then raise exception 'Password is too long (72 characters max)'; end if; -- bcrypt limit
+  if exists (select 1 from auth.users where email = v_email) then raise exception 'That username is taken'; end if;
+  insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+    raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+    confirmation_token, recovery_token, email_change_token_new, email_change, email_change_token_current,
+    phone_change, phone_change_token, reauthentication_token)
+  values (v_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', v_email,
+    crypt(p_password, gen_salt('bf', 10)), now(),
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    jsonb_build_object('username', v_user, 'display_name', left(trim(coalesce(p_display_name, '')), 40), 'invite_code', upper(trim(coalesce(p_code, '')))),
+    now(), now(), '', '', '', '', '', '', '', '');
+  insert into auth.identities (id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at)
+  values (gen_random_uuid(), v_id, jsonb_build_object('sub', v_id::text, 'email', v_email, 'email_verified', true), 'email', v_id::text, now(), now(), now());
+  return v_id;
+end $$;
+
 -- Before signing up: is this code usable, and what is it for? (Callable signed-out.)
 create or replace function public.check_invite(p_code text) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
@@ -554,7 +581,8 @@ $$;
 -- Lock down: functions are callable by signed-in users only, except the three below.
 revoke execute on all functions in schema public from public, anon;
 grant execute on all functions in schema public to authenticated;
-grant execute on function public.ping(), public.check_invite(text), public.username_available(text) to anon;
+grant execute on function public.ping(), public.check_invite(text), public.username_available(text),
+  public.signup_with_invite(text, text, text, text) to anon;
 
 -- =====================================================================
 -- Live updates (Realtime). Row Level Security still decides who receives what.

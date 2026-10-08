@@ -45,7 +45,7 @@ function generatePersonalSql() {
     console.log(
       cfg.mailer_autoconfirm
         ? '   Email confirmation is already OFF ✓'
-        : '   ACTION NEEDED: turn OFF "Confirm email" (Authentication → Sign In / Providers → Email) in the dashboard.'
+        : '   (Confirm email is on — fine: accounts are created by signup_with_invite(), already confirmed.)'
     )
   }
 

@@ -56,15 +56,15 @@ export async function signUp(p: { username: string; password: string; displayNam
   ])
   if (!inv?.valid) throw new Error('That invite code is invalid, expired or used up.')
   if (!free) throw new Error('That username is taken.')
-  const { data, error } = await supabase().auth.signUp({
-    email: usernameToEmail(username),
-    password: p.password,
-    options: { data: { username, display_name: p.displayName.trim() || username, invite_code: code } }
+  // Created by a database function (checks the invite code), then a normal password sign-in.
+  const created = await supabase().rpc('signup_with_invite', {
+    p_username: username,
+    p_password: p.password,
+    p_display_name: p.displayName.trim() || username,
+    p_code: code
   })
-  if (error) throw new Error(friendlyAuthError(error.message))
-  if (!data.session) throw new Error('Account created, but "Confirm email" is still ON in Supabase — turn it off, then sign in.')
-  await afterSignIn(data.session.user.id)
-  return cloudStatus()
+  if (created.error) throw new Error(friendlyAuthError(created.error.message))
+  return signIn(username, p.password)
 }
 
 export async function signIn(username: string, password: string): Promise<CloudStatus> {
