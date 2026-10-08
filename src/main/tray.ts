@@ -7,6 +7,7 @@ import type { TimerState } from '@shared/types'
 export interface TrayActions {
   show: () => void
   openFocus: () => void
+  openSpotify: () => void
   toggleTimer: () => void
   skip: () => void
   quit: () => void
@@ -120,6 +121,7 @@ export function updateTray(state: TimerState, remainingMs: number): void {
     Menu.buildFromTemplate([
       { label: 'Open Studyhall', click: actions.show },
       { label: 'Focus room', click: actions.openFocus },
+      { label: 'Spotify player', click: actions.openSpotify },
       { type: 'separator' },
       { label, enabled: false },
       { label: state.running ? 'Pause timer' : active ? 'Resume timer' : 'Start focus', click: actions.toggleTimer },

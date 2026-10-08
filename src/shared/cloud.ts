@@ -129,6 +129,10 @@ export interface CloudApi {
   signUp(p: { username: string; password: string; displayName: string; inviteCode: string }): Promise<CloudStatus>
   signIn(username: string, password: string): Promise<CloudStatus>
   signOut(): Promise<void>
+  changePassword(current: string, next: string): Promise<void>
+  /** Admin only: returns a temporary password to give to that person. */
+  adminResetPassword(username: string): Promise<string>
+  setDisplayName(name: string): Promise<void>
   syncNow(): Promise<void>
   checkInvite(code: string): Promise<InviteCheck>
   createInvite(opts: { kind: 'friend' | 'server'; serverId?: string; maxUses?: number; expiresDays?: number }): Promise<{ code: string; link: string }>

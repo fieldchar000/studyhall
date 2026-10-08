@@ -1,6 +1,7 @@
-// Spotify: saved playlists/albums with Spotify's embed player.
-// Standard Electron has no Widevine DRM, so the in-app player plays 30-second
-// previews; "Open in Spotify" plays the full thing in the Spotify desktop app.
+// Spotify: saved playlists/albums. The small embed here plays 30-second previews;
+// "Play full tracks" opens the real Spotify web player in a Studyhall window, where you
+// sign in once (Premium = full tracks, search, add to playlists). Possible because this
+// build of Electron includes Widevine (castlabs ECS).
 
 import { useState } from 'react'
 import { spotifyEmbedUrl, spotifyParts } from '@shared/links'
@@ -103,18 +104,26 @@ export function SpotifyPanel({ tall = false }: { tall?: boolean }): React.JSX.El
             allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
             loading="lazy"
           />
-          <div className="flex items-center gap-2 px-4 py-2.5">
-            <button className="btn" onClick={() => void api.embed.openSpotify(selected.url)}>
-              <Icon name="external" /> Open in Spotify
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+            <button className="btn-primary" onClick={() => void api.embed.openPlayer(selected.url)} title="Opens the full Spotify player — sign in once">
+              <Icon name="play" /> Play full tracks
             </button>
-            <span className="text-[11px] leading-tight text-muted">Player here = 30s previews. Full tracks play in the Spotify app.</span>
+            <button className="btn-ghost" onClick={() => void api.embed.openSpotify(selected.url)} title="Open in the Spotify desktop app instead">
+              <Icon name="external" /> Spotify app
+            </button>
+            <span className="w-full text-[11px] leading-tight text-muted">The mini player above plays previews; “Play full tracks” opens Spotify in Studyhall (sign in once).</span>
           </div>
         </>
       ) : (
         !adding && (
-          <button className="w-full px-4 pb-4 text-left text-xs text-muted" onClick={() => setAdding(true)}>
-            Add a study playlist: paste a Spotify link with +.
-          </button>
+          <div className="flex flex-col gap-2 px-4 pb-4">
+            <button className="btn-primary self-start" onClick={() => void api.embed.openPlayer()}>
+              <Icon name="play" /> Open Spotify player
+            </button>
+            <button className="text-left text-xs text-muted" onClick={() => setAdding(true)}>
+              Or save a study playlist here: paste a Spotify link with +.
+            </button>
+          </div>
         )
       )}
     </section>

@@ -5,9 +5,11 @@ import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
 import { closeDb, getSetting, onDbChange, openDb, setSetting, setWriteGuard } from './db'
 import { cloudStatus, currentUserId, onAccountChange, restoreSession } from './cloud/account'
-import { guardWrite, publishPresence, startLive, stopLive } from './cloud/social'
+import { describeMessage, guardWrite, publishPresence, startLive, stopLive } from './cloud/social'
 import { configureSync, requestSync } from './cloud/sync'
 import { closeAllVideoRooms, isVideoContents } from './video'
+import { closeSpotifyPlayer, isSpotifyContents, openSpotifyPlayer } from './spotify'
+import { initUpdater } from './updater'
 import { SYNC_TABLES } from '@shared/sync'
 import type { DeepLink } from '@shared/cloud'
 import { serveMaterial } from './files'
@@ -90,7 +92,7 @@ let captureWindow: BrowserWindow | null = null
 
 /** Send to every window (main app + quick capture). */
 function broadcast(channel: string, ...args: unknown[]): void {
-  for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && !isVideoContents(w.webContents.session)) w.webContents.send(channel, ...args)
+  for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && !isVideoContents(w.webContents.session) && !isSpotifyContents(w.webContents.session)) w.webContents.send(channel, ...args)
 }
 
 // ---------- studyhall:// links (invites) ----------
@@ -254,7 +256,7 @@ function createWindow(forceShow = false): void {
 /** Lock down every window/frame: no navigation away, no popups, no webviews. */
 function hardenContents(): void {
   app.on('web-contents-created', (_e, contents) => {
-    if (isVideoContents(contents.session)) return
+    if (isVideoContents(contents.session) || isSpotifyContents(contents.session)) return // own rules
     contents.on('will-navigate', (e, url) => {
       if (!url.startsWith(APP_ORIGIN) && !(DEV_URL && url.startsWith(DEV_URL))) e.preventDefault()
     })
@@ -336,10 +338,23 @@ if (!app.requestSingleInstanceLock()) {
     onAccountChange(() => {
       broadcast('cloud:status', cloudStatus())
       broadcast('db:changed', '*')
-      if (currentUserId()) startLive((table) => broadcast('cloud:event', table))
+      if (currentUserId())
+        startLive((table, payload) => {
+          broadcast('cloud:event', table)
+          // New chat message while Studyhall isn't in front: desktop notification.
+          if (table === 'messages' && payload.eventType === 'INSERT' && getPrefs().notifyMessages && !mainWindow?.isFocused()) {
+            void describeMessage(payload.new).then((m) => m && notify(m.title, m.body, 'servers')).catch(() => {})
+          }
+        })
       else stopLive()
     })
     void restoreSession()
+
+    // Auto-update (installed app only). Tell the UI so it can offer "Restart to update".
+    initUpdater((s) => {
+      broadcast('app:update', s)
+      if (s.status === 'ready') notify('Studyhall update ready', `Version ${s.version} will install when you restart Studyhall.`)
+    })
 
     // studyhall:// links open the app (registered per-user; the installer registers it too).
     // (Only the installed app registers, so test builds never take over your links.)
@@ -354,6 +369,7 @@ if (!app.requestSingleInstanceLock()) {
     createTray(ICON_PATH, {
       show: () => showWindow(),
       openFocus: () => showWindow('focus'),
+      openSpotify: () => void openSpotifyPlayer(),
       toggleTimer: () => (timer.getState().running ? timer.pause() : timer.start()),
       skip: () => timer.skip(),
       quit: () => app.quit()
@@ -387,6 +403,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => app.quit())
   app.on('will-quit', () => {
     closeAllVideoRooms()
+    closeSpotifyPlayer()
     globalShortcut.unregisterAll()
     closeDb()
   })

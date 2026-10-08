@@ -230,6 +230,21 @@ export async function setMuted(channelId: string, muted: boolean): Promise<void>
   await run(supabase().from('channel_states').upsert({ channel_id: channelId, user_id: me(), muted }, { onConflict: 'channel_id,user_id' }))
 }
 
+/** Title/body for a desktop notification about a new chat message (null = stay quiet). */
+export async function describeMessage(row: Record<string, unknown>): Promise<{ title: string; body: string } | null> {
+  const uid = currentUserId()
+  if (!uid || row.author_id === uid || row.deleted_at) return null
+  const channelId = String(row.channel_id)
+  const [{ data: ch }, { data: state }] = await Promise.all([
+    supabase().from('channels').select('name, servers(name)').eq('id', channelId).maybeSingle(),
+    supabase().from('channel_states').select('muted').eq('channel_id', channelId).eq('user_id', uid).maybeSingle()
+  ])
+  if (!ch || state?.muted) return null
+  await loadNames([String(row.author_id)])
+  const server = (ch as unknown as { servers: { name: string } | null }).servers?.name ?? 'Server'
+  return { title: `${nameOf(String(row.author_id))} in #${ch.name} · ${server}`, body: String(row.body ?? '').slice(0, 140) }
+}
+
 // ---------- shared Pomodoro (one per study room) ----------
 
 function defaults(channelId: string): SharedTimer {
@@ -328,14 +343,14 @@ export async function publishPresence(): Promise<void> {
 let channel: RealtimeChannel | null = null
 const LIVE_TABLES = ['messages', 'presence', 'shared_timers', 'room_participants', 'server_members', 'channels', 'friendships', 'shares']
 
-export function startLive(emit: (table: string) => void): void {
+export function startLive(emit: (table: string, payload: { eventType: string; new: Record<string, unknown> }) => void): void {
   stopLive()
   void publishPresence()
   presenceTimer = setInterval(() => void publishPresence(), 60_000)
   channel = supabase().channel('studyhall-live')
   for (const table of LIVE_TABLES) {
-    channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
-      emit(table)
+    channel.on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+      emit(table, payload as unknown as { eventType: string; new: Record<string, unknown> })
       if (table === 'shares') void sharedWithMe().catch(() => {})
     })
   }

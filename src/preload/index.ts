@@ -55,7 +55,8 @@ const api: Api = {
   },
   embed: {
     lookup: (url) => ipcRenderer.invoke('embed:lookup', url),
-    openSpotify: (url) => ipcRenderer.invoke('embed:openSpotify', url)
+    openSpotify: (url) => ipcRenderer.invoke('embed:openSpotify', url),
+    openPlayer: (url) => ipcRenderer.invoke('embed:openPlayer', url)
   },
   search: (q) => ipcRenderer.invoke('search', q),
   capture: {
@@ -75,6 +76,9 @@ const api: Api = {
     signUp: (p) => ipcRenderer.invoke('cloud:signUp', p),
     signIn: (u, pw) => ipcRenderer.invoke('cloud:signIn', u, pw),
     signOut: () => ipcRenderer.invoke('cloud:signOut'),
+    changePassword: (c, n) => ipcRenderer.invoke('cloud:changePassword', c, n),
+    adminResetPassword: (u) => ipcRenderer.invoke('cloud:adminResetPassword', u),
+    setDisplayName: (n) => ipcRenderer.invoke('cloud:setDisplayName', n),
     syncNow: () => ipcRenderer.invoke('cloud:syncNow'),
     checkInvite: (code) => ipcRenderer.invoke('cloud:checkInvite', code),
     createInvite: (o) => ipcRenderer.invoke('cloud:createInvite', o),
@@ -134,6 +138,14 @@ const api: Api = {
     flushed: () => ipcRenderer.send('app:flushed'),
     onCalendarUpdated: (cb) => on('calendar:updated', cb),
     onCaptureShow: (cb) => on('capture:show', cb),
+    updateState: () => ipcRenderer.invoke('app:updateState'),
+    checkUpdates: () => ipcRenderer.invoke('app:checkUpdates'),
+    installUpdate: () => ipcRenderer.invoke('app:installUpdate'),
+    onUpdate: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('app:update', l)
+      return () => ipcRenderer.removeListener('app:update', l)
+    },
     onNavigate: (cb) => {
       const listener = (_e: unknown, page: string): void => cb(String(page))
       ipcRenderer.on('app:navigate', listener)

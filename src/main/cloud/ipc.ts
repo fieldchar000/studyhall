@@ -3,7 +3,7 @@
 import type { IpcMainInvokeEvent } from 'electron'
 import type { TimerAction } from '@shared/cloud'
 import { openVideoRoom } from '../video'
-import { cloudStatus, currentUserId, signIn, signOut, signUp } from './account'
+import { adminResetPassword, changePassword, cloudStatus, currentUserId, setDisplayName, signIn, signOut, signUp } from './account'
 import * as social from './social'
 import { storageUsed, syncNow } from './sync'
 
@@ -28,6 +28,9 @@ export function registerCloudIpc(handle: Handle): void {
   )
   handle('cloud:signIn', (_e, u: string, pw: string) => signIn(str(u, 20), str(pw, 200)))
   handle('cloud:signOut', () => signOut())
+  handle('cloud:changePassword', (_e, cur: string, next: string) => changePassword(str(cur, 200), str(next, 200)))
+  handle('cloud:adminResetPassword', (_e, u: string) => adminResetPassword(str(u, 20)))
+  handle('cloud:setDisplayName', (_e, n: string) => setDisplayName(str(n, 40)))
   handle('cloud:syncNow', () => syncNow())
   handle('cloud:storageUsed', () => storageUsed())
 

@@ -50,6 +50,12 @@ function generatePersonalSql() {
   }
 
   console.log('4/5 Bootstrap invite for the first account…')
+  const [{ n: accounts }] = await sql('select count(*)::int as n from auth.users')
+  if (accounts > 0) {
+    // Accounts exist: never leave an extra admin-level invite lying around.
+    await sql('delete from public.invites where created_by is null and use_count < max_uses')
+    console.log('   Not needed (accounts exist); new people join with invites made in the app.')
+  } else {
   const [existing] = await sql(
     `select code from public.invites where created_by is null and revoked_at is null and use_count < max_uses and (expires_at is null or expires_at > now()) limit 1`
   )
@@ -62,6 +68,7 @@ function generatePersonalSql() {
     code = row.code
   }
   console.log('   First-account invite code:', code)
+  }
 
   console.log('5/5 Public app config (URL + publishable key; safe to ship, RLS protects the data)…')
   const keys = await api('GET', '/projects/{ref}/api-keys?reveal=false')

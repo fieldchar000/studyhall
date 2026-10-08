@@ -4,6 +4,18 @@ productName: Studyhall
 directories:
   output: dist
   buildResources: build
+# castlabs "Electron for Content Security" (Electron + Widevine, needed for Spotify full tracks).
+# Use the already-downloaded build instead of fetching stock Electron.
+electronDist: node_modules/electron/dist
+electronVersion: 44.5.1
+# castlabs VMP signature (after any code signing)
+afterSign: build/vmp-sign.cjs
+# Auto-update: installers + latest.yml are published to GitHub Releases (public repo)
+publish:
+  provider: github
+  owner: fieldchar000
+  repo: studyhall
+  releaseType: release
 files:
   - out/**
   - package.json

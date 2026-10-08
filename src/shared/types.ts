@@ -2,6 +2,12 @@
 
 import type { CloudApi } from './cloud'
 
+export type UpdateState =
+  | { status: 'idle' | 'checking' | 'none' | 'dev' }
+  | { status: 'downloading'; version: string; percent: number }
+  | { status: 'ready'; version: string }
+  | { status: 'error'; message: string }
+
 /** Columns every syncable table has (see docs/SCHEMA.md). */
 export interface BaseRow {
   id: string // UUID
@@ -399,6 +405,7 @@ export interface Prefs {
   launchAtLogin: boolean
   notifyDeadlines: boolean
   notifyTimer: boolean
+  notifyMessages: boolean
   quickCaptureShortcut: string // Electron accelerator, '' = off
   spotifyLinks: SpotifyLink[]
 }
@@ -448,6 +455,8 @@ export interface Api {
     lookup(url: string): Promise<EmbedInfo | null>
     /** Open a Spotify link in the Spotify desktop app (falls back to the browser). */
     openSpotify(url: string): Promise<void>
+    /** Open the full Spotify web player in a Studyhall window (sign in once; full tracks). */
+    openPlayer(url?: string): Promise<{ widevine: boolean }>
   }
   search(query: string): Promise<SearchResult[]>
   capture: {
@@ -474,6 +483,11 @@ export interface Api {
     onCalendarUpdated(cb: () => void): () => void
     /** The quick-capture window was just shown (focus the input). */
     onCaptureShow(cb: () => void): () => void
+    /** Auto-update status (installed app only). */
+    updateState(): Promise<UpdateState>
+    checkUpdates(): Promise<UpdateState>
+    installUpdate(): Promise<void>
+    onUpdate(cb: (s: UpdateState) => void): () => void
     /** Main asks the UI to open a page (e.g. from the tray menu). */
     onNavigate(cb: (page: string) => void): () => void
   }

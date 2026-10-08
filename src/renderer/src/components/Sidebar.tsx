@@ -5,6 +5,7 @@ import { useMode } from '@/lib/profile'
 import { fmtClock, PHASE_LABEL, useRemaining, useTimerState } from '@/lib/timer'
 import { openSearch } from './SearchPalette'
 import { useCloud } from '@/lib/cloud'
+import { UpdateBanner } from './UpdateBanner'
 import { Icon, SaveIndicator } from './ui'
 
 interface NavItem {
@@ -100,6 +101,7 @@ export function Sidebar(): React.JSX.Element {
         ))}
       </nav>
       <div className="mt-auto flex flex-col gap-3 px-4 py-3">
+        <UpdateBanner />
         <MiniTimer />
         <SaveIndicator />
       </div>

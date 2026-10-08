@@ -6,6 +6,8 @@ import { importPaths, openExternal, pickAndImport, showInFolder } from './files'
 import { refreshSubscriptions } from './ics'
 import { getPrefs, setPrefs, SHORTCUTS } from './prefs'
 import { lookup, openSpotify } from './embeds'
+import { openSpotifyPlayer } from './spotify'
+import { checkForUpdates, installUpdate, updateState } from './updater'
 import { search } from './search'
 import { getGame } from './game'
 import { registerCloudIpc } from './cloud/ipc'
@@ -257,7 +259,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('prefs:get', () => getPrefs())
   handle('prefs:set', (_e, patch: Record<string, unknown>) => {
     const clean: Partial<Prefs> = {}
-    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer'] as const) {
+    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages'] as const) {
       if (k in patch) clean[k] = !!patch[k]
     }
     if (typeof patch.quickCaptureShortcut === 'string' && SHORTCUTS.includes(patch.quickCaptureShortcut)) {
@@ -279,6 +281,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   // Phase 4: links, search, quick capture, idle game
   handle('embed:lookup', (_e, url: string) => lookup(String(url)))
   handle('embed:openSpotify', (_e, url: string) => openSpotify(String(url)))
+  handle('embed:openPlayer', (_e, url?: string) => openSpotifyPlayer(url ? String(url).slice(0, 300) : undefined))
   handle('search', (_e, q: string) => search(String(q)))
   handle('capture:hide', () => deps.hideCapture())
   handle('capture:status', () => deps.shortcutStatus())
@@ -291,4 +294,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('app:dataPath', () => app.getPath('userData'))
   handle('app:openDataFolder', () => shell.openPath(app.getPath('userData')))
   handle('app:version', () => app.getVersion())
+  handle('app:updateState', () => updateState())
+  handle('app:checkUpdates', () => checkForUpdates())
+  handle('app:installUpdate', () => installUpdate())
 }

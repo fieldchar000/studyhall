@@ -1,6 +1,7 @@
 // Account: sign up (invite code required), sign in, sign out, and linking this PC's
 // existing local data to the account the first time you sign in.
 
+import { randomBytes } from 'node:crypto'
 import { SYNC_TABLES } from '@shared/sync'
 import type { CloudStatus } from '@shared/cloud'
 import { getDb, getProfileId, getSetting, now, setProfileId, setSetting } from '../db'
@@ -106,6 +107,24 @@ async function refreshIdentity(): Promise<void> {
   } catch (e) {
     if (!isNetworkError(e)) throw e
   }
+}
+
+/** Change your own password (checks the current one first). */
+export async function changePassword(current: string, next: string): Promise<void> {
+  if (!identity) throw new Error('Not signed in')
+  if (next.length < 8) throw new Error('New password: at least 8 characters')
+  const check = await supabase().auth.signInWithPassword({ email: usernameToEmail(identity.username), password: current })
+  if (check.error) throw new Error('Current password is wrong.')
+  const { error } = await supabase().auth.updateUser({ password: next })
+  if (error) throw new Error(error.message)
+}
+
+/** Admin only: give someone a temporary password (returned once, to pass on to them). */
+export async function adminResetPassword(username: string): Promise<string> {
+  const temp = randomBytes(9).toString('base64url') // 12 characters
+  const { error } = await supabase().rpc('admin_set_password', { p_username: username, p_password: temp })
+  if (error) throw new Error(error.message)
+  return temp
 }
 
 export async function setDisplayName(name: string): Promise<void> {

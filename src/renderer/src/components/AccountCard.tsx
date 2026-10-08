@@ -175,6 +175,90 @@ function SignedIn(): React.JSX.Element {
       <p className="text-xs text-muted">
         Course files stay on this PC unless you switch on “Sync file” for a file (in a module's week). Notes, tasks and everything else sync automatically.
       </p>
+      <AccountTools isAdmin={c.isAdmin} displayName={c.displayName ?? ''} />
+    </div>
+  )
+}
+
+const errText = (e: unknown): string => String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+
+/** Display name, change password, and (admin only) reset someone's password. */
+function AccountTools({ isAdmin, displayName }: { isAdmin: boolean; displayName: string }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState(displayName)
+  const [cur, setCur] = useState('')
+  const [next, setNext] = useState('')
+  const [who, setWho] = useState('')
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [temp, setTemp] = useState<string | null>(null)
+  const run = async (fn: () => Promise<unknown>, ok: string): Promise<void> => {
+    setMsg(null)
+    try {
+      await fn()
+      setMsg({ ok: true, text: ok })
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) })
+    }
+  }
+  if (!open) {
+    return (
+      <button className="self-start text-xs text-accent underline" onClick={() => setOpen(true)}>
+        Change display name or password{isAdmin && ', reset a friend’s password'}
+      </button>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-3 border-t border-line pt-3 text-sm">
+      <div className="flex gap-2">
+        <input className="field-boxed" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="Display name" />
+        <button className="btn" disabled={!name.trim()} onClick={() => void run(() => api.cloud.setDisplayName(name), 'Display name saved.')}>
+          Save name
+        </button>
+      </div>
+      <div className="flex gap-2">
+        <input className="field-boxed" type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} placeholder="Current password" />
+        <input className="field-boxed" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="New password (8+)" />
+        <button
+          className="btn"
+          disabled={!cur || next.length < 8}
+          onClick={() =>
+            void run(async () => {
+              await api.cloud.changePassword(cur, next)
+              setCur('')
+              setNext('')
+            }, 'Password changed.')
+          }
+        >
+          Change
+        </button>
+      </div>
+      {isAdmin && (
+        <div className="flex flex-col gap-1.5 rounded-lg bg-canvas p-3">
+          <div className="text-xs text-muted">
+            <b>Admin:</b> a friend forgot their password? Set a temporary one, send it to them privately, and they change it in Settings.
+          </div>
+          <div className="flex gap-2">
+            <input className="field-boxed" value={who} onChange={(e) => setWho(e.target.value.toLowerCase())} placeholder="their username" />
+            <button
+              className="btn"
+              disabled={who.length < 3}
+              onClick={() =>
+                void run(async () => {
+                  setTemp(await api.cloud.adminResetPassword(who))
+                }, `Temporary password set for @${who}.`)
+              }
+            >
+              Reset
+            </button>
+          </div>
+          {temp && (
+            <div className="text-xs">
+              Temporary password (shown once): <code className="rounded bg-panel px-1.5 py-0.5 text-sm font-semibold select-all">{temp}</code>
+            </div>
+          )}
+        </div>
+      )}
+      {msg && <div className={`text-xs ${msg.ok ? 'text-ok' : 'text-danger'}`}>{msg.text}</div>}
     </div>
   )
 }

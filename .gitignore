@@ -4,3 +4,5 @@ dist/
 .env
 *.log
 scripts/.out/
+.venv/
+castlabs-signup.cmd

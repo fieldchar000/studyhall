@@ -49,5 +49,5 @@ export function useRoute(): Route {
 
 // The tray menu and notifications can ask for a page.
 api.app.onNavigate((page) => {
-  if (page === 'focus' || page === 'home' || page === 'tasks' || page === 'inbox') navigate({ name: page })
+  if (page === 'focus' || page === 'home' || page === 'tasks' || page === 'inbox' || page === 'servers' || page === 'friends') navigate({ name: page })
 })

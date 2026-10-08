@@ -9,6 +9,7 @@ const DEFAULTS: Prefs = {
   launchAtLogin: false,
   notifyDeadlines: true,
   notifyTimer: true,
+  notifyMessages: true,
   quickCaptureShortcut: 'CommandOrControl+Shift+Space',
   spotifyLinks: []
 }

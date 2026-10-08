@@ -411,6 +411,20 @@ begin
   return v_id;
 end $$;
 
+-- There's no email, so no "forgot password": the admin (first account) can set a temporary
+-- password for someone, which they can then change in Settings.
+create or replace function public.admin_set_password(p_username text, p_password text) returns void
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  if not exists (select 1 from user_directory where id = auth.uid() and is_admin) then
+    raise exception 'Only the Studyhall admin can reset passwords';
+  end if;
+  if length(coalesce(p_password, '')) < 8 then raise exception 'Password must be at least 8 characters'; end if;
+  update auth.users set encrypted_password = crypt(p_password, gen_salt('bf', 10)), updated_at = now()
+  where email = lower(trim(p_username)) || '@users.studyhall.invalid';
+  if not found then raise exception 'No such username'; end if;
+end $$;
+
 -- Before signing up: is this code usable, and what is it for? (Callable signed-out.)
 create or replace function public.check_invite(p_code text) returns jsonb
 language plpgsql stable security definer set search_path = public as $$

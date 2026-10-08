@@ -4,6 +4,7 @@ import { api, notifyChanged, track, useLive } from '@/lib/data'
 import { setMode, useMode } from '@/lib/profile'
 import { shortcutLabel } from './Inbox'
 import { AccountCard } from '@/components/AccountCard'
+import { UpdatesCard } from '@/components/UpdateBanner'
 
 export function SettingsPage(): React.JSX.Element {
   const mode = useMode()
@@ -52,6 +53,7 @@ export function SettingsPage(): React.JSX.Element {
         {pref('launchAtLogin', 'Start Studyhall when I sign in to Windows', 'Starts quietly in the tray. Works in the installed app.')}
         {pref('notifyDeadlines', 'Remind me about deadlines', 'About 24 hours and 1 hour before tasks and assessments are due.')}
         {pref('notifyTimer', 'Notify me when a focus session or break ends')}
+        {pref('notifyMessages', 'Notify me about new server messages', 'Only while Studyhall is in the background; muted channels stay quiet.')}
       </section>
 
       <section className="card mb-4 p-5">
@@ -93,7 +95,7 @@ export function SettingsPage(): React.JSX.Element {
         </div>
       </section>
 
-      <section className="card p-5 text-sm text-muted">Studyhall {data?.version}</section>
+      <UpdatesCard version={data?.version} />
     </div>
   )
 }
