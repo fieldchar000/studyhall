@@ -6,6 +6,7 @@ import type { TimerPhase, TimerSettings } from '@shared/types'
 import { AutoNumber } from '@/components/AutoField'
 import { Icon } from '@/components/ui'
 import { SpotifyPanel } from '@/components/SpotifyPanel'
+import { QuestMini } from '@/game/QuestMini'
 import { api, db, notifyChanged, track, useLive } from '@/lib/data'
 import { NoteView } from './Notes'
 import { formatTime, localDate } from '@/lib/dates'
@@ -28,6 +29,7 @@ export function FocusPage(): React.JSX.Element {
         <FocusNotes />
       </div>
       <div className="flex flex-col gap-5">
+        <QuestMini />
         <TodayCard />
         <SpotifyPanel tall />
         <SettingsCard />

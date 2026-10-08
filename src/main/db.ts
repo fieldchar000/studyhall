@@ -40,7 +40,16 @@ const TABLES: readonly TableName[] = [
   'languages',
   'language_logs',
   'habits',
-  'habit_checks'
+  'habit_checks',
+  'exam_papers',
+  'quiz_questions',
+  'paper_attempts',
+  'journal_entries',
+  'media_items',
+  'money_entries',
+  'budgets',
+  'savings_goals',
+  'lang_items'
 ]
 
 /** When a parent is soft-deleted, these children are soft-deleted too. */
@@ -66,8 +75,15 @@ const CHILDREN: Partial<Record<TableName, { table: TableName; fk: string }[]>> =
     { table: 'tasks', fk: 'project_id' }
   ],
   tasks: [{ table: 'tasks', fk: 'parent_task_id' }], // subtasks
-  languages: [{ table: 'language_logs', fk: 'language_id' }],
-  habits: [{ table: 'habit_checks', fk: 'habit_id' }]
+  languages: [
+    { table: 'language_logs', fk: 'language_id' },
+    { table: 'lang_items', fk: 'language_id' }
+  ],
+  habits: [{ table: 'habit_checks', fk: 'habit_id' }],
+  exam_papers: [
+    { table: 'quiz_questions', fk: 'paper_id' },
+    { table: 'paper_attempts', fk: 'paper_id' }
+  ]
 }
 
 /** Columns the UI is never allowed to set directly. */

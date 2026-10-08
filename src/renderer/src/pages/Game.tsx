@@ -22,6 +22,8 @@ import {
   localDay,
   MAX_STARS,
   partyDps,
+  powered,
+  streakBonus,
   PITY_EPIC,
   PITY_LEGEND,
   RARITY,
@@ -177,9 +179,9 @@ export function GamePage(): React.JSX.Element {
     }
   }
 
-  const summon = async (count: 1 | 10, free = false): Promise<void> => {
+  const summon = async (count: 1 | 10, free = false, ticket = false): Promise<void> => {
     sfx.summon()
-    const r = await doAct({ type: 'summon', count, free })
+    const r = await doAct({ type: 'summon', count, free, ticket })
     if (r?.summon) setReveal(r.summon)
   }
 
@@ -194,6 +196,7 @@ export function GamePage(): React.JSX.Element {
           <div className="flex-1" />
           <Stat icon="🪙" value={fmtNum(live.gold)} label="gold" />
           <Stat icon="💎" value={fmtNum(live.gems)} label="gems" />
+          {live.tickets > 0 && <Stat icon="🎟️" value={String(live.tickets)} label="summon tickets (one per finished focus session)" />}
           {live.relics > 0 && <Stat icon="🏺" value={fmtNum(live.relics)} label="relics" />}
           <button
             className="px-btn !bg-[#3a3158] !px-2.5"
@@ -204,6 +207,41 @@ export function GamePage(): React.JSX.Element {
             }}
           >
             {muted ? '🔇' : '🔊'}
+          </button>
+        </div>
+
+        {/* Focus link: studying powers the party */}
+        <div className="px-box flex flex-wrap items-center gap-3 px-4 py-3">
+          <span className="text-2xl">{powered(live) ? '⚡' : '🔋'}</span>
+          <div className="min-w-0 flex-1 text-xs leading-relaxed text-[#c4bde0]">
+            {powered(live) ? (
+              <>
+                <b className="text-[#fde047]">FOCUS POWER ×2</b> — double damage and gold for another{' '}
+                <b className="text-white">{live.power >= 3600 ? `${Math.floor(live.power / 3600)}h ${Math.floor((live.power % 3600) / 60)}m` : `${Math.ceil(live.power / 60)}m`}</b>.
+              </>
+            ) : (
+              <>
+                <b className="text-white">Your party is uncharged.</b> Every focused minute gives 💎 5 and 3 minutes of ⚡ Focus Power (double damage and gold).
+              </>
+            )}{' '}
+            Finishing a focus session (15+ min) gives a 🎟️ summon ticket.
+            {live.focusStreak > 1 && (
+              <span className="text-[#fdba74]">
+                {' '}
+                🔥 {live.focusStreak}-day focus streak: +{Math.round((streakBonus(live) - 1) * 100)}% focus gems.
+              </span>
+            )}
+          </div>
+          <button
+            className="px-btn !bg-[#ca8a04]"
+            onClick={() => {
+              void api.timer.state().then((s) => {
+                if (!(s.phase === 'focus' && s.running)) void api.timer.start()
+                navigate({ name: 'focus' })
+              })
+            }}
+          >
+            ⚡ FOCUS NOW
           </button>
         </div>
 
@@ -267,7 +305,7 @@ export function GamePage(): React.JSX.Element {
             ).map(([k, label]) => (
               <button key={k} className="px-tab" data-active={tab === k} onClick={() => setTab(k)}>
                 {label}
-                {k === 'summon' && live.freeDay !== localDay() && <span className="ml-1.5 text-[#fde047]">!</span>}
+                {k === 'summon' && (live.freeDay !== localDay() || live.tickets > 0) && <span className="ml-1.5 text-[#fde047]">!</span>}
               </button>
             ))}
           </div>
@@ -465,7 +503,7 @@ function PartyCard({ id, d, enemyEl, act }: { id: string; d: GameData; enemyEl: 
 
 // ---------- Summon ----------
 
-function SummonTab({ d, summon }: { d: GameData; summon: (count: 1 | 10, free?: boolean) => Promise<void> }): React.JSX.Element {
+function SummonTab({ d, summon }: { d: GameData; summon: (count: 1 | 10, free?: boolean, ticket?: boolean) => Promise<void> }): React.JSX.Element {
   const freeReady = d.freeDay !== localDay()
   return (
     <div className="grid items-center gap-6 md:grid-cols-[1fr_1.2fr]">
@@ -489,6 +527,11 @@ function SummonTab({ d, summon }: { d: GameData; summon: (count: 1 | 10, free?: 
           <button className="px-btn !bg-[#9333ea]" disabled={d.gems < SUMMON10_COST} onClick={() => void summon(10)}>
             SUMMON ×10 · 💎{SUMMON10_COST}
           </button>
+          {d.tickets > 0 && (
+            <button className="px-btn !bg-[#ca8a04]" style={{ animation: 'px-pulse 1.2s ease-in-out infinite' }} onClick={() => void summon(1, false, true)}>
+              🎟️ USE TICKET ({d.tickets})
+            </button>
+          )}
           <button
             className="px-btn !bg-[#16a34a]"
             disabled={!freeReady}

@@ -1,13 +1,14 @@
 import type { Mode, Prefs } from '@shared/types'
 import { Icon } from '@/components/ui'
 import { api, notifyChanged, track, useLive } from '@/lib/data'
-import { setMode, useMode } from '@/lib/profile'
+import { setEnabledModes, setMode, useEnabledModes, useMode } from '@/lib/profile'
 import { shortcutLabel } from './Inbox'
 import { AccountCard } from '@/components/AccountCard'
 import { UpdatesCard } from '@/components/UpdateBanner'
 
 export function SettingsPage(): React.JSX.Element {
   const mode = useMode()
+  const enabled = useEnabledModes()
   const { data } = useLive([], async () => ({ path: await api.app.dataPath(), version: await api.app.version() }), [])
   const { data: prefs } = useLive(['prefs'], () => api.prefs.get(), [])
   const { data: shortcut } = useLive(['prefs'], () => api.capture.shortcutStatus(), [])
@@ -30,19 +31,36 @@ export function SettingsPage(): React.JSX.Element {
       <AccountCard />
 
       <section className="card mb-4 p-5">
-        <h2 className="mb-1 font-semibold">Mode</h2>
+        <h2 className="mb-1 font-semibold">Categories</h2>
         <p className="mb-3 text-sm text-muted">
-          Study shows modules and assessments, Work shows clients, and Life is for everything else — languages, habits and personal goals. Tasks, projects and notes are kept separately for each. You can also switch at the top of the sidebar.
+          Pick what you use Studyhall for. Each category keeps its own tasks, projects and notes. With more than one switched on, switch between them at the top of the sidebar.
         </p>
-        <div className="inline-flex gap-1 rounded-lg bg-line/50 p-1">
-          {(['study', 'work', 'life'] as Mode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => void setMode(m)}
-              className={`rounded-md px-5 py-1.5 text-sm capitalize ${mode === m ? 'bg-panel font-medium shadow-sm' : 'text-muted'}`}
-            >
-              {m}
-            </button>
+        <div className="flex flex-col gap-1">
+          {(
+            [
+              ['study', 'Study', 'Modules, timetable, assessments, exam prep, grades'],
+              ['work', 'Work', 'Clients, client projects and meeting notes'],
+              ['life', 'Life', 'Languages, habits, journal, library, money and personal goals']
+            ] as [Mode, string, string][]
+          ).map(([m, label, hint]) => (
+            <label key={m} className="flex items-start gap-3 py-1.5">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={enabled.includes(m)}
+                disabled={enabled.length === 1 && enabled.includes(m)}
+                onChange={(e) => void setEnabledModes(e.target.checked ? [...enabled, m] : enabled.filter((x) => x !== m), mode)}
+              />
+              <span className="flex-1">
+                <span className="block text-sm font-medium">{label}</span>
+                <span className="block text-xs text-muted">{hint}</span>
+              </span>
+              {enabled.includes(m) && enabled.length > 1 && (
+                <button className={`text-xs ${mode === m ? 'font-medium text-accent' : 'text-muted hover:text-ink'}`} onClick={() => void setMode(m)}>
+                  {mode === m ? 'Showing now' : 'Show'}
+                </button>
+              )}
+            </label>
           ))}
         </div>
       </section>

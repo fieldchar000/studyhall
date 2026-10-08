@@ -1,7 +1,7 @@
 // Notes (study: linked to module/week) and meeting notes (work: client/project).
 
 import { useState } from 'react'
-import type { Note } from '@shared/types'
+import type { Note, PickedDoc } from '@shared/types'
 import { AutoText } from '@/components/AutoField'
 import { NoteEditor } from '@/components/NoteEditor'
 import { Icon } from '@/components/ui'
@@ -10,12 +10,31 @@ import { isoToLocalInput, localInputToIso } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
 import { useMode } from '@/lib/profile'
 import { SharedBanner, ShareButton } from '@/components/ShareButton'
+import { docToNote } from '@/lib/importDoc'
 
 /** Create a note (optionally linked) and open it. */
 export async function newNote(values: Partial<Note>): Promise<Note> {
   const n = await db.create('notes', { title: 'Untitled note', ...values })
   navigate({ name: 'notes', id: n.id })
   return n
+}
+
+/** Turn documents into notes (one note per file). Returns the last note created. */
+export async function importAsNotes(docs: PickedDoc[], values: Partial<Note>, onProgress?: (msg: string) => void): Promise<{ last: Note | null; errors: string[]; skipped: number }> {
+  let last: Note | null = null
+  const errors: string[] = []
+  let skipped = 0
+  for (const [i, d] of docs.entries()) {
+    onProgress?.(`Importing ${i + 1} of ${docs.length}: ${d.name}…`)
+    try {
+      const n = await docToNote(d)
+      skipped += n.skippedImages
+      last = await db.create('notes', { ...values, title: n.title, content: n.content, plain_text: n.plain })
+    } catch (e) {
+      errors.push(`${d.name}: ${e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)}`)
+    }
+  }
+  return { last, errors, skipped }
 }
 
 /** Open the note for a module week, creating it the first time. */
@@ -29,6 +48,30 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
   const mode = useMode()
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState('') // module (study), client (work) or goal (life) filter
+  const [importing, setImporting] = useState<string | null>(null)
+  const [importMsg, setImportMsg] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const baseValues = (): Partial<Note> =>
+    mode === 'study' ? { mode, module_id: group || null } : mode === 'life' ? { mode, project_id: group || null } : { mode, client_id: group || null }
+  const runImport = async (docs: Promise<PickedDoc[]>): Promise<void> => {
+    setImportMsg(null)
+    setImporting('Reading files…')
+    try {
+      const list = await docs
+      if (!list.length) return
+      const r = await importAsNotes(list, baseValues(), setImporting)
+      if (r.last) navigate({ name: 'notes', id: r.last.id })
+      const parts = [
+        r.errors.length ? `Couldn't import: ${r.errors.join('; ')}` : '',
+        r.skipped ? `${r.skipped} picture${r.skipped === 1 ? ' was' : 's were'} left out (unsupported format or the note got too big).` : ''
+      ].filter(Boolean)
+      if (parts.length) setImportMsg(parts.join(' '))
+    } catch (e) {
+      setImportMsg(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
+    } finally {
+      setImporting(null)
+    }
+  }
   const { data } = useLive(
     ['notes', 'modules', 'clients', 'projects'],
     async () => {
@@ -58,10 +101,40 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
   }
 
   return (
-    <div className="flex h-full">
+    <div
+      className="relative flex h-full"
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes('Files')) {
+          e.preventDefault()
+          setDragging(true)
+        }
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) setDragging(false)
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        setDragging(false)
+        const paths = [...e.dataTransfer.files].map((f) => api.materials.pathForFile(f)).filter(Boolean)
+        if (paths.length) void runImport(api.docs.read(paths))
+      }}
+    >
+      {dragging && (
+        <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-accent-soft/80 text-sm font-medium text-accent">
+          Drop Word, PowerPoint, PDF, HTML, Markdown or text files to turn them into notes
+        </div>
+      )}
       <aside className="flex w-72 shrink-0 flex-col border-r border-line">
         <div className="flex items-center gap-2 px-4 pt-5 pb-3">
           <h1 className="flex-1 text-lg font-semibold">{mode === 'work' ? 'Meeting notes' : 'Notes'}</h1>
+          <button
+            className="btn px-2 py-1"
+            title="Import Word, PowerPoint, PDF, HTML, Markdown or text files as notes (or drag them here)"
+            disabled={!!importing}
+            onClick={() => void runImport(api.docs.pick('Import as notes'))}
+          >
+            <Icon name="upload" /> Import
+          </button>
           <button
             className="btn-primary px-2 py-1"
             title="New note"
@@ -78,6 +151,16 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
             <Icon name="plus" />
           </button>
         </div>
+        {(importing || importMsg) && (
+          <div className={`mx-3 mb-2 rounded-lg px-3 py-2 text-xs ${importing ? 'bg-accent-soft text-accent' : 'bg-danger/10 text-danger'}`}>
+            {importing ?? importMsg}
+            {importMsg && (
+              <button className="ml-2 underline" onClick={() => setImportMsg(null)}>
+                OK
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex flex-col gap-2 px-3 pb-2">
           <input className="field-boxed" placeholder="Search notes…" value={search} onChange={(e) => setSearch(e.target.value)} />
           <select className="field-boxed" value={group} onChange={(e) => setGroup(e.target.value)}>

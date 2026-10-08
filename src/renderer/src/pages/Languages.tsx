@@ -13,6 +13,7 @@ import { api, db, useLive } from '@/lib/data'
 import { addDays, localDate } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
 import { isDue } from '@/lib/sm2'
+import { LanguageLearn } from './LanguageLearn'
 
 export const LEVELS = ['A0', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const
 
@@ -214,7 +215,7 @@ async function createLanguage(p: Preset, sort: number): Promise<Language> {
 }
 
 /** Each language's vocabulary lives in its own flashcard deck (made on first use). */
-async function ensureDeck(l: Language): Promise<string> {
+export async function ensureDeck(l: Language): Promise<string> {
   if (l.deck_id && (await api.get('flashcard_decks', l.deck_id))) return l.deck_id
   const deck = await db.create('flashcard_decks', { name: `${l.name} vocab` })
   await db.update('languages', l.id, { deck_id: deck.id })
@@ -449,6 +450,8 @@ export function LanguageDetailPage({ id }: { id: string }): React.JSX.Element {
         <Tile label="All time" value={fmtMin(s.total)} hint="logged + focus" />
         <Tile label="Vocabulary" value={String(s.words)} hint={s.due ? `${s.due} due to review` : 'all reviewed'} />
       </div>
+
+      <LanguageLearn l={l} ensureDeck={ensureDeck} />
 
       <div className="grid gap-5 lg:grid-cols-[1.25fr_1fr]">
         <div className="flex flex-col gap-5">

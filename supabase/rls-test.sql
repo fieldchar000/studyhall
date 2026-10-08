@@ -65,6 +65,9 @@ begin
   insert into languages (id, owner_id, created_at, updated_at, name) values ('lang-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'Japanese');
   insert into habits (id, owner_id, created_at, updated_at, name) values ('habit-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'Read');
   insert into game_state (id, owner_id, created_at, updated_at, currency, state) values ('game-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 300, '{}');
+  insert into journal_entries (id, owner_id, created_at, updated_at, date, mood, content) values ('journal-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01', 4, 'private thoughts');
+  insert into money_entries (id, owner_id, created_at, updated_at, date, amount, kind, category) values ('money-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01', 12.5, 'expense', 'Food & drink');
+  insert into exam_papers (id, owner_id, created_at, updated_at, title, kind) values ('paper-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2024 Paper 1', 'past_paper');
   begin
     insert into modules (id, owner_id, created_at, updated_at, name) values ('mod-hack', b::text, 'x', 'x', 'pretend to be Bob');
     r := r || E'\nFAIL Alice created a row owned by Bob';
@@ -93,6 +96,9 @@ begin
   select count(*) into n from game_state; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s game save' else E'\nFAIL game save leaked' end;
   update game_state set currency = 0, updated_at = '2026-08-01T00:00:00.000Z' where id = 'game-a1'; get diagnostics n = row_count;
   r := r || case when n = 0 then E'\nPASS Bob cannot change Alice''s game save' else E'\nFAIL Bob changed the game save' end;
+  select count(*) into n from journal_entries; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s journal' else E'\nFAIL journal leaked' end;
+  select count(*) into n from money_entries; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s money' else E'\nFAIL money leaked' end;
+  select count(*) into n from exam_papers; r := r || case when n = 0 then E'\nPASS Bob cannot see Alice''s exam papers' else E'\nFAIL exam papers leaked' end;
   execute 'reset role';
 
   -- A shares module (view) and note (edit) with B

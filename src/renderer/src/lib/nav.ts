@@ -27,6 +27,12 @@ export type Route =
   | { name: 'languages' }
   | { name: 'language'; id: string }
   | { name: 'habits' }
+  | { name: 'exams' }
+  | { name: 'journal' }
+  | { name: 'library' }
+  | { name: 'money' }
+  | { name: 'paper'; id: string; timed?: boolean; tab?: 'paper' | 'questions' | 'attempts' }
+  | { name: 'quiz'; paperId?: string; moduleId?: string; review?: boolean }
   | { name: 'friends' }
   | { name: 'servers'; serverId?: string; channelId?: string }
   | { name: 'focus' }

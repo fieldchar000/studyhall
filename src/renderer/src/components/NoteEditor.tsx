@@ -3,9 +3,8 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
 import { Placeholder } from '@tiptap/extensions'
-import { TaskItem, TaskList } from '@tiptap/extension-list'
+import { NOTE_EXTENSIONS } from '@/lib/noteSchema'
 import type { Note } from '@shared/types'
 import { db, registerFlusher } from '@/lib/data'
 import { Icon } from './ui'
@@ -33,12 +32,7 @@ export function NoteEditor({ note, compact = false }: { note: Note; compact?: bo
 
   const editor = useEditor(
     {
-      extensions: [
-        StarterKit, // headings, lists, bold/italic/underline, code, quotes, links, undo
-        Placeholder.configure({ placeholder: 'Start writing… (# for a heading, - for a list, [] for a checklist)' }),
-        TaskList,
-        TaskItem.configure({ nested: true })
-      ],
+      extensions: [...NOTE_EXTENSIONS, Placeholder.configure({ placeholder: 'Start writing… (# for a heading, - for a list, [] for a checklist)' })],
       content: parseContent(note.content),
       editorProps: { attributes: { class: 'note-content outline-none' } },
       onUpdate: ({ editor }) => {

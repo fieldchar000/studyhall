@@ -106,6 +106,8 @@ export interface Profile extends BaseRow {
   username: string | null
   display_name: string
   mode: Mode
+  enabled_modes: string // JSON Mode[]: the categories shown in the sidebar
+  currency: string // e.g. "GBP" ('' = from the system locale)
   grade_scale: string | null
   target_gpa: number | null
   leaderboard_opt_in: number
@@ -320,7 +322,7 @@ export interface GameRow extends BaseRow {
 /** Things the player can do in Pixel Quest (all checked in the main process). */
 export type GameAction =
   | { type: 'tick'; taps: number }
-  | { type: 'summon'; count: 1 | 10; free?: boolean }
+  | { type: 'summon'; count: 1 | 10; free?: boolean; ticket?: boolean }
   | { type: 'level'; hero: string; n: number }
   | { type: 'star'; hero: string }
   | { type: 'party'; party: string[] }
@@ -335,6 +337,13 @@ export interface GameResult {
   boss?: { win: boolean; gems: number }
   relics?: number
   error?: string
+}
+
+/** A document picked for import (old .doc/.ppt already converted to .docx/.pptx). */
+export interface PickedDoc {
+  name: string
+  ext: string // docx | pptx | pdf | html | md | txt | odt | odp
+  data: Uint8Array
 }
 
 /** Result of oEmbed lookups (title/thumbnail) for YouTube or Spotify links. */
@@ -393,6 +402,125 @@ export interface TableMap {
   language_logs: LanguageLog
   habits: Habit
   habit_checks: HabitCheck
+  exam_papers: ExamPaper
+  quiz_questions: QuizQuestion
+  paper_attempts: PaperAttempt
+  journal_entries: JournalEntry
+  media_items: MediaItem
+  money_entries: MoneyEntry
+  budgets: Budget
+  savings_goals: SavingsGoal
+  lang_items: LangItem
+}
+
+export type PaperKind = 'past_paper' | 'mark_scheme' | 'mock' | 'practice' | 'other'
+
+export interface ExamPaper extends BaseRow {
+  module_id: string | null
+  title: string
+  kind: PaperKind
+  year: string
+  paired_id: string | null // the mark scheme for a paper (or the paper for a mark scheme)
+  duration_min: number | null
+  total_marks: number | null
+  file_name: string
+  local_path: string | null
+  size_bytes: number
+  sha256: string | null
+  sync_file: number
+  storage_path: string | null
+  notes: string
+  sort: number
+}
+
+export interface QuizQuestion extends BaseRow {
+  paper_id: string | null
+  module_id: string | null
+  number: string // "3(b)"
+  prompt: string
+  kind: 'mcq' | 'open'
+  options: string // JSON string[]
+  answer: string
+  marks: number | null
+  topic: string
+  sort: number
+  times_seen: number
+  times_right: number
+  ease: number
+  interval_days: number
+  repetitions: number
+  due_at: string | null
+}
+
+export interface PaperAttempt extends BaseRow {
+  paper_id: string | null
+  module_id: string | null
+  kind: 'timed' | 'quiz'
+  date: string
+  duration_sec: number
+  score: number | null
+  max_score: number | null
+  notes: string
+}
+
+export interface JournalEntry extends BaseRow {
+  date: string // YYYY-MM-DD, one per day
+  mood: number | null // 1–5
+  energy: number | null // 1–5
+  sleep_hours: number | null
+  gratitude: string // newline-separated
+  content: string
+  tags: string // JSON string[]
+}
+
+export type MediaKind = 'book' | 'film' | 'show' | 'anime' | 'game' | 'podcast'
+export type MediaStatus = 'want' | 'doing' | 'done' | 'dropped'
+
+export interface MediaItem extends BaseRow {
+  kind: MediaKind
+  title: string
+  creator: string
+  status: MediaStatus
+  progress: number // pages / episodes / hours
+  total: number | null
+  rating: number | null
+  notes: string
+  started_at: string | null
+  finished_at: string | null
+  color: string
+  sort: number
+}
+
+export interface MoneyEntry extends BaseRow {
+  date: string
+  amount: number // always positive; kind says which way
+  kind: 'expense' | 'income'
+  category: string
+  note: string
+}
+
+export interface Budget extends BaseRow {
+  category: string
+  monthly: number
+}
+
+export interface SavingsGoal extends BaseRow {
+  name: string
+  target: number
+  saved: number
+  deadline: string | null
+  color: string
+  sort: number
+}
+
+export interface LangItem extends BaseRow {
+  language_id: string
+  kind: string // 'kana' | 'word' | 'phrase' | 'number' | 'tone'
+  item_key: string
+  seen: number
+  correct: number
+  streak: number
+  last_at: string | null
 }
 export type TableName = keyof TableMap
 
@@ -528,6 +656,21 @@ export interface Api {
     hide(): void
     /** Whether the global shortcut could be registered (false = taken by another app). */
     shortcutStatus(): Promise<{ accelerator: string; registered: boolean }>
+  }
+  papers: {
+    pick(moduleId: string | null): Promise<ExamPaper[]>
+    importPaths(moduleId: string | null, paths: string[]): Promise<ExamPaper[]>
+    /** The paper's contents (for finding questions). */
+    doc(id: string): Promise<PickedDoc | null>
+    openExternal(id: string): Promise<void>
+  }
+  docs: {
+    /** File picker for documents to import; returns their bytes. */
+    pick(title: string): Promise<PickedDoc[]>
+    /** Read dropped files (paths from materials.pathForFile). */
+    read(paths: string[]): Promise<PickedDoc[]>
+    docxToHtml(data: Uint8Array): Promise<string>
+    docxToText(data: Uint8Array): Promise<string>
   }
   game: {
     /** Current game state (fights up to now first). */

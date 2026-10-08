@@ -63,6 +63,18 @@ const api: Api = {
     hide: () => void ipcRenderer.invoke('capture:hide'),
     shortcutStatus: () => ipcRenderer.invoke('capture:status')
   },
+  papers: {
+    pick: (moduleId) => ipcRenderer.invoke('papers:pick', moduleId),
+    importPaths: (moduleId, paths) => ipcRenderer.invoke('papers:import', moduleId, paths),
+    doc: (id) => ipcRenderer.invoke('papers:doc', id),
+    openExternal: (id) => ipcRenderer.invoke('papers:open', id)
+  },
+  docs: {
+    pick: (title) => ipcRenderer.invoke('docs:pick', title),
+    read: (paths) => ipcRenderer.invoke('docs:read', paths),
+    docxToHtml: (data) => ipcRenderer.invoke('docs:docxHtml', data),
+    docxToText: (data) => ipcRenderer.invoke('docs:docxText', data)
+  },
   game: {
     get: () => ipcRenderer.invoke('game:get'),
     act: (action) => ipcRenderer.invoke('game:act', action)

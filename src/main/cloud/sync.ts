@@ -276,10 +276,12 @@ const dataDir = (): string => app.getPath('userData')
 
 async function uploadFiles(): Promise<void> {
   const db = getDb()
-  const todo = db
-    .prepare(`SELECT * FROM materials WHERE owner_id = ? AND deleted_at IS NULL AND sync_file = 1 AND storage_path IS NULL`)
-    .all(uid)
-    .map((r) => ({ ...(r as object) }) as Material)
+  const todo = (['materials', 'exam_papers'] as const).flatMap((table) =>
+    db
+      .prepare(`SELECT * FROM ${table} WHERE owner_id = ? AND deleted_at IS NULL AND sync_file = 1 AND storage_path IS NULL`)
+      .all(uid)
+      .map((r) => ({ ...(r as object), table }) as Material & { table: 'materials' | 'exam_papers' })
+  )
   if (!todo.length) return
   const { data: used, error } = await supabase().rpc('storage_used')
   if (error) throw error
@@ -298,12 +300,12 @@ async function uploadFiles(): Promise<void> {
     const path = `${uid}/${m.id}${extname(m.local_path)}`
     const up = await supabase().storage.from('materials').upload(path, buf, { upsert: true, contentType: 'application/octet-stream' })
     if (up.error) throw up.error
-    update('materials', m.id, { storage_path: path })
+    update(m.table, m.id, { storage_path: path })
   }
 }
 
-/** Make sure a material's file is on this PC, downloading it if it was synced from elsewhere. */
-export async function ensureLocalFile(m: Material): Promise<boolean> {
+/** Make sure a material's (or exam paper's) file is on this PC, downloading it if it was synced from elsewhere. */
+export async function ensureLocalFile(m: Pick<Material, 'local_path' | 'storage_path'>, _table: 'materials' | 'exam_papers' = 'materials'): Promise<boolean> {
   const abs = join(dataDir(), m.local_path ?? '')
   if (m.local_path && existsSync(abs)) return true
   if (!uid || !m.storage_path || !m.local_path) return false

@@ -21,6 +21,10 @@ import { StatsPage } from './pages/Stats'
 import { GamePage } from './pages/Game'
 import { LanguageDetailPage, LanguagesPage } from './pages/Languages'
 import { HabitsPage } from './pages/Habits'
+import { ExamsPage, PaperPage, QuizPage } from './pages/Exams'
+import { JournalPage } from './pages/Journal'
+import { LibraryPage } from './pages/Library'
+import { MoneyPage } from './pages/Money'
 import { SearchPalette } from './components/SearchPalette'
 import { FriendsPage } from './pages/Friends'
 import { ServersPage } from './pages/Servers'
@@ -55,6 +59,12 @@ export function App(): React.JSX.Element {
         {route.name === 'languages' && <LanguagesPage />}
         {route.name === 'language' && <LanguageDetailPage key={route.id} id={route.id} />}
         {route.name === 'habits' && <HabitsPage />}
+        {route.name === 'exams' && <ExamsPage />}
+        {route.name === 'journal' && <JournalPage />}
+        {route.name === 'library' && <LibraryPage />}
+        {route.name === 'money' && <MoneyPage />}
+        {route.name === 'paper' && <PaperPage key={route.id + String(route.timed)} id={route.id} timed={route.timed} tab={route.tab} />}
+        {route.name === 'quiz' && <QuizPage key={JSON.stringify(route)} paperId={route.paperId} moduleId={route.moduleId} review={route.review} />}
         {route.name === 'friends' && <FriendsPage />}
         {route.name === 'servers' && <ServersPage key={route.serverId ?? ''} serverId={route.serverId} channelId={route.channelId} />}
         {route.name === 'focus' && <FocusPage />}

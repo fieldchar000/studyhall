@@ -29,7 +29,16 @@ export const SYNC_TABLES = [
   'languages',
   'language_logs',
   'habits',
-  'habit_checks'
+  'habit_checks',
+  'exam_papers',
+  'quiz_questions',
+  'paper_attempts',
+  'journal_entries',
+  'media_items',
+  'money_entries',
+  'budgets',
+  'savings_goals',
+  'lang_items'
 ] as const
 
 export type SyncTable = (typeof SYNC_TABLES)[number]

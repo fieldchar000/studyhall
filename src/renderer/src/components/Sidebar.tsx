@@ -1,7 +1,7 @@
 import type { Mode } from '@shared/types'
 import { api, useLive } from '@/lib/data'
 import { navigate, useRoute, type Route } from '@/lib/nav'
-import { setMode, useMode } from '@/lib/profile'
+import { setMode, useEnabledModes, useMode } from '@/lib/profile'
 import { fmtClock, PHASE_LABEL, useRemaining, useTimerState } from '@/lib/timer'
 import { openSearch } from './SearchPalette'
 import { useCloud } from '@/lib/cloud'
@@ -36,6 +36,7 @@ const groups: NavItem[][] = [
     // Study
     { label: 'Modules', icon: 'modules', route: { name: 'modules' }, match: ['modules', 'module'], modes: ['study'] },
     projects('Projects', ['study']),
+    { label: 'Exam Prep', icon: 'target', route: { name: 'exams' }, match: ['exams', 'paper', 'quiz'], modes: ['study'] },
     { label: 'Timetable', icon: 'calendar', route: { name: 'timetable' }, match: ['timetable'], modes: ['study'] },
     // Work
     { label: 'Clients', icon: 'clients', route: { name: 'clients' }, match: ['clients', 'client'], modes: ['work'] },
@@ -44,6 +45,9 @@ const groups: NavItem[][] = [
     // Life
     { label: 'Languages', icon: 'globe', route: { name: 'languages' }, match: ['languages', 'language'], modes: ['life'] },
     { label: 'Habits', icon: 'flame', route: { name: 'habits' }, match: ['habits'], modes: ['life'] },
+    { label: 'Journal', icon: 'pencil', route: { name: 'journal' }, match: ['journal'], modes: ['life'] },
+    { label: 'Library', icon: 'cards', route: { name: 'library' }, match: ['library'], modes: ['life'] },
+    { label: 'Money', icon: 'grades', route: { name: 'money' }, match: ['money'], modes: ['life'] },
     projects('Goals', ['life']),
     // Shared
     { label: 'Notes', icon: 'note', route: { name: 'notes' }, match: ['notes'], modes: ['study', 'life'] },
@@ -69,16 +73,23 @@ const MODE_PAGES: Partial<Record<Route['name'], Mode[]>> = {
   module: ['study'],
   timetable: ['study'],
   grades: ['study'],
+  exams: ['study'],
+  paper: ['study'],
+  quiz: ['study'],
   clients: ['work'],
   client: ['work'],
   languages: ['life'],
   language: ['life'],
-  habits: ['life']
+  habits: ['life'],
+  journal: ['life'],
+  library: ['life'],
+  money: ['life']
 }
 
 export function Sidebar(): React.JSX.Element {
   const route = useRoute()
   const mode = useMode()
+  const enabled = useEnabledModes()
   const inboxCount = useLive(['inbox_items'], async () => (await api.list('inbox_items', { processed_at: null })).length, []).data ?? 0
   const cloud = useCloud()
   const serverUnread =
@@ -89,8 +100,9 @@ export function Sidebar(): React.JSX.Element {
       <div className="px-4 pt-5 pb-2">
         <span className="text-base font-semibold tracking-tight">Studyhall</span>
       </div>
-      <div className="mx-2 mb-2 grid grid-cols-3 gap-0.5 rounded-lg bg-line/60 p-0.5" role="tablist" aria-label="Category">
-        {MODES.map((m) => (
+      {enabled.length > 1 && (
+      <div className="mx-2 mb-2 grid gap-0.5 rounded-lg bg-line/60 p-0.5" style={{ gridTemplateColumns: `repeat(${enabled.length}, 1fr)` }} role="tablist" aria-label="Category">
+        {MODES.filter((m) => enabled.includes(m.mode)).map((m) => (
           <button
             key={m.mode}
             role="tab"
@@ -108,6 +120,7 @@ export function Sidebar(): React.JSX.Element {
           </button>
         ))}
       </div>
+      )}
       <button
         onClick={() => openSearch()}
         className="mx-2 mb-2 flex items-center gap-2 rounded-md border border-line bg-panel px-2.5 py-1.5 text-left text-sm text-muted hover:text-ink"

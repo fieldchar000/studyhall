@@ -359,6 +359,12 @@ export class Battle {
       const y = this.heroY(i)
       b.fillStyle = 'rgba(0,0,0,0.25)'
       b.fillRect(x + 3, GROUND + 1 + (i % 2) * 2, 10, 2)
+      if (this.d.power > 0) {
+        // ⚡ Focus Power: a flickering golden outline
+        const glow = Math.sin(this.time * 8 + i) > 0 ? '#fde047' : '#f59e0b'
+        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) drawSprite(b, HERO_SPRITES[HERO[id].cls], {}, x + dx, y + dy, 1, { shadow: glow })
+        if (Math.random() < 0.08) this.parts.push({ x: x + Math.random() * 16, y: y + 14, vx: 0, vy: -18, life: 0.6, max: 0.6, color: '#fde047', size: 1, gravity: 0 })
+      }
       drawSprite(b, HERO_SPRITES[HERO[id].cls], heroPalette(id), x, y, 1)
       if (HERO[id].rarity === 4 && Math.sin(this.time * 6 + i) > 0.7) {
         b.fillStyle = '#fde047'
@@ -391,6 +397,8 @@ export class Battle {
       drawSprite(b, ENEMY_SPRITES[kind], pal, ENEMY_X + walkIn + shakeX, GROUND - 31 + hover, 2, { flip: true, flash: this.hitFlash > 0.03 })
       this.bar(ENEMY_X - 4, 6, 60, this.d.spawn > 0 ? 1 : Math.max(0, this.d.enemyHp / enemyHp(this.d.stage)), '#ef4444')
     }
+
+    if (this.d.power > 0 && !this.boss) this.text('⚡x2', 4, H - 4, '#fde047', 6)
 
     // Projectiles
     for (const s of this.shots) {

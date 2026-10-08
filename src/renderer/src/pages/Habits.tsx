@@ -9,6 +9,9 @@ import { api, db, useLive } from '@/lib/data'
 import { addDays, localDate } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
 import { Heatmap } from './Languages'
+import { MoodPicker, saveDay, useJournal } from './Journal'
+import { useMedia, KINDS } from './Library'
+import { money, useCurrency } from './Money'
 
 const SUGGESTIONS: Pick<Habit, 'name' | 'emoji' | 'color' | 'days_per_week'>[] = [
   { name: 'Read 20 minutes', emoji: '📚', color: '#6366f1', days_per_week: 7 },
@@ -264,8 +267,14 @@ function HabitRow({ h, days, checks }: { h: Habit; days: string[]; checks: Habit
 export function LifeTodayCard(): React.JSX.Element | null {
   const data = useHabits()
   const langs = useLive(['languages'], () => api.list('languages', { active: 1 }, 'sort'), []).data
+  const journal = useJournal()
+  const media = useMedia()
+  const cur = useCurrency()
   const today = localDate(new Date())
+  const spent = useLive(['money_entries'], async () => (await api.list('money_entries', { kind: 'expense' })).filter((e) => e.date.startsWith(today.slice(0, 7))).reduce((s, e) => s + e.amount, 0), [today]).data
   if (!data) return null
+  const mood = journal?.find((e) => e.date === today)?.mood ?? null
+  const reading = (media ?? []).filter((m) => m.status === 'doing').slice(0, 3)
   return (
     <section className="card p-5">
       <div className="mb-3 flex items-center gap-2">
@@ -273,6 +282,13 @@ export function LifeTodayCard(): React.JSX.Element | null {
         <h2 className="flex-1 font-semibold">Today</h2>
         <button className="text-xs text-muted hover:text-ink" onClick={() => navigate({ name: 'habits' })}>
           Habits →
+        </button>
+      </div>
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-xs text-muted">Mood</span>
+        <MoodPicker value={mood} size="text-xl" onPick={(v) => void saveDay(journal ?? [], today, { mood: v })} />
+        <button className="ml-auto text-xs text-muted hover:text-ink" onClick={() => navigate({ name: 'journal' })}>
+          Journal →
         </button>
       </div>
       {data.habits.length === 0 ? (
@@ -294,6 +310,23 @@ export function LifeTodayCard(): React.JSX.Element | null {
             )
           })}
         </ul>
+      )}
+      {reading.length > 0 && (
+        <div className="mt-3 flex flex-col gap-1 border-t border-line pt-3 text-sm">
+          {reading.map((m) => (
+            <button key={m.id} className="flex items-center gap-2 text-left hover:text-accent" onClick={() => navigate({ name: 'library' })}>
+              <span>{KINDS.find((k) => k.id === m.kind)?.icon}</span>
+              <span className="min-w-0 flex-1 truncate">{m.title}</span>
+              {m.total ? <span className="text-xs text-muted">{Math.round((m.progress / m.total) * 100)}%</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+      {spent != null && spent > 0 && (
+        <button className="mt-3 flex w-full items-center gap-2 border-t border-line pt-3 text-left text-sm hover:text-accent" onClick={() => navigate({ name: 'money' })}>
+          💸 <span className="flex-1">Spent this month</span>
+          <span className="font-medium">{money(spent, cur)}</span>
+        </button>
       )}
       {!!langs?.length && (
         <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-3">

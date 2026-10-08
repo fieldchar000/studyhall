@@ -63,6 +63,9 @@ protocol.registerSchemesAsPrivileged([
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
+  '.mjs': 'text/javascript', // e.g. the pdf.js worker
+  '.wasm': 'application/wasm',
+  '.woff': 'font/woff',
   '.css': 'text/css',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',

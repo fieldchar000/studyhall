@@ -2,7 +2,7 @@
 
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { create, get, getDb, getProfileId, list, softDelete, update } from './db'
-import { importPaths, openExternal, pickAndImport, showInFolder } from './files'
+import { importPapers, importPaths, openExternal, openPaperExternal, paperDoc, pickAndImport, pickPapers, showInFolder } from './files'
 import { refreshSubscriptions } from './ics'
 import { getPrefs, setPrefs, SHORTCUTS } from './prefs'
 import { lookup, openSpotify } from './embeds'
@@ -10,6 +10,7 @@ import { openSpotifyPlayer } from './spotify'
 import { checkForUpdates, installUpdate, updateState } from './updater'
 import { search } from './search'
 import { gameAct, getGame, reward } from './game'
+import { docxToHtml, docxToText, pickDocs, readDocs } from './docs'
 import { registerCloudIpc } from './cloud/ipc'
 import { spotifyParts } from '@shared/links'
 import * as timer from './timer'
@@ -114,6 +115,8 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     // Pixel Quest gems for studying
     if (table === 'habit_checks') reward('habit', 1)
     if (table === 'language_logs') reward('language', Number(row.minutes) || 0)
+    if (table === 'paper_attempts' && row.kind === 'timed') reward('paper', 1)
+    if (table === 'lang_items' && Number(row.seen) > 0) reward('quiz', 1)
     return row
   })
   handle('db:update', (_e, table: string, id: string, patch: Record<string, unknown>) => {
@@ -121,6 +124,9 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     const row = update<Record<string, unknown>>(table, id, patch)
     if (table === 'tasks' && before && !before.completed_at && row.completed_at && before.owner_id === getProfileId()) reward('task', 1)
     if (table === 'flashcards' && typeof patch.last_reviewed_at === 'string') reward('card', 1)
+    // Quiz questions and language drills: one answered question = gems
+    if (table === 'quiz_questions' && typeof patch.times_seen === 'number') reward('quiz', 1)
+    if (table === 'lang_items' && typeof patch.seen === 'number') reward('quiz', 1)
     return row
   })
   handle('db:remove', (_e, table: string, id: string) => softDelete(table, id))
@@ -224,6 +230,15 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('profile:update', (_e, patch: Partial<Profile>) => {
     const safe: Partial<Profile> = {}
     if (patch.mode) safe.mode = asMode(patch.mode)
+    if (typeof patch.enabled_modes === 'string') {
+      try {
+        const modes = [...new Set((JSON.parse(patch.enabled_modes) as unknown[]).map(asMode))]
+        if (modes.length) safe.enabled_modes = JSON.stringify(modes)
+      } catch {
+        /* ignore invalid JSON */
+      }
+    }
+    if (typeof patch.currency === 'string' && /^[A-Z]{3}$|^$/.test(patch.currency)) safe.currency = patch.currency
     if (typeof patch.display_name === 'string') safe.display_name = patch.display_name
     if ('leaderboard_opt_in' in patch) safe.leaderboard_opt_in = patch.leaderboard_opt_in ? 1 : 0
     if ('target_gpa' in patch) {
@@ -296,6 +311,17 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('search', (_e, q: string) => search(String(q)))
   handle('capture:hide', () => deps.hideCapture())
   handle('capture:status', () => deps.shortcutStatus())
+  // Exam papers
+  handle('papers:pick', (e, moduleId: string | null) => pickPapers(BrowserWindow.fromWebContents(e.sender)!, moduleId ? String(moduleId) : null))
+  handle('papers:import', (_e, moduleId: string | null, paths: string[]) => importPapers(moduleId ? String(moduleId) : null, (Array.isArray(paths) ? paths : []).map(String)))
+  handle('papers:doc', (_e, id: string) => paperDoc(String(id)))
+  handle('papers:open', (_e, id: string) => openPaperExternal(String(id)))
+
+  // Document import (notes, exam papers)
+  handle('docs:pick', (e, title: string) => pickDocs(BrowserWindow.fromWebContents(e.sender)!, String(title || 'Import')))
+  handle('docs:read', (_e, paths: string[]) => readDocs((Array.isArray(paths) ? paths : []).map(String)))
+  handle('docs:docxHtml', (_e, data: Uint8Array) => docxToHtml(data))
+  handle('docs:docxText', (_e, data: Uint8Array) => docxToText(data))
   handle('game:get', () => getGame())
   handle('game:act', (_e, action: GameAction) => gameAct(action))
 

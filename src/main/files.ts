@@ -7,9 +7,10 @@ import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { create, get, list } from './db'
+import { create, get, list, update } from './db'
 import { ensureLocalFile } from './cloud/sync'
-import type { Material, MaterialKind, Week } from '@shared/types'
+import type { ExamPaper, Material, MaterialKind, PaperKind, PickedDoc, Week } from '@shared/types'
+import { readDocs } from './docs'
 
 const dataDir = (): string => app.getPath('userData')
 
@@ -33,7 +34,7 @@ function hashFile(path: string): Promise<string> {
   })
 }
 
-export function absolutePath(m: Material): string {
+export function absolutePath(m: { local_path: string | null }): string {
   return join(dataDir(), m.local_path ?? '')
 }
 
@@ -114,13 +115,105 @@ const HTML_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
   "img-src data: blob:; font-src data:; media-src data: blob:; sandbox allow-scripts"
 
-/** Handler for material://local/<id>/<file name> — streams a material file to the UI.
+// ---------- Exam papers ----------
+
+/** Guess what a file is from its name: "2023 Paper 1 mark scheme.pdf" → mark scheme, 2023. */
+function guessPaper(name: string): { kind: PaperKind; year: string; title: string } {
+  const base = name.replace(/\.[^.]+$/, '')
+  const lower = base.toLowerCase()
+  const kind: PaperKind = /mark ?scheme|\bms\b|answers?|solutions?|markscheme|marking/.test(lower)
+    ? 'mark_scheme'
+    : /mock/.test(lower)
+      ? 'mock'
+      : /practice|worksheet|exercise|problem ?set/.test(lower)
+        ? 'practice'
+        : 'past_paper'
+  const year = /(19|20)\d{2}/.exec(base)?.[0] ?? ''
+  return { kind, year, title: base.replace(/[_]+/g, ' ').trim() || name }
+}
+
+export async function importPapers(moduleId: string | null, paths: string[]): Promise<ExamPaper[]> {
+  await mkdir(join(dataDir(), 'papers'), { recursive: true })
+  const out: ExamPaper[] = []
+  for (const src of paths.slice(0, 100)) {
+    const info = await stat(src).catch(() => null)
+    if (!info?.isFile()) continue
+    const ext = extname(src).toLowerCase()
+    const rel = `papers/${randomUUID()}${ext}`
+    const dest = join(dataDir(), rel)
+    await copyFile(src, dest)
+    const name = basename(src)
+    const g = guessPaper(name)
+    out.push(
+      create<ExamPaper>('exam_papers', {
+        module_id: moduleId,
+        title: g.title,
+        kind: g.kind,
+        year: g.year,
+        file_name: name,
+        local_path: rel,
+        size_bytes: info.size,
+        sha256: await hashFile(dest)
+      })
+    )
+  }
+  // Pair mark schemes with papers of the same module + year + similar name.
+  const all = list<ExamPaper>('exam_papers', moduleId ? { module_id: moduleId } : { module_id: null })
+  const norm = (t: string): string => t.toLowerCase().replace(/mark ?scheme|markscheme|\bms\b|answers?|solutions?|question ?paper|\bqp\b|[^a-z0-9]/g, '')
+  for (const p of out) {
+    if (p.paired_id) continue
+    const want = p.kind === 'mark_scheme' ? (k: PaperKind) => k !== 'mark_scheme' : (k: PaperKind) => k === 'mark_scheme'
+    const match = all.find((o) => o.id !== p.id && !o.paired_id && want(o.kind) && o.year === p.year && norm(o.title) === norm(p.title))
+    if (match) {
+      update('exam_papers', p.id, { paired_id: match.id })
+      update('exam_papers', match.id, { paired_id: p.id })
+    }
+  }
+  return out
+}
+
+export async function pickPapers(win: BrowserWindow, moduleId: string | null): Promise<ExamPaper[]> {
+  const result = await dialog.showOpenDialog(win, {
+    title: 'Add past papers, mark schemes and practice sheets',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Papers', extensions: ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'html', 'htm', 'txt', 'md', 'odt'] },
+      { name: 'All files', extensions: ['*'] }
+    ]
+  })
+  if (result.canceled) return []
+  return importPapers(moduleId, result.filePaths)
+}
+
+/** The paper's file, read (and converted if it's an old Office format) for question finding. */
+export async function paperDoc(id: string): Promise<PickedDoc | null> {
+  const p = get<ExamPaper>('exam_papers', id)
+  if (!p?.local_path) return null
+  if (!(await ensureLocalFile(p, 'exam_papers'))) throw new Error('This file is only on the PC it was added on (turn on "Sync file" there).')
+  const [doc] = await readDocs([absolutePath(p)])
+  return doc ? { ...doc, name: p.file_name } : null
+}
+
+export async function openPaperExternal(id: string): Promise<void> {
+  const p = get<ExamPaper>('exam_papers', id)
+  if (!p?.local_path) return
+  if (!(await ensureLocalFile(p, 'exam_papers'))) throw new Error('This file is only on the PC it was added on (turn on "Sync file" there).')
+  const path = absolutePath(p)
+  if (RISKY.has(extname(path).toLowerCase())) return shell.showItemInFolder(path)
+  const error = await shell.openPath(path)
+  if (error) throw new Error(error)
+}
+
+/** Handler for material://local/<id>/<file name> — streams a material (or exam paper) file to the UI.
  *  (The file name is only there so the PDF viewer shows it.) */
 export async function serveMaterial(request: Request): Promise<Response> {
   const id = new URL(request.url).pathname.split('/')[1] ?? ''
-  const m = get<Material>('materials', id)
+  const paper = get<ExamPaper>('exam_papers', id)
+  const m: Material | null =
+    get<Material>('materials', id) ??
+    (paper ? ({ ...paper, kind: kindFor(extname(paper.local_path ?? '').toLowerCase()) } as unknown as Material) : null)
   if (!m?.local_path) return new Response('Not found', { status: 404 })
-  if (!(await ensureLocalFile(m))) {
+  if (!(await ensureLocalFile(m, paper ? 'exam_papers' : 'materials'))) {
     return new Response('This file is only on the PC it was added on. Turn on "Sync file" there to see it here.', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' }

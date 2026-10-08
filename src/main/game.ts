@@ -86,10 +86,14 @@ export function gameAct(action: GameAction): GameResult {
     case 'summon': {
       catchUp(data)
       const free = action.free === true
-      const count = free ? 1 : action.count === 10 ? 10 : 1
+      const ticket = action.ticket === true
+      const count = free || ticket ? 1 : action.count === 10 ? 10 : 1
       if (free) {
         if (data.freeDay === localDay()) return { data, error: 'Free summon already used today.' }
         data.freeDay = localDay()
+      } else if (ticket) {
+        if (data.tickets < 1) return { data, error: 'No summon tickets — finish a focus session to earn one.' }
+        data.tickets--
       } else {
         const cost = count === 10 ? SUMMON10_COST : SUMMON_COST
         if (data.gems < cost) return { data, error: 'Not enough gems.' }

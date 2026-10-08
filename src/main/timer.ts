@@ -183,6 +183,8 @@ function finishSession(completed: boolean, endT: number): void {
     })
     const left = Math.floor(state.focusedMs / 60_000) - (state.creditedMin ?? 0)
     if (left > 0) reward('focus', left) // game gems for minutes not yet credited
+    // A finished session of 15+ minutes earns a summon ticket
+    if (completed && state.focusedMs >= 15 * 60_000) reward('session', 1)
   }
   state.sessionId = null
   state.focusedMs = 0

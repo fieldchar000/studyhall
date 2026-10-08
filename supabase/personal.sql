@@ -29,6 +29,8 @@ alter table public.profiles add column if not exists mode text;
 alter table public.profiles add column if not exists grade_scale text;
 alter table public.profiles add column if not exists target_gpa double precision;
 alter table public.profiles add column if not exists leaderboard_opt_in bigint;
+alter table public.profiles add column if not exists enabled_modes text;
+alter table public.profiles add column if not exists currency text;
 alter table public.profiles add column if not exists server_updated_at timestamptz not null default now();
 create index if not exists profiles_sync_idx on public.profiles (server_updated_at);
 create index if not exists profiles_owner_idx on public.profiles (owner_id);
@@ -644,3 +646,234 @@ revoke all on public.habit_checks from anon;
 revoke delete on public.habit_checks from authenticated; -- deletes are soft (deleted_at)
 drop trigger if exists habit_checks_sync_guard on public.habit_checks;
 create trigger habit_checks_sync_guard before insert or update on public.habit_checks for each row execute function public.sync_guard();
+
+-- exam_papers
+create table if not exists public.exam_papers (id text primary key);
+alter table public.exam_papers add column if not exists created_at text;
+alter table public.exam_papers add column if not exists updated_at text;
+alter table public.exam_papers add column if not exists deleted_at text;
+alter table public.exam_papers add column if not exists owner_id text;
+alter table public.exam_papers add column if not exists module_id text;
+alter table public.exam_papers add column if not exists title text;
+alter table public.exam_papers add column if not exists kind text;
+alter table public.exam_papers add column if not exists year text;
+alter table public.exam_papers add column if not exists paired_id text;
+alter table public.exam_papers add column if not exists duration_min bigint;
+alter table public.exam_papers add column if not exists total_marks double precision;
+alter table public.exam_papers add column if not exists file_name text;
+alter table public.exam_papers add column if not exists local_path text;
+alter table public.exam_papers add column if not exists size_bytes bigint;
+alter table public.exam_papers add column if not exists sha256 text;
+alter table public.exam_papers add column if not exists sync_file bigint;
+alter table public.exam_papers add column if not exists storage_path text;
+alter table public.exam_papers add column if not exists notes text;
+alter table public.exam_papers add column if not exists sort double precision;
+alter table public.exam_papers add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists exam_papers_sync_idx on public.exam_papers (server_updated_at);
+create index if not exists exam_papers_owner_idx on public.exam_papers (owner_id);
+alter table public.exam_papers enable row level security;
+drop policy if exists "own rows" on public.exam_papers;
+create policy "own rows" on public.exam_papers for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.exam_papers from anon;
+revoke delete on public.exam_papers from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists exam_papers_sync_guard on public.exam_papers;
+create trigger exam_papers_sync_guard before insert or update on public.exam_papers for each row execute function public.sync_guard();
+
+-- quiz_questions
+create table if not exists public.quiz_questions (id text primary key);
+alter table public.quiz_questions add column if not exists created_at text;
+alter table public.quiz_questions add column if not exists updated_at text;
+alter table public.quiz_questions add column if not exists deleted_at text;
+alter table public.quiz_questions add column if not exists owner_id text;
+alter table public.quiz_questions add column if not exists paper_id text;
+alter table public.quiz_questions add column if not exists module_id text;
+alter table public.quiz_questions add column if not exists number text;
+alter table public.quiz_questions add column if not exists prompt text;
+alter table public.quiz_questions add column if not exists kind text;
+alter table public.quiz_questions add column if not exists options text;
+alter table public.quiz_questions add column if not exists answer text;
+alter table public.quiz_questions add column if not exists marks double precision;
+alter table public.quiz_questions add column if not exists topic text;
+alter table public.quiz_questions add column if not exists sort double precision;
+alter table public.quiz_questions add column if not exists times_seen bigint;
+alter table public.quiz_questions add column if not exists times_right bigint;
+alter table public.quiz_questions add column if not exists ease double precision;
+alter table public.quiz_questions add column if not exists interval_days bigint;
+alter table public.quiz_questions add column if not exists repetitions bigint;
+alter table public.quiz_questions add column if not exists due_at text;
+alter table public.quiz_questions add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists quiz_questions_sync_idx on public.quiz_questions (server_updated_at);
+create index if not exists quiz_questions_owner_idx on public.quiz_questions (owner_id);
+alter table public.quiz_questions enable row level security;
+drop policy if exists "own rows" on public.quiz_questions;
+create policy "own rows" on public.quiz_questions for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.quiz_questions from anon;
+revoke delete on public.quiz_questions from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists quiz_questions_sync_guard on public.quiz_questions;
+create trigger quiz_questions_sync_guard before insert or update on public.quiz_questions for each row execute function public.sync_guard();
+
+-- paper_attempts
+create table if not exists public.paper_attempts (id text primary key);
+alter table public.paper_attempts add column if not exists created_at text;
+alter table public.paper_attempts add column if not exists updated_at text;
+alter table public.paper_attempts add column if not exists deleted_at text;
+alter table public.paper_attempts add column if not exists owner_id text;
+alter table public.paper_attempts add column if not exists paper_id text;
+alter table public.paper_attempts add column if not exists module_id text;
+alter table public.paper_attempts add column if not exists kind text;
+alter table public.paper_attempts add column if not exists date text;
+alter table public.paper_attempts add column if not exists duration_sec bigint;
+alter table public.paper_attempts add column if not exists score double precision;
+alter table public.paper_attempts add column if not exists max_score double precision;
+alter table public.paper_attempts add column if not exists notes text;
+alter table public.paper_attempts add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists paper_attempts_sync_idx on public.paper_attempts (server_updated_at);
+create index if not exists paper_attempts_owner_idx on public.paper_attempts (owner_id);
+alter table public.paper_attempts enable row level security;
+drop policy if exists "own rows" on public.paper_attempts;
+create policy "own rows" on public.paper_attempts for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.paper_attempts from anon;
+revoke delete on public.paper_attempts from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists paper_attempts_sync_guard on public.paper_attempts;
+create trigger paper_attempts_sync_guard before insert or update on public.paper_attempts for each row execute function public.sync_guard();
+
+-- journal_entries
+create table if not exists public.journal_entries (id text primary key);
+alter table public.journal_entries add column if not exists created_at text;
+alter table public.journal_entries add column if not exists updated_at text;
+alter table public.journal_entries add column if not exists deleted_at text;
+alter table public.journal_entries add column if not exists owner_id text;
+alter table public.journal_entries add column if not exists date text;
+alter table public.journal_entries add column if not exists mood bigint;
+alter table public.journal_entries add column if not exists energy bigint;
+alter table public.journal_entries add column if not exists sleep_hours double precision;
+alter table public.journal_entries add column if not exists gratitude text;
+alter table public.journal_entries add column if not exists content text;
+alter table public.journal_entries add column if not exists tags text;
+alter table public.journal_entries add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists journal_entries_sync_idx on public.journal_entries (server_updated_at);
+create index if not exists journal_entries_owner_idx on public.journal_entries (owner_id);
+alter table public.journal_entries enable row level security;
+drop policy if exists "own rows" on public.journal_entries;
+create policy "own rows" on public.journal_entries for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.journal_entries from anon;
+revoke delete on public.journal_entries from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists journal_entries_sync_guard on public.journal_entries;
+create trigger journal_entries_sync_guard before insert or update on public.journal_entries for each row execute function public.sync_guard();
+
+-- media_items
+create table if not exists public.media_items (id text primary key);
+alter table public.media_items add column if not exists created_at text;
+alter table public.media_items add column if not exists updated_at text;
+alter table public.media_items add column if not exists deleted_at text;
+alter table public.media_items add column if not exists owner_id text;
+alter table public.media_items add column if not exists kind text;
+alter table public.media_items add column if not exists title text;
+alter table public.media_items add column if not exists creator text;
+alter table public.media_items add column if not exists status text;
+alter table public.media_items add column if not exists progress bigint;
+alter table public.media_items add column if not exists total bigint;
+alter table public.media_items add column if not exists rating bigint;
+alter table public.media_items add column if not exists notes text;
+alter table public.media_items add column if not exists started_at text;
+alter table public.media_items add column if not exists finished_at text;
+alter table public.media_items add column if not exists color text;
+alter table public.media_items add column if not exists sort double precision;
+alter table public.media_items add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists media_items_sync_idx on public.media_items (server_updated_at);
+create index if not exists media_items_owner_idx on public.media_items (owner_id);
+alter table public.media_items enable row level security;
+drop policy if exists "own rows" on public.media_items;
+create policy "own rows" on public.media_items for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.media_items from anon;
+revoke delete on public.media_items from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists media_items_sync_guard on public.media_items;
+create trigger media_items_sync_guard before insert or update on public.media_items for each row execute function public.sync_guard();
+
+-- money_entries
+create table if not exists public.money_entries (id text primary key);
+alter table public.money_entries add column if not exists created_at text;
+alter table public.money_entries add column if not exists updated_at text;
+alter table public.money_entries add column if not exists deleted_at text;
+alter table public.money_entries add column if not exists owner_id text;
+alter table public.money_entries add column if not exists date text;
+alter table public.money_entries add column if not exists amount double precision;
+alter table public.money_entries add column if not exists kind text;
+alter table public.money_entries add column if not exists category text;
+alter table public.money_entries add column if not exists note text;
+alter table public.money_entries add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists money_entries_sync_idx on public.money_entries (server_updated_at);
+create index if not exists money_entries_owner_idx on public.money_entries (owner_id);
+alter table public.money_entries enable row level security;
+drop policy if exists "own rows" on public.money_entries;
+create policy "own rows" on public.money_entries for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.money_entries from anon;
+revoke delete on public.money_entries from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists money_entries_sync_guard on public.money_entries;
+create trigger money_entries_sync_guard before insert or update on public.money_entries for each row execute function public.sync_guard();
+
+-- budgets
+create table if not exists public.budgets (id text primary key);
+alter table public.budgets add column if not exists created_at text;
+alter table public.budgets add column if not exists updated_at text;
+alter table public.budgets add column if not exists deleted_at text;
+alter table public.budgets add column if not exists owner_id text;
+alter table public.budgets add column if not exists category text;
+alter table public.budgets add column if not exists monthly double precision;
+alter table public.budgets add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists budgets_sync_idx on public.budgets (server_updated_at);
+create index if not exists budgets_owner_idx on public.budgets (owner_id);
+alter table public.budgets enable row level security;
+drop policy if exists "own rows" on public.budgets;
+create policy "own rows" on public.budgets for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.budgets from anon;
+revoke delete on public.budgets from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists budgets_sync_guard on public.budgets;
+create trigger budgets_sync_guard before insert or update on public.budgets for each row execute function public.sync_guard();
+
+-- savings_goals
+create table if not exists public.savings_goals (id text primary key);
+alter table public.savings_goals add column if not exists created_at text;
+alter table public.savings_goals add column if not exists updated_at text;
+alter table public.savings_goals add column if not exists deleted_at text;
+alter table public.savings_goals add column if not exists owner_id text;
+alter table public.savings_goals add column if not exists name text;
+alter table public.savings_goals add column if not exists target double precision;
+alter table public.savings_goals add column if not exists saved double precision;
+alter table public.savings_goals add column if not exists deadline text;
+alter table public.savings_goals add column if not exists color text;
+alter table public.savings_goals add column if not exists sort double precision;
+alter table public.savings_goals add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists savings_goals_sync_idx on public.savings_goals (server_updated_at);
+create index if not exists savings_goals_owner_idx on public.savings_goals (owner_id);
+alter table public.savings_goals enable row level security;
+drop policy if exists "own rows" on public.savings_goals;
+create policy "own rows" on public.savings_goals for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.savings_goals from anon;
+revoke delete on public.savings_goals from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists savings_goals_sync_guard on public.savings_goals;
+create trigger savings_goals_sync_guard before insert or update on public.savings_goals for each row execute function public.sync_guard();
+
+-- lang_items
+create table if not exists public.lang_items (id text primary key);
+alter table public.lang_items add column if not exists created_at text;
+alter table public.lang_items add column if not exists updated_at text;
+alter table public.lang_items add column if not exists deleted_at text;
+alter table public.lang_items add column if not exists owner_id text;
+alter table public.lang_items add column if not exists language_id text;
+alter table public.lang_items add column if not exists kind text;
+alter table public.lang_items add column if not exists item_key text;
+alter table public.lang_items add column if not exists seen bigint;
+alter table public.lang_items add column if not exists correct bigint;
+alter table public.lang_items add column if not exists streak bigint;
+alter table public.lang_items add column if not exists last_at text;
+alter table public.lang_items add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists lang_items_sync_idx on public.lang_items (server_updated_at);
+create index if not exists lang_items_owner_idx on public.lang_items (owner_id);
+alter table public.lang_items enable row level security;
+drop policy if exists "own rows" on public.lang_items;
+create policy "own rows" on public.lang_items for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.lang_items from anon;
+revoke delete on public.lang_items from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists lang_items_sync_guard on public.lang_items;
+create trigger lang_items_sync_guard before insert or update on public.lang_items for each row execute function public.sync_guard();

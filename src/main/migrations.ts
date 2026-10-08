@@ -362,5 +362,125 @@ export const migrations: Migration[] = [
 
     ALTER TABLE focus_sessions ADD COLUMN language_id TEXT REFERENCES languages(id);
     `)
-  }
+  },
+
+  // 6 — Exam prep (papers, quizzes, attempts), more Life (journal, library, money),
+  //     language practice progress, and which categories (study/work/life) you use
+  `
+  ALTER TABLE profiles ADD COLUMN enabled_modes TEXT NOT NULL DEFAULT '["study","life"]';
+  ALTER TABLE profiles ADD COLUMN currency TEXT NOT NULL DEFAULT '';
+
+  CREATE TABLE exam_papers (${base},
+    module_id TEXT REFERENCES modules(id),
+    title TEXT NOT NULL DEFAULT 'Untitled paper',
+    kind TEXT NOT NULL DEFAULT 'past_paper' CHECK (kind IN ('past_paper','mark_scheme','mock','practice','other')),
+    year TEXT NOT NULL DEFAULT '',
+    paired_id TEXT,
+    duration_min INTEGER,
+    total_marks REAL,
+    file_name TEXT NOT NULL DEFAULT '',
+    local_path TEXT,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    sha256 TEXT,
+    sync_file INTEGER NOT NULL DEFAULT 0,
+    storage_path TEXT,
+    notes TEXT NOT NULL DEFAULT '',
+    sort REAL NOT NULL DEFAULT 0
+  );
+  CREATE INDEX idx_papers_module ON exam_papers(module_id);
+
+  CREATE TABLE quiz_questions (${base},
+    paper_id TEXT REFERENCES exam_papers(id),
+    module_id TEXT REFERENCES modules(id),
+    number TEXT NOT NULL DEFAULT '',
+    prompt TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'open' CHECK (kind IN ('mcq','open')),
+    options TEXT NOT NULL DEFAULT '[]',
+    answer TEXT NOT NULL DEFAULT '',
+    marks REAL,
+    topic TEXT NOT NULL DEFAULT '',
+    sort REAL NOT NULL DEFAULT 0,
+    times_seen INTEGER NOT NULL DEFAULT 0,
+    times_right INTEGER NOT NULL DEFAULT 0,
+    ease REAL NOT NULL DEFAULT 2.5,
+    interval_days INTEGER NOT NULL DEFAULT 0,
+    repetitions INTEGER NOT NULL DEFAULT 0,
+    due_at TEXT
+  );
+  CREATE INDEX idx_questions_paper ON quiz_questions(paper_id);
+  CREATE INDEX idx_questions_module ON quiz_questions(module_id);
+
+  CREATE TABLE paper_attempts (${base},
+    paper_id TEXT REFERENCES exam_papers(id),
+    module_id TEXT REFERENCES modules(id),
+    kind TEXT NOT NULL DEFAULT 'timed' CHECK (kind IN ('timed','quiz')),
+    date TEXT NOT NULL,
+    duration_sec INTEGER NOT NULL DEFAULT 0,
+    score REAL,
+    max_score REAL,
+    notes TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX idx_attempts_paper ON paper_attempts(paper_id);
+
+  CREATE TABLE journal_entries (${base},
+    date TEXT NOT NULL,
+    mood INTEGER CHECK (mood BETWEEN 1 AND 5),
+    energy INTEGER CHECK (energy BETWEEN 1 AND 5),
+    sleep_hours REAL,
+    gratitude TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '[]'
+  );
+  CREATE INDEX idx_journal_date ON journal_entries(date);
+
+  CREATE TABLE media_items (${base},
+    kind TEXT NOT NULL DEFAULT 'book' CHECK (kind IN ('book','film','show','anime','game','podcast')),
+    title TEXT NOT NULL DEFAULT 'Untitled',
+    creator TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'want' CHECK (status IN ('want','doing','done','dropped')),
+    progress INTEGER NOT NULL DEFAULT 0,
+    total INTEGER,
+    rating INTEGER CHECK (rating BETWEEN 1 AND 5),
+    notes TEXT NOT NULL DEFAULT '',
+    started_at TEXT,
+    finished_at TEXT,
+    color TEXT NOT NULL DEFAULT '#6366f1',
+    sort REAL NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE money_entries (${base},
+    date TEXT NOT NULL,
+    amount REAL NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL DEFAULT 'expense' CHECK (kind IN ('expense','income')),
+    category TEXT NOT NULL DEFAULT 'Other',
+    note TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX idx_money_date ON money_entries(date);
+
+  CREATE TABLE budgets (${base},
+    category TEXT NOT NULL,
+    monthly REAL NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE savings_goals (${base},
+    name TEXT NOT NULL DEFAULT 'New goal',
+    target REAL NOT NULL DEFAULT 100,
+    saved REAL NOT NULL DEFAULT 0,
+    deadline TEXT,
+    color TEXT NOT NULL DEFAULT '#10b981',
+    sort REAL NOT NULL DEFAULT 0
+  );
+
+  -- Practice progress for built-in language content (kana, starter words, phrases…)
+  CREATE TABLE lang_items (${base},
+    language_id TEXT NOT NULL REFERENCES languages(id),
+    kind TEXT NOT NULL,
+    item_key TEXT NOT NULL,
+    seen INTEGER NOT NULL DEFAULT 0,
+    correct INTEGER NOT NULL DEFAULT 0,
+    streak INTEGER NOT NULL DEFAULT 0,
+    last_at TEXT
+  );
+  CREATE INDEX idx_langitems_lang ON lang_items(language_id, kind);
+  `
 ]

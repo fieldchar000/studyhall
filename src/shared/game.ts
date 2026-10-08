@@ -4,6 +4,8 @@
 //
 // Loop: study → 💎 gems → summon heroes → party auto-battles stages → 🪙 gold →
 // level heroes → beat the boss every 10 stages → new zone (with a new weakness).
+// Focusing also charges ⚡ Focus Power (double damage and gold) and every finished
+// focus session gives a summon ticket, so studying directly powers the party.
 
 export type Element = 'fire' | 'water' | 'leaf' | 'light' | 'dark'
 export type HeroClass = 'knight' | 'archer' | 'mage' | 'rogue' | 'cleric'
@@ -101,13 +103,20 @@ export const MAX_STARS = 5
 export const SPARE_DUPE_GEMS = 25 // duplicate of a 5★ hero
 export const MAX_TAPS_PER_SEC = 15
 export const RESPAWN_SECONDS = 1 // the next enemy walks in
+export const POWER_PER_MIN = 180 // each focused minute charges 3 minutes of Focus Power
+export const POWER_MULT = 2 // damage and gold while Focus Power lasts
+export const POWER_CAP = 8 * 3600
+export const TICKETS_PER_DAY = 6
 export const REBIRTH_MIN_STAGE = 40
 
 /** What studying earns: gems per unit, and how many units count per day. */
 export const REWARDS = {
-  focus: { gems: 5, cap: 600, label: 'focused minute' },
+  focus: { gems: 5, cap: 600, label: 'focused minute (+3 min ⚡ Focus Power)' },
+  session: { gems: 20, cap: TICKETS_PER_DAY, label: 'focus session finished (+1 🎟️ summon ticket)' },
   task: { gems: 15, cap: 12, label: 'task completed' },
   card: { gems: 1, cap: 150, label: 'flashcard reviewed' },
+  quiz: { gems: 2, cap: 150, label: 'quiz or practice question answered' },
+  paper: { gems: 50, cap: 3, label: 'timed past paper finished' },
   habit: { gems: 10, cap: 10, label: 'habit checked off' },
   language: { gems: 3, cap: 90, label: 'minute of language practice logged' }
 } as const
@@ -178,6 +187,10 @@ export interface GameData {
   today: Partial<Record<RewardKind, number>>
   gemsToday: number
   stats: { gemsEarned: number; goldEarned: number; kills: number; bosses: number; focusMin: number }
+  power: number // seconds of ⚡ Focus Power left (charged by focusing)
+  tickets: number // 🎟️ summon tickets (one per finished focus session)
+  focusStreak: number // days in a row with focus
+  focusDay: string | null // last local date with focus
   away: AwaySummary | null // shown once as "welcome back"
 }
 
@@ -209,7 +222,11 @@ export function newGame(): GameData {
     today: {},
     gemsToday: 0,
     stats: { gemsEarned: 0, goldEarned: 0, kills: 0, bosses: 0, focusMin: 0 },
-    away: null
+    away: null,
+    power: 0,
+    tickets: 0,
+    focusStreak: 0,
+    focusDay: null
   }
 }
 
@@ -255,7 +272,10 @@ const has = (d: GameData, cls: HeroClass): boolean => d.party.some((id) => HERO[
 export const collectionBonus = (d: GameData): number => 1 + 0.03 * Object.keys(d.heroes).length
 export const relicDamage = (d: GameData): number => 1 + 0.1 * d.relics
 export const relicGold = (d: GameData): number => 1 + 0.05 * d.relics
-export const goldMult = (d: GameData): number => (has(d, 'rogue') ? 1.3 : 1) * relicGold(d)
+export const powered = (d: GameData): boolean => d.power > 0
+export const goldMult = (d: GameData): number => (has(d, 'rogue') ? 1.3 : 1) * relicGold(d) * (powered(d) ? POWER_MULT : 1)
+/** Focus streak bonus on focus gems: +10% per day in a row after the first, up to +50%. */
+export const streakBonus = (d: GameData): number => 1 + 0.1 * Math.min(5, Math.max(0, d.focusStreak - 1))
 export const bossSeconds = (d: GameData): number => BOSS_SECONDS + (has(d, 'knight') ? 5 : 0)
 
 /** Party damage per second against an enemy of element `el`. */
@@ -269,6 +289,7 @@ export function partyDps(d: GameData, el: Element, boss: boolean): number {
   if (has(d, 'cleric')) mult *= 1.15
   if (!boss && has(d, 'archer')) mult *= 1.25
   if (boss && has(d, 'mage')) mult *= 1.5
+  if (powered(d)) mult *= POWER_MULT
   return sum * mult
 }
 
@@ -350,27 +371,35 @@ export function advance(d: GameData, seconds: number, extraDamage = 0): Progress
       extra = 0
     }
     if (t <= 0) break
+    // Focus Power runs in real time; fight up to the moment it ends, then re-check.
+    const seg = d.power > 0 ? Math.min(t, d.power) : t
     if (d.spawn > 0) {
       // the next enemy is still walking in
-      const w = Math.min(d.spawn, t)
+      const w = Math.min(d.spawn, seg)
       d.spawn -= w
       t -= w
+      if (d.power > 0) d.power = Math.max(0, d.power - w)
       continue
     }
     const dps = partyDps(d, zoneOf(d.stage).el, false)
     if (dps <= 0) break
     const need = d.enemyHp / dps
-    if (need > t) {
-      d.enemyHp -= dps * t
-      break
+    if (need > seg) {
+      d.enemyHp -= dps * seg
+      t -= seg
+      if (d.power > 0) d.power = Math.max(0, d.power - seg)
+      continue
     }
     t -= need
+    if (d.power > 0) d.power = Math.max(0, d.power - need)
     killOne(d, r)
     // Waiting at a boss we can't beat: farm the rest in one go.
     if (bossReady(d) && !(d.autoBoss && canAutoBeat(d, d.stage + 1))) {
       const per = enemyHp(d.stage) / dps + RESPAWN_SECONDS
-      const n = Math.floor(t / per)
+      const window = d.power > 0 ? Math.min(t, d.power) : t
+      const n = Math.floor(window / per)
       if (n > 0) {
+        if (d.power > 0) d.power = Math.max(0, d.power - n * per)
         const g = n * goldPerKill(d.stage) * goldMult(d)
         d.gold += g
         r.gold += g
@@ -473,7 +502,22 @@ export function addReward(d: GameData, kind: RewardKind, units: number): number 
   d.gems += gems
   d.gemsToday += gems
   d.stats.gemsEarned += gems
-  if (kind === 'focus') d.stats.focusMin += n
+  if (kind === 'focus') {
+    d.stats.focusMin += n
+    d.power = Math.min(POWER_CAP, d.power + n * POWER_PER_MIN)
+    if (d.focusDay !== day) {
+      const yesterday = localDay(new Date(Date.now() - 864e5))
+      d.focusStreak = d.focusDay === yesterday ? d.focusStreak + 1 : 1
+      d.focusDay = day
+    }
+    // streak bonus on top
+    const bonus = Math.round(gems * (streakBonus(d) - 1))
+    d.gems += bonus
+    d.gemsToday += bonus
+    d.stats.gemsEarned += bonus
+    return gems + bonus
+  }
+  if (kind === 'session') d.tickets += n
   return gems
 }
 
