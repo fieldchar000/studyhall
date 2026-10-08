@@ -1,0 +1,22 @@
+# Builds the Windows installer: npm run dist  ->  dist/Studyhall-Setup-<version>.exe
+appId: com.studyhall.app
+productName: Studyhall
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+nsis:
+  # One-click, per-user install: no admin prompt, installs to %LOCALAPPDATA%\Programs\Studyhall
+  oneClick: true
+  perMachine: false
+  artifactName: Studyhall-Setup-${version}.${ext}
+  shortcutName: Studyhall
+  # Keep the user's data (%APPDATA%\Studyhall) if the app is uninstalled
+  deleteAppDataOnUninstall: false

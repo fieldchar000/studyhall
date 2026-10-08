@@ -1,0 +1,131 @@
+@import 'tailwindcss';
+
+/* Colour tokens. Use them as bg-canvas, text-ink, border-line, etc.
+   Dark mode follows Windows' light/dark setting automatically. */
+@theme {
+  --color-canvas: #f7f7f8;
+  --color-panel: #ffffff;
+  --color-sidebar: #efeff2;
+  --color-line: #e3e3e8;
+  --color-ink: #17181c;
+  --color-muted: #6b6e78;
+  --color-accent: #5b5bd6;
+  --color-accent-soft: #ececfb;
+  --color-danger: #d4363b;
+  --color-ok: #2f9e5b;
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-canvas: #0f1115;
+    --color-panel: #171a20;
+    --color-sidebar: #13151a;
+    --color-line: #272b34;
+    --color-ink: #e8e9ed;
+    --color-muted: #9599a6;
+    --color-accent: #8b8bf0;
+    --color-accent-soft: #23243d;
+    --color-danger: #f0686c;
+    --color-ok: #5cc98a;
+  }
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Reusable component classes. Inside @layer components so utility classes
+   (e.g. w-auto) placed next to them still win. */
+@layer components {
+/* Inputs that look like plain text until you hover/focus them (inline editing). */
+.field {
+  @apply w-full rounded-md border border-transparent bg-transparent px-2 py-1 outline-none transition-colors;
+  @apply hover:border-line focus:border-accent focus:bg-panel;
+}
+.field-boxed {
+  @apply w-full rounded-md border border-line bg-panel px-2 py-1.5 outline-none focus:border-accent;
+}
+.btn {
+  @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium;
+  @apply hover:bg-canvas disabled:opacity-50;
+}
+.btn-primary {
+  @apply inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90;
+}
+.btn-ghost {
+  @apply inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted hover:bg-line/60 hover:text-ink;
+}
+.card {
+  @apply rounded-xl border border-line bg-panel;
+}
+}
+
+/* Slim scrollbars that suit both themes */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-muted);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* FullCalendar theming via its CSS variables */
+.fc {
+  --fc-border-color: var(--color-line);
+  --fc-page-bg-color: var(--color-panel);
+  --fc-neutral-bg-color: var(--color-canvas);
+  --fc-today-bg-color: var(--color-accent-soft);
+  --fc-now-indicator-color: var(--color-danger);
+  --fc-button-bg-color: var(--color-panel);
+  --fc-button-border-color: var(--color-line);
+  --fc-button-text-color: var(--color-ink);
+  --fc-button-hover-bg-color: var(--color-canvas);
+  --fc-button-hover-border-color: var(--color-line);
+  --fc-button-active-bg-color: var(--color-accent-soft);
+  --fc-button-active-border-color: var(--color-accent);
+  --fc-event-border-color: transparent;
+  font-size: 13px;
+}
+.fc .fc-button {
+  font-size: 13px;
+  padding: 0.3em 0.75em;
+  box-shadow: none !important;
+}
+.fc .fc-toolbar-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+.fc .fc-col-header-cell-cushion,
+.fc .fc-daygrid-day-number {
+  color: var(--color-muted);
+  text-decoration: none;
+}
+.fc-event {
+  cursor: pointer;
+}
