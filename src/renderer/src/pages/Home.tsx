@@ -13,6 +13,7 @@ import { navigate } from '@/lib/nav'
 import { useMode } from '@/lib/profile'
 import { addToTop3, isOverdue, openTask, removeFromTop3, setDone, todayStr } from '@/lib/tasks'
 import { ExamCountdownPanel } from '@/components/RevisionPlanner'
+import { SpotifyPanel } from '@/components/SpotifyPanel'
 
 export function HomePage(): React.JSX.Element {
   // Task rows in the side panels can be dragged onto the calendar to block out time.
@@ -41,6 +42,7 @@ export function HomePage(): React.JSX.Element {
         <ExamCountdownPanel />
         <PlanPanel />
         <DeadlinesPanel />
+        <SpotifyPanel />
         <SubscriptionsPanel />
       </div>
     </div>

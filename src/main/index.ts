@@ -1,13 +1,13 @@
 ﻿// Main process: creates the window, owns the database, enforces security rules.
 
-import { app, BrowserWindow, Menu, nativeTheme, Notification, protocol, session, shell } from 'electron'
+import { app, BrowserWindow, globalShortcut, Menu, nativeTheme, Notification, protocol, screen, session, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
-import { closeDb, getSetting, openDb, setSetting } from './db'
+import { closeDb, getSetting, onDbChange, openDb, setSetting } from './db'
 import { serveMaterial } from './files'
 import { refreshSubscriptions } from './ics'
-import { registerIpc } from './ipc'
-import { applyLoginItem, getPrefs } from './prefs'
+import { currentSenderId, registerIpc } from './ipc'
+import { applyLoginItem, getPrefs, watchShortcut } from './prefs'
 import { checkDeadlines } from './reminders'
 import * as timer from './timer'
 import { createTray, updateTray } from './tray'
@@ -30,10 +30,12 @@ const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: material:",
+  // thumbnails from YouTube/Spotify
+  "img-src 'self' data: material: https://i.ytimg.com https://*.scdn.co https://*.spotifycdn.com",
   "font-src 'self' data:",
   "connect-src 'self'",
-  'frame-src material:',
+  // course-file previews + the two embedded players
+  'frame-src material: https://open.spotify.com https://www.youtube-nocookie.com',
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'"
@@ -78,7 +80,71 @@ async function serveApp(request: Request): Promise<Response> {
 }
 
 let mainWindow: BrowserWindow | null = null
+let captureWindow: BrowserWindow | null = null
 let quitting = false // true once the user really wants to exit (tray "Quit", Windows shutdown)
+
+const SECURE_PREFS = {
+  preload: join(__dirname, '../preload/index.js'),
+  contextIsolation: true, // UI can't touch preload/Electron internals
+  nodeIntegration: false, // UI has no Node.js
+  sandbox: true, // UI runs in Chromium's OS-level sandbox
+  webSecurity: true,
+  spellcheck: true
+}
+
+const appUrl = (hash = ''): string => (DEV_URL ? `${DEV_URL}${hash}` : `${APP_ORIGIN}/index.html${hash}`)
+
+// ---------- Quick capture: a small always-on-top box opened by a global shortcut ----------
+
+const CAPTURE_W = 620
+const CAPTURE_H = 76
+
+function showCapture(): void {
+  const position = (): void => {
+    const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
+    captureWindow!.setPosition(Math.round(area.x + (area.width - CAPTURE_W) / 2), Math.round(area.y + area.height * 0.22))
+    captureWindow!.show()
+    captureWindow!.focus()
+    captureWindow!.webContents.send('capture:show')
+  }
+  if (captureWindow && !captureWindow.isDestroyed()) return position()
+
+  captureWindow = new BrowserWindow({
+    width: CAPTURE_W,
+    height: CAPTURE_H,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    title: 'Quick capture',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#171a20' : '#ffffff',
+    webPreferences: SECURE_PREFS
+  })
+  captureWindow.on('blur', () => captureWindow?.hide()) // click elsewhere = dismiss
+  captureWindow.on('close', (e) => {
+    if (quitting) return
+    e.preventDefault()
+    captureWindow?.hide()
+  })
+  captureWindow.once('ready-to-show', position)
+  captureWindow.loadURL(appUrl('#capture'))
+}
+
+let shortcut = { accelerator: '', registered: false }
+function applyShortcut(accelerator: string): void {
+  if (shortcut.accelerator) globalShortcut.unregister(shortcut.accelerator)
+  let registered = false
+  try {
+    registered = accelerator ? globalShortcut.register(accelerator, showCapture) : false
+  } catch {
+    registered = false
+  }
+  shortcut = { accelerator, registered }
+}
 
 /** Bring the window back (from the tray, a notification, or a second launch). */
 function showWindow(page?: string): void {
@@ -114,14 +180,7 @@ function createWindow(forceShow = false): void {
     show: false,
     title: 'Studyhall',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f1115' : '#f7f7f8',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true, // UI can't touch preload/Electron internals
-      nodeIntegration: false, // UI has no Node.js
-      sandbox: true, // UI runs in Chromium's OS-level sandbox
-      webSecurity: true,
-      spellcheck: true
-    }
+    webPreferences: SECURE_PREFS
   })
   mainWindow = win
   trackWindowState(win)
@@ -154,12 +213,14 @@ function createWindow(forceShow = false): void {
     win.webContents.send('app:flush-request')
     setTimeout(finish, 2000) // never hang if the UI doesn't answer
   })
-  win.on('closed', () => (mainWindow = null))
+  win.on('closed', () => {
+    mainWindow = null
+    captureWindow?.destroy() // so the app can exit once the main window is gone
+  })
   // Windows is shutting down / logging off: really quit instead of hiding to the tray.
   win.on('session-end', () => (quitting = true))
 
-  if (DEV_URL) win.loadURL(DEV_URL)
-  else win.loadURL(`${APP_ORIGIN}/index.html`)
+  win.loadURL(appUrl())
 }
 
 /** Lock down every window/frame: no navigation away, no popups, no webviews. */
@@ -200,6 +261,19 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)))
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission))
 
+    // YouTube refuses to play embeds that don't say which app embeds them ("Error 153").
+    // Apps without a website identify themselves with their app id as the Referer.
+    session.defaultSession.webRequest.onBeforeSendHeaders(
+      { urls: ['https://www.youtube-nocookie.com/*', 'https://www.youtube.com/*'] },
+      (details, cb) => {
+        const ref = details.requestHeaders['Referer'] ?? ''
+        if (!ref || ref.startsWith('app://') || (DEV_URL && ref.startsWith(DEV_URL))) {
+          details.requestHeaders['Referer'] = 'https://com.studyhall.app/'
+        }
+        cb({ requestHeaders: details.requestHeaders })
+      }
+    )
+
     // In dev the UI comes from Vite's server, so attach the CSP header there too.
     if (DEV_URL) {
       session.defaultSession.webRequest.onHeadersReceived({ urls: [`${DEV_URL}*`] }, (details, cb) => {
@@ -208,8 +282,20 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     const notifyCalendar = (): void => mainWindow?.webContents.send('calendar:updated')
-    registerIpc([APP_ORIGIN, ...(DEV_URL ? [DEV_URL] : [])], notifyCalendar)
+    registerIpc([APP_ORIGIN, ...(DEV_URL ? [DEV_URL] : [])], {
+      onCalendarUpdated: notifyCalendar,
+      hideCapture: () => captureWindow?.hide(),
+      shortcutStatus: () => shortcut
+    })
+    // Tell every other window when data changes (e.g. quick capture -> inbox badge).
+    onDbChange((table) => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed() && w.webContents.id !== currentSenderId) w.webContents.send('db:changed', table)
+      }
+    })
     createWindow()
+    applyShortcut(getPrefs().quickCaptureShortcut)
+    watchShortcut(applyShortcut)
 
     // Tray + focus timer. The timer pushes its state to the UI and the tray.
     createTray(ICON_PATH, {
@@ -243,5 +329,8 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => (quitting = true))
   app.on('window-all-closed', () => app.quit())
-  app.on('will-quit', () => closeDb())
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll()
+    closeDb()
+  })
 }

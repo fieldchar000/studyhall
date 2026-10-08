@@ -15,6 +15,11 @@ import { NotesPage } from './pages/Notes'
 import { MindmapEditorPage, MindmapsPage } from './pages/Mindmaps'
 import { DeckPage, FlashcardsPage } from './pages/Flashcards'
 import { GradesPage } from './pages/Grades'
+import { InboxPage } from './pages/Inbox'
+import { VideoPage, VideosPage } from './pages/Videos'
+import { StatsPage } from './pages/Stats'
+import { GamePage } from './pages/Game'
+import { SearchPalette } from './components/SearchPalette'
 
 export function App(): React.JSX.Element {
   const route = useRoute()
@@ -37,10 +42,16 @@ export function App(): React.JSX.Element {
         {route.name === 'flashcards' && <FlashcardsPage />}
         {route.name === 'deck' && <DeckPage key={route.id} id={route.id} review={route.review} />}
         {route.name === 'grades' && <GradesPage />}
+        {route.name === 'inbox' && <InboxPage />}
+        {route.name === 'videos' && <VideosPage />}
+        {route.name === 'video' && <VideoPage key={route.id} id={route.id} />}
+        {route.name === 'stats' && <StatsPage />}
+        {route.name === 'game' && <GamePage />}
         {route.name === 'focus' && <FocusPage />}
         {route.name === 'settings' && <SettingsPage />}
       </main>
       <TaskDrawer />
+      <SearchPalette />
     </div>
   )
 }

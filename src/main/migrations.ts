@@ -266,5 +266,34 @@ export const migrations: string[] = [
   );
   CREATE INDEX idx_cards_deck ON flashcards(deck_id);
   CREATE INDEX idx_cards_due ON flashcards(due_at);
+  `,
+
+  // 4 — Phase 4: YouTube videos, quick-capture inbox, idle game
+  `
+  CREATE TABLE videos (${base},
+    url TEXT NOT NULL,
+    youtube_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    author TEXT NOT NULL DEFAULT '',
+    thumbnail_url TEXT,
+    start_seconds INTEGER NOT NULL DEFAULT 0,
+    tags TEXT NOT NULL DEFAULT '[]',
+    notes TEXT NOT NULL DEFAULT '',
+    mode TEXT NOT NULL DEFAULT 'study' CHECK (mode IN ('study','work')),
+    module_id TEXT REFERENCES modules(id)
+  );
+
+  CREATE TABLE inbox_items (${base},
+    text TEXT NOT NULL,
+    processed_at TEXT,
+    converted_to_type TEXT,
+    converted_to_id TEXT
+  );
+
+  -- One row per profile. state = JSON (owned buildings, upgrades, timestamps)
+  CREATE TABLE game_state (${base},
+    currency REAL NOT NULL DEFAULT 0,
+    state TEXT NOT NULL DEFAULT '{}'
+  );
   `
 ]

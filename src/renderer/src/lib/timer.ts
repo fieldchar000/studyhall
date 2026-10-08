@@ -15,6 +15,7 @@ api.timer.onState((s) => {
   set(s)
   notifyChanged('focus_sessions') // a session may have started/finished
   notifyChanged('timer') // settings may have changed
+  notifyChanged('game_state') // focus minutes earn idle-game coins
 })
 
 export function useTimerState(): TimerState | null {

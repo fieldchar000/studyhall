@@ -53,6 +53,23 @@ const api: Api = {
     get: () => ipcRenderer.invoke('prefs:get'),
     set: (patch) => ipcRenderer.invoke('prefs:set', patch)
   },
+  embed: {
+    lookup: (url) => ipcRenderer.invoke('embed:lookup', url),
+    openSpotify: (url) => ipcRenderer.invoke('embed:openSpotify', url)
+  },
+  search: (q) => ipcRenderer.invoke('search', q),
+  capture: {
+    hide: () => void ipcRenderer.invoke('capture:hide'),
+    shortcutStatus: () => ipcRenderer.invoke('capture:status')
+  },
+  game: {
+    get: () => ipcRenderer.invoke('game:get')
+  },
+  onDbChanged: (cb) => {
+    const listener = (_e: unknown, table: string): void => cb(String(table))
+    ipcRenderer.on('db:changed', listener)
+    return () => ipcRenderer.removeListener('db:changed', listener)
+  },
   app: {
     dataPath: () => ipcRenderer.invoke('app:dataPath'),
     openDataFolder: () => ipcRenderer.invoke('app:openDataFolder'),
@@ -60,6 +77,7 @@ const api: Api = {
     onFlushRequest: (cb) => on('app:flush-request', cb),
     flushed: () => ipcRenderer.send('app:flushed'),
     onCalendarUpdated: (cb) => on('calendar:updated', cb),
+    onCaptureShow: (cb) => on('capture:show', cb),
     onNavigate: (cb) => {
       const listener = (_e: unknown, page: string): void => cb(String(page))
       ipcRenderer.on('app:navigate', listener)

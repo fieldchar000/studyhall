@@ -33,7 +33,10 @@ const TABLES: readonly TableName[] = [
   'mindmap_nodes',
   'mindmap_edges',
   'flashcard_decks',
-  'flashcards'
+  'flashcards',
+  'videos',
+  'inbox_items',
+  'game_state'
 ]
 
 /** When a parent is soft-deleted, these children are soft-deleted too. */
@@ -139,6 +142,12 @@ export function getProfileId(): string {
   return profileId
 }
 
+// Lets index.ts tell other windows (e.g. quick capture -> main window) that data changed.
+let changeListener: (table: string) => void = () => {}
+export function onDbChange(fn: (table: string) => void): void {
+  changeListener = fn
+}
+
 /** Remember that a row changed so the Phase 5 sync engine pushes it. */
 function queueSync(table: string, id: string): void {
   db.prepare(
@@ -220,6 +229,7 @@ export function create<T>(table: string, values: Record<string, unknown>): T {
     `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`
   ).run(...keys.map((k) => row[k]))
   queueSync(table, id)
+  changeListener(table)
   return get<T>(table, id)!
 }
 
@@ -234,6 +244,7 @@ export function update<T>(table: string, id: string, patch: Record<string, unkno
     id
   )
   queueSync(table, id)
+  changeListener(table)
   return get<T>(table, id)!
 }
 
@@ -241,6 +252,7 @@ export function update<T>(table: string, id: string, patch: Record<string, unkno
 export function softDelete(table: string, id: string): void {
   assertTable(table)
   tx(() => softDeleteInner(table, id, now()))
+  changeListener('*') // deletes cascade across tables
 }
 
 function softDeleteInner(table: TableName, id: string, t: string): void {

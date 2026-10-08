@@ -29,9 +29,9 @@ Status: ✅ built (migration 1) · ⏳ planned phase
 | mindmap_edges | → mindmap, source_node, target_node, label | ✅ |
 | flashcard_decks | name, → module? | ✅ |
 | flashcards | → deck, front, back, ease, interval_days, repetitions, due_at, last_reviewed_at (SM-2) | ✅ |
-| videos | url, youtube_id, title, thumbnail, author, tags (JSON), notes, → module? | ⏳ 4 |
-| inbox_items | text, processed_at, converted_to_type + id | ⏳ 4 |
-| game_state | currency, state (JSON) — one row per profile | ⏳ 4 |
+| videos | url, youtube_id, title, author, thumbnail_url, start_seconds, tags (JSON), notes, mode, → module? | ✅ |
+| inbox_items | text, processed_at, converted_to_type + converted_to_id | ✅ |
+| game_state | currency, state (JSON: owned buildings, focus level, lastTick, totals) — one row per profile | ✅ |
 
 ## Social (cloud only, Phase 5)
 
@@ -51,5 +51,5 @@ Presence ("who's studying now") uses Supabase Realtime presence, not a table.
 
 ## Local-only (never synced)
 
-`settings` (key/value: prefs, window state, timer state), `notifications_sent` (reminders already shown), `sync_outbox` (changed rows awaiting push), `subscription_events`
+`settings` (key/value: prefs incl. quick-capture shortcut and Spotify links, window state, timer state), `notifications_sent` (reminders already shown), `sync_outbox` (changed rows awaiting push), `subscription_events`
 (ICS cache, rebuilt on refresh), `schema_migrations`.

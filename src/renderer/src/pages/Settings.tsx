@@ -2,11 +2,13 @@ import type { Mode, Prefs } from '@shared/types'
 import { Icon } from '@/components/ui'
 import { api, notifyChanged, track, useLive } from '@/lib/data'
 import { setMode, useMode } from '@/lib/profile'
+import { shortcutLabel } from './Inbox'
 
 export function SettingsPage(): React.JSX.Element {
   const mode = useMode()
   const { data } = useLive([], async () => ({ path: await api.app.dataPath(), version: await api.app.version() }), [])
   const { data: prefs } = useLive(['prefs'], () => api.prefs.get(), [])
+  const { data: shortcut } = useLive(['prefs'], () => api.capture.shortcutStatus(), [])
   const savePrefs = (patch: Partial<Prefs>): void => void track(api.prefs.set(patch)).then(() => notifyChanged('prefs'))
 
   const pref = (key: keyof Prefs, label: string, hint?: string): React.JSX.Element => (
@@ -47,6 +49,31 @@ export function SettingsPage(): React.JSX.Element {
         {pref('launchAtLogin', 'Start Studyhall when I sign in to Windows', 'Starts quietly in the tray. Works in the installed app.')}
         {pref('notifyDeadlines', 'Remind me about deadlines', 'About 24 hours and 1 hour before tasks and assessments are due.')}
         {pref('notifyTimer', 'Notify me when a focus session or break ends')}
+      </section>
+
+      <section className="card mb-4 p-5">
+        <h2 className="mb-1 font-semibold">Quick capture</h2>
+        <p className="mb-3 text-sm text-muted">A keyboard shortcut that works anywhere in Windows and opens a small box; whatever you type goes to your Inbox.</p>
+        <div className="flex items-center gap-3">
+          <select
+            className="field-boxed w-auto"
+            value={prefs?.quickCaptureShortcut ?? ''}
+            onChange={(e) => savePrefs({ quickCaptureShortcut: e.target.value })}
+          >
+            {['CommandOrControl+Shift+Space', 'CommandOrControl+Alt+Space', 'Alt+Shift+N'].map((s) => (
+              <option key={s} value={s}>
+                {shortcutLabel(s)}
+              </option>
+            ))}
+            <option value="">Off</option>
+          </select>
+          {shortcut?.accelerator &&
+            (shortcut.registered ? (
+              <span className="text-xs text-ok">✓ Active</span>
+            ) : (
+              <span className="text-xs text-danger">Another app already uses this shortcut — pick another.</span>
+            ))}
+        </div>
       </section>
 
       <section className="card mb-4 p-5">

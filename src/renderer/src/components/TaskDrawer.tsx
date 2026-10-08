@@ -321,7 +321,7 @@ function Subtasks({ parent, subtasks }: { parent: Task; subtasks: Task[] }): Rea
 }
 
 /** Chips + text box. Enter or comma adds a label, Backspace on empty removes the last. */
-function LabelInput({ labels, known, onChange }: { labels: string[]; known: string[]; onChange: (l: string[]) => void }): React.JSX.Element {
+export function LabelInput({ labels, known, onChange }: { labels: string[]; known: string[]; onChange: (l: string[]) => void }): React.JSX.Element {
   const [text, setText] = useState('')
   const commit = (raw: string): void => {
     const v = raw.trim()

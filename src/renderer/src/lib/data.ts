@@ -126,6 +126,9 @@ export async function flushAll(): Promise<void> {
 // ICS feeds were re-downloaded in the background: refresh anything showing them.
 api.app.onCalendarUpdated(() => notifyChanged('calendar_subscriptions'))
 
+// Data changed in another window or in the main process (timer, quick capture).
+api.onDbChanged((table) => notifyChanged(table))
+
 api.app.onFlushRequest(() => {
   flushAll().finally(() => api.app.flushed())
 })

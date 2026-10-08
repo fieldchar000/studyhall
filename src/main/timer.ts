@@ -3,6 +3,7 @@
 // change, so a timer survives the app being closed and reopened.
 
 import { create, get, getProfileId, getSetting, setSetting, softDelete, update } from './db'
+import { creditFocusMinutes } from './game'
 import type { FocusSession, Profile, TimerContext, TimerPhase, TimerSettings, TimerState } from '@shared/types'
 
 const DEFAULT_SETTINGS: TimerSettings = {
@@ -150,6 +151,7 @@ function finishSession(completed: boolean, endT: number): void {
       focused_seconds: Math.round(state.focusedMs / 1000),
       completed: completed ? 1 : 0
     })
+    creditFocusMinutes(Math.floor(state.focusedMs / 60_000)) // idle-game coins
   }
   state.sessionId = null
   state.focusedMs = 0

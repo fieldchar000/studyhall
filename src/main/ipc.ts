@@ -4,7 +4,11 @@ import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'ele
 import { create, get, getDb, getProfileId, list, softDelete, update } from './db'
 import { importPaths, openExternal, pickAndImport, showInFolder } from './files'
 import { refreshSubscriptions } from './ics'
-import { getPrefs, setPrefs } from './prefs'
+import { getPrefs, setPrefs, SHORTCUTS } from './prefs'
+import { lookup, openSpotify } from './embeds'
+import { search } from './search'
+import { getGame } from './game'
+import { spotifyParts } from '@shared/links'
 import * as timer from './timer'
 import type {
   AssessmentWithModule,
@@ -75,11 +79,26 @@ function isTrusted(e: IpcMainInvokeEvent | Electron.IpcMainEvent, origins: strin
   return e.senderFrame?.parent === null && origins.some((o) => url.startsWith(o))
 }
 
-export function registerIpc(trustedOrigins: string[], onCalendarUpdated: () => void): void {
+/** Which window's request is being handled right now (so change broadcasts can skip it). */
+export let currentSenderId: number | null = null
+
+export interface IpcDeps {
+  onCalendarUpdated: () => void
+  hideCapture: () => void
+  shortcutStatus: () => { accelerator: string; registered: boolean }
+}
+
+export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
+  const { onCalendarUpdated } = deps
   const handle = (channel: string, fn: (e: IpcMainInvokeEvent, ...args: any[]) => unknown): void => {
     ipcMain.handle(channel, (e, ...args) => {
       if (!isTrusted(e, trustedOrigins)) throw new Error('Untrusted sender')
-      return fn(e, ...args)
+      currentSenderId = e.sender.id
+      try {
+        return fn(e, ...args)
+      } finally {
+        currentSenderId = null
+      }
     })
   }
 
@@ -239,8 +258,29 @@ export function registerIpc(trustedOrigins: string[], onCalendarUpdated: () => v
     for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer'] as const) {
       if (k in patch) clean[k] = !!patch[k]
     }
+    if (typeof patch.quickCaptureShortcut === 'string' && SHORTCUTS.includes(patch.quickCaptureShortcut)) {
+      clean.quickCaptureShortcut = patch.quickCaptureShortcut
+    }
+    if (Array.isArray(patch.spotifyLinks)) {
+      clean.spotifyLinks = (patch.spotifyLinks as Record<string, unknown>[])
+        .filter((l) => typeof l?.url === 'string' && spotifyParts(l.url))
+        .slice(0, 50)
+        .map((l) => ({
+          url: String(l.url),
+          title: String(l.title ?? '').slice(0, 200),
+          thumbnail_url: typeof l.thumbnail_url === 'string' && l.thumbnail_url.startsWith('https://') ? l.thumbnail_url : null
+        }))
+    }
     return setPrefs(clean)
   })
+
+  // Phase 4: links, search, quick capture, idle game
+  handle('embed:lookup', (_e, url: string) => lookup(String(url)))
+  handle('embed:openSpotify', (_e, url: string) => openSpotify(String(url)))
+  handle('search', (_e, q: string) => search(String(q)))
+  handle('capture:hide', () => deps.hideCapture())
+  handle('capture:status', () => deps.shortcutStatus())
+  handle('game:get', () => getGame())
 
   // App
   handle('app:dataPath', () => app.getPath('userData'))

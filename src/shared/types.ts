@@ -235,6 +235,61 @@ export interface Flashcard extends BaseRow {
   last_reviewed_at: string | null
 }
 
+export interface Video extends BaseRow {
+  url: string
+  youtube_id: string
+  title: string
+  author: string
+  thumbnail_url: string | null
+  start_seconds: number
+  tags: string // JSON array
+  notes: string
+  mode: Mode
+  module_id: string | null
+}
+
+export interface InboxItem extends BaseRow {
+  text: string
+  processed_at: string | null
+  converted_to_type: 'task' | 'note' | null
+  converted_to_id: string | null
+}
+
+export interface GameRow extends BaseRow {
+  currency: number
+  state: string // JSON GameData
+}
+
+/** What the idle game remembers (inside game_state.state). */
+export interface GameData {
+  owned: Record<string, number> // building id -> count
+  focusLevel: number // upgrade: coins per focus minute
+  lastTick: string // ISO: passive income is counted from here
+  totalEarned: number
+  focusMinutesCredited: number
+}
+
+/** Result of oEmbed lookups (title/thumbnail) for YouTube or Spotify links. */
+export interface EmbedInfo {
+  title: string
+  author: string
+  thumbnail_url: string | null
+}
+
+export interface SearchResult {
+  type: 'task' | 'note' | 'module' | 'project' | 'client' | 'assessment' | 'material' | 'flashcard' | 'video' | 'event' | 'inbox' | 'mindmap' | 'deck'
+  id: string
+  title: string
+  snippet: string
+  parent_id: string | null // module for assessment/material, deck for flashcard, mindmap for node
+}
+
+export interface SpotifyLink {
+  url: string
+  title: string
+  thumbnail_url: string | null
+}
+
 /** One row of a grade scale: at or above `min` percent you get `label` / `points`. */
 export interface GradeBand {
   min: number
@@ -263,6 +318,9 @@ export interface TableMap {
   mindmap_edges: MindmapEdge
   flashcard_decks: FlashcardDeck
   flashcards: Flashcard
+  videos: Video
+  inbox_items: InboxItem
+  game_state: GameRow
 }
 export type TableName = keyof TableMap
 
@@ -339,6 +397,8 @@ export interface Prefs {
   launchAtLogin: boolean
   notifyDeadlines: boolean
   notifyTimer: boolean
+  quickCaptureShortcut: string // Electron accelerator, '' = off
+  spotifyLinks: SpotifyLink[]
 }
 
 /** The API the preload script exposes to the UI as window.api. */
@@ -381,6 +441,24 @@ export interface Api {
     get(): Promise<Prefs>
     set(patch: Partial<Prefs>): Promise<Prefs>
   }
+  embed: {
+    /** Title/author/thumbnail for a YouTube or Spotify link (needs internet). */
+    lookup(url: string): Promise<EmbedInfo | null>
+    /** Open a Spotify link in the Spotify desktop app (falls back to the browser). */
+    openSpotify(url: string): Promise<void>
+  }
+  search(query: string): Promise<SearchResult[]>
+  capture: {
+    hide(): void
+    /** Whether the global shortcut could be registered (false = taken by another app). */
+    shortcutStatus(): Promise<{ accelerator: string; registered: boolean }>
+  }
+  game: {
+    /** Coins earned from focus sessions since the last visit are added server-side; returns the row. */
+    get(): Promise<GameRow>
+  }
+  /** A row changed in another window (e.g. quick capture). */
+  onDbChanged(cb: (table: string) => void): () => void
   app: {
     dataPath(): Promise<string>
     openDataFolder(): Promise<void>
@@ -390,6 +468,8 @@ export interface Api {
     flushed(): void
     /** Fired when ICS feeds have been re-downloaded. */
     onCalendarUpdated(cb: () => void): () => void
+    /** The quick-capture window was just shown (focus the input). */
+    onCaptureShow(cb: () => void): () => void
     /** Main asks the UI to open a page (e.g. from the tray menu). */
     onNavigate(cb: (page: string) => void): () => void
   }
