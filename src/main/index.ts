@@ -3,7 +3,13 @@
 import { app, BrowserWindow, globalShortcut, Menu, nativeTheme, Notification, protocol, screen, session, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
-import { closeDb, getSetting, onDbChange, openDb, setSetting } from './db'
+import { closeDb, getSetting, onDbChange, openDb, setSetting, setWriteGuard } from './db'
+import { cloudStatus, currentUserId, onAccountChange, restoreSession } from './cloud/account'
+import { guardWrite, publishPresence, startLive, stopLive } from './cloud/social'
+import { configureSync, requestSync } from './cloud/sync'
+import { closeAllVideoRooms, isVideoContents } from './video'
+import { SYNC_TABLES } from '@shared/sync'
+import type { DeepLink } from '@shared/cloud'
 import { serveMaterial } from './files'
 import { refreshSubscriptions } from './ics'
 import { currentSenderId, registerIpc } from './ipc'
@@ -81,6 +87,27 @@ async function serveApp(request: Request): Promise<Response> {
 
 let mainWindow: BrowserWindow | null = null
 let captureWindow: BrowserWindow | null = null
+
+/** Send to every window (main app + quick capture). */
+function broadcast(channel: string, ...args: unknown[]): void {
+  for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && !isVideoContents(w.webContents.session)) w.webContents.send(channel, ...args)
+}
+
+// ---------- studyhall:// links (invites) ----------
+let pendingLink: DeepLink | null = null
+function handleDeepLink(argv: string[]): void {
+  const url = argv.find((a) => a.toLowerCase().startsWith('studyhall://'))
+  const m = url && /^studyhall:\/\/invite\/([A-Za-z0-9]{4,20})/i.exec(url)
+  if (!m) return
+  pendingLink = { kind: 'invite', code: m[1].toUpperCase() }
+  deliverDeepLink()
+}
+function deliverDeepLink(): void {
+  if (!pendingLink || !mainWindow || mainWindow.webContents.isLoading()) return
+  showWindow()
+  mainWindow.webContents.send('app:deeplink', pendingLink)
+  pendingLink = null
+}
 let quitting = false // true once the user really wants to exit (tray "Quit", Windows shutdown)
 
 const SECURE_PREFS = {
@@ -220,12 +247,14 @@ function createWindow(forceShow = false): void {
   // Windows is shutting down / logging off: really quit instead of hiding to the tray.
   win.on('session-end', () => (quitting = true))
 
+  win.webContents.on('did-finish-load', deliverDeepLink)
   win.loadURL(appUrl())
 }
 
 /** Lock down every window/frame: no navigation away, no popups, no webviews. */
 function hardenContents(): void {
   app.on('web-contents-created', (_e, contents) => {
+    if (isVideoContents(contents.session)) return
     contents.on('will-navigate', (e, url) => {
       if (!url.startsWith(APP_ORIGIN) && !(DEV_URL && url.startsWith(DEV_URL))) e.preventDefault()
     })
@@ -242,7 +271,10 @@ function hardenContents(): void {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => showWindow())
+  app.on('second-instance', (_e, argv) => {
+    showWindow()
+    handleDeepLink(argv)
+  })
 
   // Windows needs an app id for notifications (must match appId in electron-builder.yml).
   app.setAppUserModelId(app.isPackaged ? 'com.studyhall.app' : process.execPath)
@@ -289,10 +321,31 @@ if (!app.requestSingleInstanceLock()) {
     })
     // Tell every other window when data changes (e.g. quick capture -> inbox badge).
     onDbChange((table) => {
+      // Local edit to a synced table: upload it shortly (when signed in).
+      if (currentUserId() && (table === '*' || (SYNC_TABLES as readonly string[]).includes(table))) requestSync()
       for (const w of BrowserWindow.getAllWindows()) {
         if (!w.isDestroyed() && w.webContents.id !== currentSenderId) w.webContents.send('db:changed', table)
       }
     })
+    // Cloud: guard shared rows, sync status to the UI, live updates while signed in.
+    setWriteGuard(guardWrite)
+    configureSync({
+      onStatus: () => broadcast('cloud:status', cloudStatus()),
+      onApplied: (tables) => tables.forEach((t) => broadcast('db:changed', t))
+    })
+    onAccountChange(() => {
+      broadcast('cloud:status', cloudStatus())
+      broadcast('db:changed', '*')
+      if (currentUserId()) startLive((table) => broadcast('cloud:event', table))
+      else stopLive()
+    })
+    void restoreSession()
+
+    // studyhall:// links open the app (registered per-user; the installer registers it too).
+    // (Only the installed app registers, so test builds never take over your links.)
+    if (app.isPackaged) app.setAsDefaultProtocolClient('studyhall')
+    handleDeepLink(process.argv)
+
     createWindow()
     applyShortcut(getPrefs().quickCaptureShortcut)
     watchShortcut(applyShortcut)
@@ -308,7 +361,10 @@ if (!app.requestSingleInstanceLock()) {
     timer.initTimer(
       (state, remaining, changed) => {
         updateTray(state, remaining)
-        if (changed) mainWindow?.webContents.send('timer:state', state)
+        if (changed) {
+          mainWindow?.webContents.send('timer:state', state)
+          void publishPresence() // friends see "focusing" straight away
+        }
       },
       (title, body) => {
         if (getPrefs().notifyTimer) notify(title, body, 'focus')
@@ -330,6 +386,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => (quitting = true))
   app.on('window-all-closed', () => app.quit())
   app.on('will-quit', () => {
+    closeAllVideoRooms()
     globalShortcut.unregisterAll()
     closeDb()
   })

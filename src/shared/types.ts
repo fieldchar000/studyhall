@@ -1,5 +1,7 @@
 // Types shared by the main process, preload and the React UI.
 
+import type { CloudApi } from './cloud'
+
 /** Columns every syncable table has (see docs/SCHEMA.md). */
 export interface BaseRow {
   id: string // UUID
@@ -459,6 +461,8 @@ export interface Api {
   }
   /** A row changed in another window (e.g. quick capture). */
   onDbChanged(cb: (table: string) => void): () => void
+  /** Account, sync, friends, servers (Phase 5). */
+  cloud: CloudApi
   app: {
     dataPath(): Promise<string>
     openDataFolder(): Promise<void>

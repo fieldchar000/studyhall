@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { useSaveState } from '@/lib/data'
+import { timeAgo, useCloud } from '@/lib/cloud'
 
 // ---------- Icons (inline SVG, 24x24 stroke icons) ----------
 
@@ -150,11 +151,40 @@ export function SaveIndicator(): React.JSX.Element {
       </div>
     )
   }
-  if (pending > 0) return <div className="text-xs text-muted">Saving…</div>
   return (
-    <div className={`flex items-center gap-1 text-xs transition-colors ${fresh ? 'text-ok' : 'text-muted'}`}>
-      <Icon name="check" size={13} />
-      {fresh ? 'Saved' : 'All changes saved'}
+    <div className="flex flex-col gap-0.5">
+      {pending > 0 ? (
+        <div className="text-xs text-muted">Saving…</div>
+      ) : (
+        <div className={`flex items-center gap-1 text-xs transition-colors ${fresh ? 'text-ok' : 'text-muted'}`}>
+          <Icon name="check" size={13} />
+          {fresh ? 'Saved' : 'All changes saved'}
+        </div>
+      )}
+      <SyncLine />
+    </div>
+  )
+}
+
+/** Cloud sync state under "Saved" (only when signed in). */
+function SyncLine(): React.JSX.Element | null {
+  const c = useCloud()
+  if (!c?.signedIn) return null
+  const text: Record<string, [string, string]> = {
+    synced: ['Synced', 'text-muted'],
+    syncing: ['Syncing…', 'text-muted'],
+    offline: ['Offline — will sync later', 'text-amber-600'],
+    error: ['Sync problem — see Settings', 'text-danger'],
+    off: ['Sync off', 'text-muted']
+  }
+  const [label, tone] = text[c.sync] ?? text.off
+  return (
+    <div className={`flex items-center gap-1 text-xs ${tone}`} title={c.error ?? (c.lastSyncAt ? `Last sync ${timeAgo(c.lastSyncAt)}` : '')}>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+        <path d="M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.5 1.5A4 4 0 0 1 17 18z" />
+      </svg>
+      {label}
+      {c.pending > 0 && c.sync !== 'syncing' && <span>· {c.pending} waiting</span>}
     </div>
   )
 }

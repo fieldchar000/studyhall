@@ -65,6 +65,62 @@ const api: Api = {
   game: {
     get: () => ipcRenderer.invoke('game:get')
   },
+  cloud: {
+    status: () => ipcRenderer.invoke('cloud:status'),
+    onStatus: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('cloud:status', l)
+      return () => ipcRenderer.removeListener('cloud:status', l)
+    },
+    signUp: (p) => ipcRenderer.invoke('cloud:signUp', p),
+    signIn: (u, pw) => ipcRenderer.invoke('cloud:signIn', u, pw),
+    signOut: () => ipcRenderer.invoke('cloud:signOut'),
+    syncNow: () => ipcRenderer.invoke('cloud:syncNow'),
+    checkInvite: (code) => ipcRenderer.invoke('cloud:checkInvite', code),
+    createInvite: (o) => ipcRenderer.invoke('cloud:createInvite', o),
+    myInvites: () => ipcRenderer.invoke('cloud:myInvites'),
+    revokeInvite: (code) => ipcRenderer.invoke('cloud:revokeInvite', code),
+    redeem: (code) => ipcRenderer.invoke('cloud:redeem', code),
+    friends: () => ipcRenderer.invoke('cloud:friends'),
+    removeFriend: (u) => ipcRenderer.invoke('cloud:removeFriend', u),
+    leaderboard: (since) => ipcRenderer.invoke('cloud:leaderboard', since),
+    sharesFor: (t, id) => ipcRenderer.invoke('cloud:sharesFor', t, id),
+    share: (t, id, u, perm) => ipcRenderer.invoke('cloud:share', t, id, u, perm),
+    unshare: (sid) => ipcRenderer.invoke('cloud:unshare', sid),
+    sharedWithMe: () => ipcRenderer.invoke('cloud:sharedWithMe'),
+    servers: () => ipcRenderer.invoke('cloud:servers'),
+    server: (id) => ipcRenderer.invoke('cloud:server', id),
+    createServer: (name) => ipcRenderer.invoke('cloud:createServer', name),
+    renameServer: (id, name) => ipcRenderer.invoke('cloud:renameServer', id, name),
+    deleteServer: (id) => ipcRenderer.invoke('cloud:deleteServer', id),
+    leaveServer: (id) => ipcRenderer.invoke('cloud:leaveServer', id),
+    kick: (s, u) => ipcRenderer.invoke('cloud:kick', s, u),
+    setRole: (s, u, r) => ipcRenderer.invoke('cloud:setRole', s, u, r),
+    createChannel: (s, n, k) => ipcRenderer.invoke('cloud:createChannel', s, n, k),
+    renameChannel: (c, n) => ipcRenderer.invoke('cloud:renameChannel', c, n),
+    deleteChannel: (c) => ipcRenderer.invoke('cloud:deleteChannel', c),
+    messages: (c, before) => ipcRenderer.invoke('cloud:messages', c, before),
+    send: (c, body) => ipcRenderer.invoke('cloud:send', c, body),
+    deleteMessage: (id) => ipcRenderer.invoke('cloud:deleteMessage', id),
+    markRead: (c) => ipcRenderer.invoke('cloud:markRead', c),
+    setMuted: (c, m) => ipcRenderer.invoke('cloud:setMuted', c, m),
+    sharedTimer: (c) => ipcRenderer.invoke('cloud:sharedTimer', c),
+    timerAction: (c, a, s) => ipcRenderer.invoke('cloud:timerAction', c, a, s),
+    recordSharedFocus: (m) => ipcRenderer.invoke('cloud:recordSharedFocus', m),
+    joinRoom: (c, title) => ipcRenderer.invoke('cloud:joinRoom', c, title),
+    roomParticipants: (c) => ipcRenderer.invoke('cloud:roomParticipants', c),
+    storageUsed: () => ipcRenderer.invoke('cloud:storageUsed'),
+    onEvent: (cb) => {
+      const l = (_e: unknown, t: string): void => cb(String(t))
+      ipcRenderer.on('cloud:event', l)
+      return () => ipcRenderer.removeListener('cloud:event', l)
+    },
+    onDeepLink: (cb) => {
+      const l = (_e: unknown, link: Parameters<typeof cb>[0]): void => cb(link)
+      ipcRenderer.on('app:deeplink', l)
+      return () => ipcRenderer.removeListener('app:deeplink', l)
+    }
+  },
   onDbChanged: (cb) => {
     const listener = (_e: unknown, table: string): void => cb(String(table))
     ipcRenderer.on('db:changed', listener)

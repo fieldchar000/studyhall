@@ -8,6 +8,7 @@ import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { create, get, list } from './db'
+import { ensureLocalFile } from './cloud/sync'
 import type { Material, MaterialKind, Week } from '@shared/types'
 
 const dataDir = (): string => app.getPath('userData')
@@ -85,6 +86,7 @@ export async function pickAndImport(win: BrowserWindow, weekId: string): Promise
 export async function openExternal(id: string): Promise<void> {
   const m = get<Material>('materials', id)
   if (!m?.local_path) return
+  if (!(await ensureLocalFile(m))) throw new Error('This file is only on the PC it was added on (turn on "Sync file" there).')
   const path = absolutePath(m)
   if (RISKY.has(extname(path).toLowerCase())) {
     shell.showItemInFolder(path)
@@ -118,6 +120,12 @@ export async function serveMaterial(request: Request): Promise<Response> {
   const id = new URL(request.url).pathname.split('/')[1] ?? ''
   const m = get<Material>('materials', id)
   if (!m?.local_path) return new Response('Not found', { status: 404 })
+  if (!(await ensureLocalFile(m))) {
+    return new Response('This file is only on the PC it was added on. Turn on "Sync file" there to see it here.', {
+      status: 404,
+      headers: { 'content-type': 'text/plain; charset=utf-8' }
+    })
+  }
   const file = await net.fetch(pathToFileURL(absolutePath(m)).toString())
   if (!file.ok) return new Response('Missing file', { status: 404 })
   const headers: Record<string, string> = {

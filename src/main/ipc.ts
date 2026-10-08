@@ -8,6 +8,7 @@ import { getPrefs, setPrefs, SHORTCUTS } from './prefs'
 import { lookup, openSpotify } from './embeds'
 import { search } from './search'
 import { getGame } from './game'
+import { registerCloudIpc } from './cloud/ipc'
 import { spotifyParts } from '@shared/links'
 import * as timer from './timer'
 import type {
@@ -150,9 +151,9 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
       .prepare(
         `SELECT a.*, m.code AS module_code, m.name AS module_name, m.color AS module_color
          FROM assessments a JOIN modules m ON m.id = a.module_id
-         WHERE a.deleted_at IS NULL AND m.deleted_at IS NULL AND a.due_at >= ? AND a.due_at < ?`
+         WHERE a.deleted_at IS NULL AND m.deleted_at IS NULL AND m.owner_id = ? AND a.due_at >= ? AND a.due_at < ?`
       )
-      .all(start, end) as unknown as AssessmentWithModule[]
+      .all(getProfileId(), start, end) as unknown as AssessmentWithModule[]
     const plain = <T>(rows: T[]): T[] => rows.map((r) => ({ ...r }))
     const study = asMode(mode) === 'study'
     return {
@@ -193,11 +194,11 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
               `SELECT 'assessment' AS kind, a.id, a.title, a.due_at, a.module_id, a.weight_pct,
                       m.color AS color, COALESCE(NULLIF(m.code, ''), m.name) AS subtitle
                FROM assessments a JOIN modules m ON m.id = a.module_id
-               WHERE a.deleted_at IS NULL AND m.deleted_at IS NULL AND m.archived = 0
+               WHERE a.deleted_at IS NULL AND m.deleted_at IS NULL AND m.archived = 0 AND m.owner_id = ?
                  AND a.score_pct IS NULL AND a.due_at >= ?
                ORDER BY a.due_at LIMIT ?`
             )
-            .all(from, n) as unknown as Deadline[])
+            .all(getProfileId(), from, n) as unknown as Deadline[])
         : []
     return [...tasks, ...assessments]
       .map((r) => ({ ...r }))
@@ -211,6 +212,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     const safe: Partial<Profile> = {}
     if (patch.mode) safe.mode = asMode(patch.mode)
     if (typeof patch.display_name === 'string') safe.display_name = patch.display_name
+    if ('leaderboard_opt_in' in patch) safe.leaderboard_opt_in = patch.leaderboard_opt_in ? 1 : 0
     if ('target_gpa' in patch) {
       const n = Number(patch.target_gpa)
       safe.target_gpa = patch.target_gpa == null || !Number.isFinite(n) ? null : n
@@ -281,6 +283,9 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('capture:hide', () => deps.hideCapture())
   handle('capture:status', () => deps.shortcutStatus())
   handle('game:get', () => getGame())
+
+  // Phase 5: account, sync, friends, servers, video rooms
+  registerCloudIpc(handle)
 
   // App
   handle('app:dataPath', () => app.getPath('userData'))

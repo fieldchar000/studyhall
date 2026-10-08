@@ -3,6 +3,7 @@ import type { Module } from '@shared/types'
 import { AutoNumber, AutoText } from '@/components/AutoField'
 import { Board } from '@/components/Board'
 import { newNote } from './Notes'
+import { SharedBanner, ShareButton } from '@/components/ShareButton'
 import { ColorPicker, Icon } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { navigate } from '@/lib/nav'
@@ -71,6 +72,9 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
         <Icon name="back" /> Modules
       </button>
 
+      <div className="mb-3">
+        <SharedBanner ownerId={module.owner_id} kind="module" resourceId={module.id} />
+      </div>
       {/* Header: everything here autosaves */}
       <div className="card mb-6 overflow-hidden">
         <div className="h-2" style={{ background: module.color }} />
@@ -109,6 +113,7 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
                 className="field text-2xl font-semibold tracking-tight"
               />
             </div>
+            <ShareButton type="module" id={module.id} ownerId={module.owner_id} />
             <button className="btn-ghost" onClick={() => save({ archived: module.archived ? 0 : 1 })}>
               {module.archived ? 'Unarchive' : 'Archive'}
             </button>

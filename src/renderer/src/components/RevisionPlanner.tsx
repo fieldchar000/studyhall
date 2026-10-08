@@ -100,7 +100,8 @@ export function ExamCountdownPanel(): React.JSX.Element | null {
   const { data } = useLive(
     ['assessments', 'modules', 'tasks'],
     async () => {
-      const [exams, modules, tasks] = await Promise.all([api.list('assessments', { kind: 'exam' }, 'due_at'), api.list('modules'), api.list('tasks', { mode: 'study' })])
+      const [exams, all, tasks, me] = await Promise.all([api.list('assessments', { kind: 'exam' }, 'due_at'), api.list('modules'), api.list('tasks', { mode: 'study' }), api.profile.get()])
+      const modules = all.filter((m) => m.owner_id === me.id) // not friends' shared modules
       const now = new Date().toISOString()
       return exams
         .filter((e) => e.due_at && e.due_at >= now && e.score_pct == null)

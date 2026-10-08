@@ -117,6 +117,10 @@ export function getSetting<T>(key: string): T | null {
   return row ? (JSON.parse(row.value) as T) : null
 }
 
+export function deleteSetting(key: string): void {
+  db.prepare('DELETE FROM settings WHERE key = ?').run(key)
+}
+
 export function setSetting(key: string, value: unknown): void {
   db.prepare(
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
@@ -140,6 +144,24 @@ function ensureLocalProfile(): string {
 
 export function getProfileId(): string {
   return profileId
+}
+
+/** After signing in, this PC's data is owned by the cloud account id. */
+export function setProfileId(id: string): void {
+  profileId = id
+  setSetting('local_profile_id', id)
+}
+
+// Shared-with-me rows are read-only unless shared with edit rights (set by the cloud module).
+type Guard = (table: string, row: { owner_id?: string; module_id?: unknown } | null, kind: 'update' | 'delete' | 'create') => void
+let writeGuard: Guard = () => {}
+export function setWriteGuard(fn: Guard): void {
+  writeGuard = fn
+}
+
+/** Queue a row for upload without changing it (used when first linking an account). */
+export function queueRow(table: string, id: string): void {
+  queueSync(table, id)
 }
 
 // Lets index.ts tell other windows (e.g. quick capture -> main window) that data changed.
@@ -222,6 +244,7 @@ export function create<T>(table: string, values: Record<string, unknown>): T {
   for (const [k, v] of Object.entries(values)) {
     if (cols.has(k) && !PROTECTED.has(k)) row[k] = toSql(v)
   }
+  writeGuard(table, row, 'create')
   const id = randomUUID()
   Object.assign(row, { id, created_at: t, updated_at: t, deleted_at: null, owner_id: profileId })
   const keys = Object.keys(row)
@@ -236,6 +259,7 @@ export function create<T>(table: string, values: Record<string, unknown>): T {
 export function update<T>(table: string, id: string, patch: Record<string, unknown>): T {
   assertTable(table)
   const cols = columnsOf(table)
+  writeGuard(table, get(table, id), 'update')
   const keys = Object.keys(patch).filter((k) => cols.has(k) && !PROTECTED.has(k))
   const sets = [...keys.map((k) => `${k} = ?`), 'updated_at = ?']
   db.prepare(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`).run(
@@ -251,6 +275,7 @@ export function update<T>(table: string, id: string, patch: Record<string, unkno
 /** Soft delete: mark deleted (so the deletion can sync), cascading to children. */
 export function softDelete(table: string, id: string): void {
   assertTable(table)
+  writeGuard(table, get(table, id), 'delete')
   tx(() => softDeleteInner(table, id, now()))
   changeListener('*') // deletes cascade across tables
 }

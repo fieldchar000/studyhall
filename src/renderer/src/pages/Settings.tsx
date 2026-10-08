@@ -3,6 +3,7 @@ import { Icon } from '@/components/ui'
 import { api, notifyChanged, track, useLive } from '@/lib/data'
 import { setMode, useMode } from '@/lib/profile'
 import { shortcutLabel } from './Inbox'
+import { AccountCard } from '@/components/AccountCard'
 
 export function SettingsPage(): React.JSX.Element {
   const mode = useMode()
@@ -24,6 +25,8 @@ export function SettingsPage(): React.JSX.Element {
   return (
     <div className="mx-auto max-w-2xl p-8">
       <h1 className="mb-6 text-2xl font-semibold tracking-tight">Settings</h1>
+
+      <AccountCard />
 
       <section className="card mb-4 p-5">
         <h2 className="mb-1 font-semibold">Mode</h2>

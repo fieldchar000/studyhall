@@ -20,6 +20,9 @@ import { VideoPage, VideosPage } from './pages/Videos'
 import { StatsPage } from './pages/Stats'
 import { GamePage } from './pages/Game'
 import { SearchPalette } from './components/SearchPalette'
+import { FriendsPage } from './pages/Friends'
+import { ServersPage } from './pages/Servers'
+import { InviteLinkHandler } from './components/InviteLinkHandler'
 
 export function App(): React.JSX.Element {
   const route = useRoute()
@@ -47,11 +50,14 @@ export function App(): React.JSX.Element {
         {route.name === 'video' && <VideoPage key={route.id} id={route.id} />}
         {route.name === 'stats' && <StatsPage />}
         {route.name === 'game' && <GamePage />}
+        {route.name === 'friends' && <FriendsPage />}
+        {route.name === 'servers' && <ServersPage key={route.serverId ?? ''} serverId={route.serverId} channelId={route.channelId} />}
         {route.name === 'focus' && <FocusPage />}
         {route.name === 'settings' && <SettingsPage />}
       </main>
       <TaskDrawer />
       <SearchPalette />
+      <InviteLinkHandler />
     </div>
   )
 }

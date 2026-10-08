@@ -7,6 +7,10 @@ directories:
 files:
   - out/**
   - package.json
+# studyhall://invite/CODE links open the app
+protocols:
+  - name: Studyhall invite
+    schemes: [studyhall]
 # Tray + notification icon must be a real file on disk (not inside app.asar)
 extraResources:
   - from: build/icon.png

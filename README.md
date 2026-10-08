@@ -40,3 +40,15 @@ script-only sandbox with all network access blocked.
 
 Sync-ready: every table has UUID `id`, `created_at`, `updated_at`, `deleted_at` (soft delete) and
 `owner_id`; every local change is queued in `sync_outbox` for the Phase 5 cloud sync.
+
+## Cloud (Supabase) — optional sign-in, sync, friends, servers
+
+- `supabase/social.sql` — social tables, Row Level Security, sign-up trigger, RPC functions, storage
+- `supabase/personal.sql` — generated from `src/main/migrations.ts` (cloud copies of synced tables)
+- `node scripts/cloud-setup.cjs` — applies both to the project (safe to re-run after updates).
+  Needs `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF` in `.env` (never committed).
+- `node scripts/rls-test.cjs` — security tests (run in a rolled-back transaction)
+- `src/main/cloud/project.json` — project URL + publishable key (public by design)
+- `.github/workflows/keepalive.yml` — pings Supabase every 3 days so the free project never pauses
+
+All network access happens in the main process; the UI talks to it over IPC.

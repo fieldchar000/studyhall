@@ -9,6 +9,7 @@ import { api, db, useLive } from '@/lib/data'
 import { isoToLocalInput, localInputToIso } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
 import { useMode } from '@/lib/profile'
+import { SharedBanner, ShareButton } from '@/components/ShareButton'
 
 /** Create a note (optionally linked) and open it. */
 export async function newNote(values: Partial<Note>): Promise<Note> {
@@ -151,6 +152,7 @@ export function NoteView({ id, compact = false }: { id: string; compact?: boolea
           <AutoText value={n.title} onSave={(v) => save({ title: v || 'Untitled note' })} className={`field ${compact ? 'font-semibold' : 'text-2xl font-semibold tracking-tight'}`} />
           {!compact && (
             <>
+              <ShareButton type="note" id={n.id} ownerId={n.owner_id} />
               <button className={`btn-ghost ${n.pinned ? 'text-amber-500' : ''}`} title={n.pinned ? 'Unpin' : 'Pin to top'} onClick={() => void save({ pinned: n.pinned ? 0 : 1 })}>
                 <Icon name="star" className={n.pinned ? 'fill-current' : ''} />
               </button>
@@ -164,6 +166,7 @@ export function NoteView({ id, compact = false }: { id: string; compact?: boolea
             </>
           )}
         </div>
+        {!compact && <SharedBanner ownerId={n.owner_id} kind="note" resourceId={n.id} />}
         {!compact && (
           <div className="flex flex-wrap gap-2 text-sm">
             {n.mode === 'study' ? (

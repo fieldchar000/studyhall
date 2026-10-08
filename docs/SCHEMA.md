@@ -6,7 +6,7 @@ Every **synced** table has: `id` (UUID), `created_at`, `updated_at`, `deleted_at
 
 Status: ✅ built (migration 1) · ⏳ planned phase
 
-## Personal (local now, synced in Phase 5)
+## Personal (local, synced to the cloud when signed in)
 
 | Table | Fields → links | Status |
 |---|---|---|
@@ -33,21 +33,32 @@ Status: ✅ built (migration 1) · ⏳ planned phase
 | inbox_items | text, processed_at, converted_to_type + converted_to_id | ✅ |
 | game_state | currency, state (JSON: owned buildings, focus level, lastTick, totals) — one row per profile | ✅ |
 
-## Social (cloud only, Phase 5)
+## Social (cloud only, Phase 5) — see supabase/social.sql
 
-| Table | Fields |
-|---|---|
-| friendships | requester, addressee, status (pending/accepted/blocked) |
-| invites | code, kind (signup/friend/server), created_by, → server?, expires_at, max_uses, use_count |
-| servers | name, icon, owner |
-| server_members | → server, → user, role (owner/mod/member) |
-| channels | → server, name, kind (text/study_room), sort |
-| channel_states | → channel, → user, last_read_at, muted |
-| messages | → channel, author, body, edited_at |
-| shares | resource (module/note), shared_with, permission (view/edit) |
-| shared_timers | → channel or creator, phase, started_at, duration, paused_remaining |
+All tables have Row Level Security; the rules are tested by `node scripts/rls-test.cjs`.
 
-Presence ("who's studying now") uses Supabase Realtime presence, not a table.
+| Table | Fields | Who can see / change it |
+|---|---|---|
+| user_directory | id (= auth user), username, display_name, is_admin | you, your friends, people in your servers; only display_name is editable |
+| friendships | user_a, user_b (symmetric pair) | the two people; created only by redeeming an invite |
+| invites | code, kind (friend/server), created_by, → server?, max_uses, use_count, expires_at, revoked_at | creator (and server owner/mods); used via check_invite / redeem_invite / the sign-up trigger |
+| servers | name, owner_id | members; owner/mods rename; owner deletes |
+| server_members | → server, → user, role (owner/mod/member) | members; owner kicks and sets roles; members can leave |
+| channels | → server, name, kind (text/study_room), sort, room_key (video room name) | members; owner/mods manage |
+| messages | → channel, author_id, body, created_at, deleted_at | members read/post; authors, owner and mods delete |
+| channel_states | → channel, → user, last_read_at (unread), muted | only you |
+| shares | resource_type (module/note), resource_id, owner_id, shared_with, permission (view/edit) | owner and recipient; only with friends |
+| presence | user_id, status (online/focusing/break), focus_ends_at, last_seen | you and your friends |
+| shared_timers | → channel, phase, running, ends_at, remaining_ms, focus_min, break_min | server members |
+| room_participants | → channel, → user, last_seen | server members; joining goes through room_join() which enforces the 6-person cap |
+
+Sign-up is invite-only: a trigger on auth.users rejects any sign-up without a valid code
+(and creates the user_directory row + friendship/server membership). Usernames map to
+`<username>@users.studyhall.invalid` (a reserved domain — no email is ever sent).
+
+Synced personal tables (above) exist in the cloud with the same columns plus
+`server_updated_at` (pull cursor). A trigger (sync_guard) makes the newer `updated_at`
+win, clamps PC clocks that are ahead, and stops rows changing owner.
 
 ## Local-only (never synced)
 

@@ -17,7 +17,8 @@ export function GradesPage(): React.JSX.Element {
   const { data } = useLive(
     ['modules', 'assessments'],
     async () => {
-      const [modules, assessments] = await Promise.all([api.list('modules', {}, 'sort'), api.list('assessments')])
+      const [all, assessments, me] = await Promise.all([api.list('modules', {}, 'sort'), api.list('assessments'), api.profile.get()])
+      const modules = all.filter((m) => m.owner_id === me.id) // modules friends shared with you don't count
       return modules.map((m) => {
         const s = summarize(
           assessments.filter((a) => a.module_id === m.id),

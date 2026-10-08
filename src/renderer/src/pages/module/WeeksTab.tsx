@@ -5,6 +5,7 @@ import { Icon, Modal } from '@/components/ui'
 import { api, db, notifyChanged, track, useRows } from '@/lib/data'
 import { formatBytes } from '@/lib/dates'
 import { openWeekNote } from '../Notes'
+import { useCloud } from '@/lib/cloud'
 
 const KIND_LABEL: Record<Material['kind'], string> = { pdf: 'PDF', html: 'HTML', slides: 'Slides', other: 'File' }
 const KIND_COLOR: Record<Material['kind'], string> = {
@@ -122,6 +123,7 @@ function WeekCard({ week, onPreview }: { week: Week; onPreview: (m: Material) =>
 
 function MaterialRow({ material: m, onPreview }: { material: Material; onPreview: (m: Material) => void }): React.JSX.Element {
   const [renaming, setRenaming] = useState(false)
+  const cloud = useCloud()
   const previewable = m.kind === 'pdf' || m.kind === 'html'
   const open = (): void => {
     if (previewable) onPreview(m)
@@ -143,6 +145,15 @@ function MaterialRow({ material: m, onPreview }: { material: Material; onPreview
           title={`${m.file_name} — click to ${previewable ? 'preview' : 'open in its app'}`}
         >
           {m.title}
+        </button>
+      )}
+      {cloud?.signedIn && m.owner_id === cloud.userId && (
+        <button
+          className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] ${m.sync_file ? 'bg-accent-soft text-accent' : 'text-muted opacity-0 group-hover:opacity-100'}`}
+          title={m.sync_file ? (m.storage_path ? 'Synced to the cloud — click to stop syncing this file' : 'Uploading on next sync…') : 'Sync this file to the cloud (counts toward the free 1 GB)'}
+          onClick={() => void db.update('materials', m.id, { sync_file: m.sync_file ? 0 : 1, storage_path: m.sync_file ? m.storage_path : null })}
+        >
+          ☁ {m.sync_file ? (m.storage_path ? 'Synced' : 'Queued') : 'Sync file'}
         </button>
       )}
       <span className="shrink-0 text-xs text-muted">{formatBytes(m.size_bytes)}</span>

@@ -4,6 +4,7 @@ import { Icon, PALETTE } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { fmtPct, summarize } from '@/lib/grades'
 import { navigate } from '@/lib/nav'
+import { useProfile } from '@/lib/profile'
 
 interface ModuleCardData {
   module: Module
@@ -13,6 +14,7 @@ interface ModuleCardData {
 }
 
 export function ModulesPage(): React.JSX.Element {
+  const profile = useProfile()
   const [showArchived, setShowArchived] = useState(false)
 
   // Load modules plus a few counts for each card.
@@ -82,7 +84,10 @@ export function ModulesPage(): React.JSX.Element {
           >
             <div className="h-1.5" style={{ background: m.color }} />
             <div className="p-4">
-              <div className="text-xs font-medium tracking-wide text-muted uppercase">{m.code || 'No code'}</div>
+              <div className="flex items-center gap-2 text-xs font-medium tracking-wide text-muted uppercase">
+                {m.code || 'No code'}
+                {profile && m.owner_id !== profile.id && <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] text-accent normal-case">Shared with you</span>}
+              </div>
               <div className="mt-0.5 truncate text-base font-semibold">{m.name}</div>
               <div className="mt-3 flex gap-4 text-xs text-muted">
                 <span>{weeks} weeks</span>
