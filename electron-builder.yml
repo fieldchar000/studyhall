@@ -7,6 +7,10 @@ directories:
 files:
   - out/**
   - package.json
+# Tray + notification icon must be a real file on disk (not inside app.asar)
+extraResources:
+  - from: build/icon.png
+    to: icon.png
 win:
   target:
     - target: nsis

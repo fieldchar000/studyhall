@@ -1,12 +1,16 @@
 ﻿// Main process: creates the window, owns the database, enforces security rules.
 
-import { app, BrowserWindow, Menu, nativeTheme, protocol, session, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeTheme, Notification, protocol, session, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
-import { closeDb, openDb } from './db'
+import { closeDb, getSetting, openDb, setSetting } from './db'
 import { serveMaterial } from './files'
 import { refreshSubscriptions } from './ics'
 import { registerIpc } from './ipc'
+import { applyLoginItem, getPrefs } from './prefs'
+import { checkDeadlines } from './reminders'
+import * as timer from './timer'
+import { createTray, updateTray } from './tray'
 import { loadWindowState, trackWindowState } from './windowState'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
@@ -16,6 +20,9 @@ if (process.env['STUDYHALL_DATA_DIR']) app.setPath('userData', process.env['STUD
 const APP_ORIGIN = 'app://studyhall'
 const RENDERER_DIR = join(__dirname, '../renderer')
 const ICS_REFRESH_MS = 30 * 60 * 1000
+// A real file on disk (not inside app.asar), so Windows notifications can use it too.
+const ICON_PATH = app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(__dirname, '../../build/icon.png')
+const START_HIDDEN = process.argv.includes('--hidden') // launched at login
 
 // Strict Content Security Policy for our own UI. Scripts only from the app itself;
 // inline styles are needed by the calendar library; frames only for material previews.
@@ -71,8 +78,34 @@ async function serveApp(request: Request): Promise<Response> {
 }
 
 let mainWindow: BrowserWindow | null = null
+let quitting = false // true once the user really wants to exit (tray "Quit", Windows shutdown)
 
-function createWindow(): void {
+/** Bring the window back (from the tray, a notification, or a second launch). */
+function showWindow(page?: string): void {
+  if (!mainWindow) createWindow(true)
+  const win = mainWindow!
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  if (page) win.webContents.send('app:navigate', page)
+}
+
+// Keep notification objects alive until they're dismissed, or click handlers get lost.
+const liveNotifications = new Set<Notification>()
+function notify(title: string, body: string, page?: string): void {
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title, body, icon: ICON_PATH })
+  liveNotifications.add(n)
+  const forget = (): boolean => liveNotifications.delete(n)
+  n.on('click', () => {
+    forget()
+    showWindow(page)
+  })
+  n.on('close', forget)
+  n.show()
+}
+
+function createWindow(forceShow = false): void {
   const state = loadWindowState()
   const win = new BrowserWindow({
     ...state.bounds,
@@ -93,15 +126,25 @@ function createWindow(): void {
   mainWindow = win
   trackWindowState(win)
   win.once('ready-to-show', () => {
+    if (START_HIDDEN && !forceShow) return // stay in the tray when started with Windows
     if (state.maximized) win.maximize()
     win.show()
   })
 
-  // Before closing, ask the UI to write any edits still waiting in a debounce timer,
-  // then destroy the window (everything is saved, so no second close round-trip needed).
+  // Closing the window normally just hides it to the tray (timer keeps running).
+  // When really quitting: ask the UI to write any edits still waiting in a debounce
+  // timer, then destroy the window (everything is saved, no second close round-trip).
   let closing = false
   win.on('close', (e) => {
     e.preventDefault()
+    if (!quitting && getPrefs().closeToTray) {
+      win.hide()
+      if (!getSetting<boolean>('tray_hint_shown')) {
+        setSetting('tray_hint_shown', true)
+        notify('Studyhall is still running', 'It lives in the system tray (bottom-right). Right-click the icon to quit.')
+      }
+      return
+    }
     if (closing) return
     closing = true
     const finish = (): void => {
@@ -112,6 +155,8 @@ function createWindow(): void {
     setTimeout(finish, 2000) // never hang if the UI doesn't answer
   })
   win.on('closed', () => (mainWindow = null))
+  // Windows is shutting down / logging off: really quit instead of hiding to the tray.
+  win.on('session-end', () => (quitting = true))
 
   if (DEV_URL) win.loadURL(DEV_URL)
   else win.loadURL(`${APP_ORIGIN}/index.html`)
@@ -136,16 +181,16 @@ function hardenContents(): void {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
-    if (!mainWindow) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.focus()
-  })
+  app.on('second-instance', () => showWindow())
+
+  // Windows needs an app id for notifications (must match appId in electron-builder.yml).
+  app.setAppUserModelId(app.isPackaged ? 'com.studyhall.app' : process.execPath)
 
   app.whenReady().then(() => {
     openDb()
     Menu.setApplicationMenu(null)
     hardenContents()
+    applyLoginItem(getPrefs().launchAtLogin)
 
     protocol.handle('app', serveApp)
     protocol.handle('material', serveMaterial)
@@ -166,12 +211,37 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc([APP_ORIGIN, ...(DEV_URL ? [DEV_URL] : [])], notifyCalendar)
     createWindow()
 
+    // Tray + focus timer. The timer pushes its state to the UI and the tray.
+    createTray(ICON_PATH, {
+      show: () => showWindow(),
+      openFocus: () => showWindow('focus'),
+      toggleTimer: () => (timer.getState().running ? timer.pause() : timer.start()),
+      skip: () => timer.skip(),
+      quit: () => app.quit()
+    })
+    timer.initTimer(
+      (state, remaining, changed) => {
+        updateTray(state, remaining)
+        if (changed) mainWindow?.webContents.send('timer:state', state)
+      },
+      (title, body) => {
+        if (getPrefs().notifyTimer) notify(title, body, 'focus')
+      }
+    )
+    updateTray(timer.getState(), timer.remainingMs())
+
     // Refresh ICS feeds now and every 30 minutes (silently keeps cached data when offline).
     const refresh = (): void => void refreshSubscriptions().then(notifyCalendar)
     setTimeout(refresh, 3000)
     setInterval(refresh, ICS_REFRESH_MS)
+
+    // Deadline reminders: shortly after start, then every minute.
+    const remind = (): void => checkDeadlines((title, body) => notify(title, body, 'home'))
+    setTimeout(remind, 10_000)
+    setInterval(remind, 60_000)
   })
 
+  app.on('before-quit', () => (quitting = true))
   app.on('window-all-closed', () => app.quit())
   app.on('will-quit', () => closeDb())
 }

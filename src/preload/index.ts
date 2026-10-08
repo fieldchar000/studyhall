@@ -26,9 +26,32 @@ const api: Api = {
     pathForFile: (file) => webUtils.getPathForFile(file)
   },
   calendar: {
-    range: (start, end) => ipcRenderer.invoke('calendar:range', start, end),
+    range: (start, end, mode) => ipcRenderer.invoke('calendar:range', start, end, mode),
     refreshSubscriptions: (id) => ipcRenderer.invoke('calendar:refresh', id),
-    upcomingDeadlines: (limit) => ipcRenderer.invoke('calendar:deadlines', limit)
+    upcomingDeadlines: (limit, mode) => ipcRenderer.invoke('calendar:deadlines', limit, mode)
+  },
+  profile: {
+    get: () => ipcRenderer.invoke('profile:get'),
+    update: (patch) => ipcRenderer.invoke('profile:update', patch)
+  },
+  timer: {
+    state: () => ipcRenderer.invoke('timer:state'),
+    start: () => ipcRenderer.invoke('timer:start'),
+    pause: () => ipcRenderer.invoke('timer:pause'),
+    reset: () => ipcRenderer.invoke('timer:reset'),
+    skip: () => ipcRenderer.invoke('timer:skip'),
+    setContext: (ctx) => ipcRenderer.invoke('timer:context', ctx),
+    settings: () => ipcRenderer.invoke('timer:settings'),
+    setSettings: (patch) => ipcRenderer.invoke('timer:setSettings', patch),
+    onState: (cb) => {
+      const listener = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('timer:state', listener)
+      return () => ipcRenderer.removeListener('timer:state', listener)
+    }
+  },
+  prefs: {
+    get: () => ipcRenderer.invoke('prefs:get'),
+    set: (patch) => ipcRenderer.invoke('prefs:set', patch)
   },
   app: {
     dataPath: () => ipcRenderer.invoke('app:dataPath'),
@@ -36,7 +59,12 @@ const api: Api = {
     version: () => ipcRenderer.invoke('app:version'),
     onFlushRequest: (cb) => on('app:flush-request', cb),
     flushed: () => ipcRenderer.send('app:flushed'),
-    onCalendarUpdated: (cb) => on('calendar:updated', cb)
+    onCalendarUpdated: (cb) => on('calendar:updated', cb),
+    onNavigate: (cb) => {
+      const listener = (_e: unknown, page: string): void => cb(String(page))
+      ipcRenderer.on('app:navigate', listener)
+      return () => ipcRenderer.removeListener('app:navigate', listener)
+    }
   }
 }
 

@@ -20,6 +20,17 @@ const paths: Record<string, string> = {
   check: 'M5 12.5 10 17l9-10',
   file: 'M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5',
   chevron: 'M9 6l6 6-6 6',
+  tasks: 'M4 5h16v14H4zM8 12l3 3 5-6',
+  projects: 'M12 3 3 8l9 5 9-5zM3 13l9 5 9-5',
+  clients: 'M4 8h16v11H4zM9 8V5h6v3M4 13h16',
+  focus: 'M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM12 9v4l2.5 2M10 2h4',
+  star: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z',
+  flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
+  play: 'M7 4.5v15l12-7.5z',
+  pause: 'M7 4h3.5v16H7zM13.5 4H17v16h-3.5z',
+  skip: 'M5 5v14l9-7zM17 5v14',
+  reset: 'M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5',
+  calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
   pencil: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
   upload: 'M12 16V4M7 9l5-5 5 5M4 20h16'
 }

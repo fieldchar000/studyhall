@@ -17,11 +17,11 @@ Status: ✅ built (migration 1) · ⏳ planned phase
 | assessments | → module, title, kind, due_at, weight_pct, score_pct, is_final, auto_revision | ✅ |
 | events | title, start_at, end_at, all_day, color, notes, → task?, → module?, → assessment? | ✅ |
 | calendar_subscriptions | name, url, color, enabled, last_fetched_at, last_error | ✅ |
-| clients | name, color, notes | ⏳ 2 |
-| projects | title, mode, deadline, status, color, → module?, → client? | ⏳ 2 |
-| milestones | → project, title, due_at, done_at, sort | ⏳ 2 |
-| tasks | title, notes, status (inbox/todo/doing/done), priority, due_at, labels (JSON), → parent_task, → project, → milestone, → module, → assessment, → client, today_rank, today_date, sort, completed_at | ⏳ 2 |
-| focus_sessions | started_at, ended_at, planned_minutes, kind, completed, → module, → task, → project, → shared_timer | ⏳ 2 |
+| clients | name, color, notes, archived | ✅ |
+| projects | title, description, mode, deadline, status (active/on_hold/done), color, → module?, → client?, sort | ✅ |
+| milestones | → project, title, due_at, done_at, sort | ✅ |
+| tasks | title, notes, status (inbox/todo/doing/done), priority, due_at, labels (JSON), → parent_task, → project, → milestone, → module, → assessment, → client, today_rank, today_date, sort, completed_at | ✅ |
+| focus_sessions | started_at, ended_at, planned_minutes, focused_seconds, kind, completed, mode, → module, → task, → project, → shared_timer | ✅ |
 | timetable_slots | → module, kind, weekday, start/end time, location, valid_from/to (expanded virtually onto the calendar) | ⏳ 3 |
 | notes | title, content (TipTap JSON), plain_text, kind (note/meeting), → module, → week, → project, → client | ⏳ 3 |
 | mindmaps | title, → module? | ⏳ 3 |
@@ -51,5 +51,5 @@ Presence ("who's studying now") uses Supabase Realtime presence, not a table.
 
 ## Local-only (never synced)
 
-`settings` (key/value), `sync_outbox` (changed rows awaiting push), `subscription_events`
+`settings` (key/value: prefs, window state, timer state), `notifications_sent` (reminders already shown), `sync_outbox` (changed rows awaiting push), `subscription_events`
 (ICS cache, rebuilt on refresh), `schema_migrations`.

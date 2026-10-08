@@ -1,10 +1,25 @@
 // IPC handlers: the only way the UI can reach the database, files and network.
 
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
-import { create, get, getDb, list, softDelete, update } from './db'
+import { create, get, getDb, getProfileId, list, softDelete, update } from './db'
 import { importPaths, openExternal, pickAndImport, showInFolder } from './files'
 import { refreshSubscriptions } from './ics'
-import type { AssessmentWithModule, CalendarRange, CalEvent, SubscriptionEvent, Where } from '@shared/types'
+import { getPrefs, setPrefs } from './prefs'
+import * as timer from './timer'
+import type {
+  AssessmentWithModule,
+  CalendarRange,
+  Deadline,
+  Mode,
+  Prefs,
+  Profile,
+  Task,
+  TimerContext,
+  TimerSettings,
+  Where
+} from '@shared/types'
+
+const asMode = (m: unknown): Mode => (m === 'work' ? 'work' : 'study')
 
 /** Only accept calls from our own UI (never from material iframes or anything else). */
 function isTrusted(e: IpcMainInvokeEvent | Electron.IpcMainEvent, origins: string[]): boolean {
@@ -39,14 +54,24 @@ export function registerIpc(trustedOrigins: string[], onCalendarUpdated: () => v
   handle('materials:reveal', (_e, id: string) => showInFolder(id))
 
   // Calendar
-  handle('calendar:range', (_e, startIso: string, endIso: string): CalendarRange => {
+  handle('calendar:range', (_e, startIso: string, endIso: string, mode: Mode): CalendarRange => {
     const db = getDb()
     // Pad by a day: all-day rows use local dates, the range uses UTC instants.
     const start = new Date(Date.parse(startIso) - 864e5).toISOString()
     const end = new Date(Date.parse(endIso) + 864e5).toISOString()
     const events = db
-      .prepare('SELECT * FROM events WHERE deleted_at IS NULL AND start_at < ? AND end_at > ?')
-      .all(end, start) as unknown as CalEvent[]
+      .prepare(
+        `SELECT e.*, t.status AS task_status FROM events e
+         LEFT JOIN tasks t ON t.id = e.task_id AND t.deleted_at IS NULL
+         WHERE e.deleted_at IS NULL AND e.start_at < ? AND e.end_at > ?`
+      )
+      .all(end, start) as unknown as CalendarRange['events']
+    const tasks = db
+      .prepare(
+        `SELECT * FROM tasks WHERE deleted_at IS NULL AND mode = ? AND status != 'done'
+         AND due_at >= ? AND due_at < ?`
+      )
+      .all(asMode(mode), start, end) as unknown as Task[]
     const external = db
       .prepare(
         `SELECT e.*, s.color AS color, s.name AS subscription_name
@@ -61,31 +86,100 @@ export function registerIpc(trustedOrigins: string[], onCalendarUpdated: () => v
          WHERE a.deleted_at IS NULL AND m.deleted_at IS NULL AND a.due_at >= ? AND a.due_at < ?`
       )
       .all(start, end) as unknown as AssessmentWithModule[]
+    const plain = <T>(rows: T[]): T[] => rows.map((r) => ({ ...r }))
     return {
-      events: events.map((r) => ({ ...r })),
-      external: external.map((r) => ({ ...r })) as (SubscriptionEvent & {
-        color: string
-        subscription_name: string
-      })[],
-      assessments: assessments.map((r) => ({ ...r }))
+      events: plain(events),
+      external: plain(external),
+      // Assessments are a study thing; work mode doesn't show them.
+      assessments: asMode(mode) === 'study' ? plain(assessments) : [],
+      tasks: plain(tasks)
     }
   })
   handle('calendar:refresh', async (_e, id?: string) => {
     await refreshSubscriptions(id)
     onCalendarUpdated()
   })
-  handle('calendar:deadlines', (_e, limit: number) =>
-    getDb()
+  handle('calendar:deadlines', (_e, limit: number, mode: Mode): Deadline[] => {
+    const db = getDb()
+    const n = Math.min(Number(limit) || 10, 50)
+    const from = new Date().toISOString()
+    const overdueFrom = new Date(Date.now() - 7 * 864e5).toISOString() // still show tasks up to a week overdue
+    const tasks = db
       .prepare(
-        `SELECT a.*, m.code AS module_code, m.name AS module_name, m.color AS module_color
-         FROM assessments a JOIN modules m ON m.id = a.module_id
-         WHERE a.deleted_at IS NULL AND m.deleted_at IS NULL AND m.archived = 0
-           AND a.score_pct IS NULL AND a.due_at >= ?
-         ORDER BY a.due_at LIMIT ?`
+        `SELECT 'task' AS kind, t.id, t.title, t.due_at, t.module_id, NULL AS weight_pct,
+                COALESCE(p.color, m.color, c.color, '#64748b') AS color,
+                COALESCE(p.title, NULLIF(m.code, ''), m.name, c.name, 'Task') AS subtitle
+         FROM tasks t
+         LEFT JOIN projects p ON p.id = t.project_id AND p.deleted_at IS NULL
+         LEFT JOIN modules m ON m.id = t.module_id AND m.deleted_at IS NULL
+         LEFT JOIN clients c ON c.id = t.client_id AND c.deleted_at IS NULL
+         WHERE t.deleted_at IS NULL AND t.mode = ? AND t.status != 'done' AND t.due_at >= ?
+         ORDER BY t.due_at LIMIT ?`
       )
-      .all(new Date().toISOString(), Math.min(Number(limit) || 10, 50))
+      .all(asMode(mode), overdueFrom, n) as unknown as Deadline[]
+    const assessments =
+      asMode(mode) === 'study'
+        ? (db
+            .prepare(
+              `SELECT 'assessment' AS kind, a.id, a.title, a.due_at, a.module_id, a.weight_pct,
+                      m.color AS color, COALESCE(NULLIF(m.code, ''), m.name) AS subtitle
+               FROM assessments a JOIN modules m ON m.id = a.module_id
+               WHERE a.deleted_at IS NULL AND m.deleted_at IS NULL AND m.archived = 0
+                 AND a.score_pct IS NULL AND a.due_at >= ?
+               ORDER BY a.due_at LIMIT ?`
+            )
+            .all(from, n) as unknown as Deadline[])
+        : []
+    return [...tasks, ...assessments]
       .map((r) => ({ ...r }))
-  )
+      .sort((a, b) => a.due_at.localeCompare(b.due_at))
+      .slice(0, n)
+  })
+
+  // Profile (Study/Work mode etc.)
+  handle('profile:get', () => get<Profile>('profiles', getProfileId()))
+  handle('profile:update', (_e, patch: Partial<Profile>) => {
+    const safe: Partial<Profile> = {}
+    if (patch.mode) safe.mode = asMode(patch.mode)
+    if (typeof patch.display_name === 'string') safe.display_name = patch.display_name
+    return update<Profile>('profiles', getProfileId(), safe)
+  })
+
+  // Focus timer
+  handle('timer:state', () => timer.getState())
+  handle('timer:start', () => timer.start())
+  handle('timer:pause', () => timer.pause())
+  handle('timer:reset', () => timer.reset())
+  handle('timer:skip', () => timer.skip())
+  handle('timer:context', (_e, ctx: Record<string, unknown>) => {
+    const clean: Partial<TimerContext> = {}
+    for (const k of ['taskId', 'moduleId', 'projectId'] as const) {
+      if (k in ctx) clean[k] = typeof ctx[k] === 'string' ? (ctx[k] as string) : null
+    }
+    timer.setContext(clean)
+  })
+  handle('timer:settings', () => timer.getSettings())
+  handle('timer:setSettings', (_e, patch: Record<string, unknown>) => {
+    const clean: Partial<TimerSettings> = {}
+    for (const k of ['focusMin', 'shortMin', 'longMin', 'longEvery'] as const) {
+      const n = Number(patch[k])
+      if (k in patch && Number.isFinite(n)) clean[k] = Math.min(180, Math.max(1, Math.round(n)))
+    }
+    for (const k of ['autoStartBreaks', 'autoStartFocus'] as const) {
+      if (k in patch) clean[k] = !!patch[k]
+    }
+    return timer.setSettings(clean)
+  })
+
+  // Device preferences
+  handle('prefs:get', () => getPrefs())
+  handle('prefs:set', (_e, patch: Record<string, unknown>) => {
+    const clean: Partial<Prefs> = {}
+    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer'] as const) {
+      if (k in patch) clean[k] = !!patch[k]
+    }
+    return setPrefs(clean)
+  })
 
   // App
   handle('app:dataPath', () => app.getPath('userData'))

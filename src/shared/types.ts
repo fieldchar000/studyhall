@@ -89,14 +89,96 @@ export interface SubscriptionEvent {
   location: string | null
 }
 
+export type Mode = 'study' | 'work'
+
+export interface Profile extends BaseRow {
+  username: string | null
+  display_name: string
+  mode: Mode
+  grade_scale: string | null
+  target_gpa: number | null
+  leaderboard_opt_in: number
+}
+
+export interface Client extends BaseRow {
+  name: string
+  color: string
+  notes: string
+  archived: number
+}
+
+export type ProjectStatus = 'active' | 'on_hold' | 'done'
+
+export interface Project extends BaseRow {
+  title: string
+  description: string
+  mode: Mode
+  status: ProjectStatus
+  deadline: string | null // ISO UTC
+  color: string
+  module_id: string | null
+  client_id: string | null
+  sort: number
+}
+
+export interface Milestone extends BaseRow {
+  project_id: string
+  title: string
+  due_at: string | null
+  done_at: string | null
+  sort: number
+}
+
+export type TaskStatus = 'inbox' | 'todo' | 'doing' | 'done'
+
+export interface Task extends BaseRow {
+  title: string
+  notes: string
+  mode: Mode
+  status: TaskStatus
+  priority: number // 0 none, 1 low, 2 medium, 3 high
+  due_at: string | null // ISO UTC
+  labels: string // JSON array of strings
+  parent_task_id: string | null // set = this is a subtask
+  project_id: string | null
+  milestone_id: string | null
+  module_id: string | null
+  assessment_id: string | null
+  client_id: string | null
+  today_date: string | null // YYYY-MM-DD when in that day's Top 3
+  today_rank: number | null // 1..3
+  sort: number
+  completed_at: string | null
+}
+
+export interface FocusSession extends BaseRow {
+  kind: 'focus'
+  started_at: string
+  ended_at: string | null
+  planned_minutes: number
+  focused_seconds: number
+  completed: number
+  mode: Mode | null
+  task_id: string | null
+  module_id: string | null
+  project_id: string | null
+  shared_timer_id: string | null
+}
+
 /** Maps each table the UI may read/write through the generic API to its row type. */
 export interface TableMap {
+  profiles: Profile
   modules: Module
   weeks: Week
   materials: Material
   assessments: Assessment
   events: CalEvent
   calendar_subscriptions: CalendarSubscription
+  clients: Client
+  projects: Project
+  milestones: Milestone
+  tasks: Task
+  focus_sessions: FocusSession
 }
 export type TableName = keyof TableMap
 
@@ -109,9 +191,58 @@ export interface AssessmentWithModule extends Assessment {
 }
 
 export interface CalendarRange {
-  events: CalEvent[]
+  events: (CalEvent & { task_status: TaskStatus | null })[]
   external: (SubscriptionEvent & { color: string; subscription_name: string })[]
   assessments: AssessmentWithModule[]
+  tasks: Task[] // open tasks with a due date in range (current mode)
+}
+
+/** One row of the "Upcoming deadlines" panel: an assessment or a task. */
+export interface Deadline {
+  kind: 'assessment' | 'task'
+  id: string
+  title: string
+  due_at: string
+  color: string
+  subtitle: string
+  module_id: string | null
+  weight_pct: number | null
+}
+
+// ---------- Focus timer (lives in the main process so it runs while hidden) ----------
+
+export type TimerPhase = 'focus' | 'short_break' | 'long_break'
+
+export interface TimerSettings {
+  focusMin: number
+  shortMin: number
+  longMin: number
+  longEvery: number // long break after this many focus rounds
+  autoStartBreaks: boolean
+  autoStartFocus: boolean
+}
+
+export interface TimerContext {
+  taskId: string | null
+  moduleId: string | null
+  projectId: string | null
+}
+
+export interface TimerState extends TimerContext {
+  phase: TimerPhase
+  running: boolean
+  endsAt: number | null // epoch ms while running
+  remainingMs: number // while paused/idle
+  durationMs: number
+  roundsDone: number // focus rounds finished in the current cycle
+  sessionId: string | null // focus_sessions row being recorded
+}
+
+export interface Prefs {
+  closeToTray: boolean
+  launchAtLogin: boolean
+  notifyDeadlines: boolean
+  notifyTimer: boolean
 }
 
 /** The API the preload script exposes to the UI as window.api. */
@@ -131,9 +262,28 @@ export interface Api {
     pathForFile(file: File): string
   }
   calendar: {
-    range(startIso: string, endIso: string): Promise<CalendarRange>
+    range(startIso: string, endIso: string, mode: Mode): Promise<CalendarRange>
     refreshSubscriptions(id?: string): Promise<void>
-    upcomingDeadlines(limit: number): Promise<AssessmentWithModule[]>
+    upcomingDeadlines(limit: number, mode: Mode): Promise<Deadline[]>
+  }
+  profile: {
+    get(): Promise<Profile>
+    update(patch: Partial<Profile>): Promise<Profile>
+  }
+  timer: {
+    state(): Promise<TimerState>
+    start(): Promise<void>
+    pause(): Promise<void>
+    reset(): Promise<void>
+    skip(): Promise<void>
+    setContext(ctx: Partial<TimerContext>): Promise<void>
+    settings(): Promise<TimerSettings>
+    setSettings(patch: Partial<TimerSettings>): Promise<TimerSettings>
+    onState(cb: (s: TimerState) => void): () => void
+  }
+  prefs: {
+    get(): Promise<Prefs>
+    set(patch: Partial<Prefs>): Promise<Prefs>
   }
   app: {
     dataPath(): Promise<string>
@@ -144,5 +294,7 @@ export interface Api {
     flushed(): void
     /** Fired when ICS feeds have been re-downloaded. */
     onCalendarUpdated(cb: () => void): () => void
+    /** Main asks the UI to open a page (e.g. from the tray menu). */
+    onNavigate(cb: (page: string) => void): () => void
   }
 }

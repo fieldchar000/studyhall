@@ -67,9 +67,8 @@ export const db = {
   },
   async remove(table: TableName, id: string): Promise<void> {
     await track(api.remove(table, id))
-    notifyChanged(table)
-    // Deleting a module/week also hides its children
-    ;['weeks', 'materials', 'assessments'].forEach(notifyChanged)
+    // Deletes cascade to child rows in other tables, so refresh everything.
+    notifyChanged('*')
   }
 }
 
@@ -96,7 +95,7 @@ export function useLive<T>(tables: string[], load: () => Promise<T>, deps: unkno
 
   useEffect(() => {
     const onChange = (t: string): void => {
-      if (tables.includes(t)) reload()
+      if (t === '*' || tables.includes(t)) reload()
     }
     changeListeners.add(onChange)
     return () => {

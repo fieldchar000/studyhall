@@ -1,12 +1,53 @@
+import type { Mode, Prefs } from '@shared/types'
 import { Icon } from '@/components/ui'
-import { api, useLive } from '@/lib/data'
+import { api, notifyChanged, track, useLive } from '@/lib/data'
+import { setMode, useMode } from '@/lib/profile'
 
 export function SettingsPage(): React.JSX.Element {
+  const mode = useMode()
   const { data } = useLive([], async () => ({ path: await api.app.dataPath(), version: await api.app.version() }), [])
+  const { data: prefs } = useLive(['prefs'], () => api.prefs.get(), [])
+  const savePrefs = (patch: Partial<Prefs>): void => void track(api.prefs.set(patch)).then(() => notifyChanged('prefs'))
+
+  const pref = (key: keyof Prefs, label: string, hint?: string): React.JSX.Element => (
+    <label className="flex items-start gap-3 py-1.5">
+      <input type="checkbox" className="mt-1" checked={!!prefs?.[key]} onChange={(e) => savePrefs({ [key]: e.target.checked })} />
+      <span>
+        <span className="block text-sm">{label}</span>
+        {hint && <span className="block text-xs text-muted">{hint}</span>}
+      </span>
+    </label>
+  )
 
   return (
     <div className="mx-auto max-w-2xl p-8">
       <h1 className="mb-6 text-2xl font-semibold tracking-tight">Settings</h1>
+
+      <section className="card mb-4 p-5">
+        <h2 className="mb-1 font-semibold">Mode</h2>
+        <p className="mb-3 text-sm text-muted">
+          Study mode shows modules and assessments; Work mode shows clients. Tasks and projects are kept separately for each mode.
+        </p>
+        <div className="inline-flex gap-1 rounded-lg bg-line/50 p-1">
+          {(['study', 'work'] as Mode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => void setMode(m)}
+              className={`rounded-md px-5 py-1.5 text-sm capitalize ${mode === m ? 'bg-panel font-medium shadow-sm' : 'text-muted'}`}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="card mb-4 p-5">
+        <h2 className="mb-2 font-semibold">Tray &amp; notifications</h2>
+        {pref('closeToTray', 'Keep running in the tray when I close the window', 'The focus timer and reminders keep working. Quit from the tray icon menu.')}
+        {pref('launchAtLogin', 'Start Studyhall when I sign in to Windows', 'Starts quietly in the tray. Works in the installed app.')}
+        {pref('notifyDeadlines', 'Remind me about deadlines', 'About 24 hours and 1 hour before tasks and assessments are due.')}
+        {pref('notifyTimer', 'Notify me when a focus session or break ends')}
+      </section>
 
       <section className="card mb-4 p-5">
         <h2 className="mb-1 font-semibold">Your data</h2>
@@ -22,10 +63,7 @@ export function SettingsPage(): React.JSX.Element {
         </div>
       </section>
 
-      <section className="card p-5 text-sm text-muted">
-        <div>Studyhall {data?.version}</div>
-        <div className="mt-1">Study/Work mode, focus timer and more arrive in the next phases.</div>
-      </section>
+      <section className="card p-5 text-sm text-muted">Studyhall {data?.version}</section>
     </div>
   )
 }

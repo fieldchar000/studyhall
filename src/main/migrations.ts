@@ -116,5 +116,79 @@ export const migrations: string[] = [
   );
   CREATE INDEX idx_subevents_sub ON subscription_events(subscription_id);
   CREATE INDEX idx_subevents_start ON subscription_events(start_at);
+  `,
+
+  // 2 — Phase 2: tasks & projects engine, clients, focus sessions, reminders
+  `
+  CREATE TABLE clients (${base},
+    name TEXT NOT NULL DEFAULT 'New client',
+    color TEXT NOT NULL DEFAULT '#0ea5e9',
+    notes TEXT NOT NULL DEFAULT '',
+    archived INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE projects (${base},
+    title TEXT NOT NULL DEFAULT 'New project',
+    description TEXT NOT NULL DEFAULT '',
+    mode TEXT NOT NULL DEFAULT 'study' CHECK (mode IN ('study','work')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','on_hold','done')),
+    deadline TEXT,
+    color TEXT NOT NULL DEFAULT '#5b5bd6',
+    module_id TEXT REFERENCES modules(id),
+    client_id TEXT REFERENCES clients(id),
+    sort REAL NOT NULL DEFAULT 0
+  );
+  CREATE INDEX idx_projects_mode ON projects(mode);
+
+  CREATE TABLE milestones (${base},
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    title TEXT NOT NULL DEFAULT 'Milestone',
+    due_at TEXT,
+    done_at TEXT,
+    sort REAL NOT NULL DEFAULT 0
+  );
+  CREATE INDEX idx_milestones_project ON milestones(project_id);
+
+  CREATE TABLE tasks (${base},
+    title TEXT NOT NULL DEFAULT 'New task',
+    notes TEXT NOT NULL DEFAULT '',
+    mode TEXT NOT NULL DEFAULT 'study' CHECK (mode IN ('study','work')),
+    status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('inbox','todo','doing','done')),
+    priority INTEGER NOT NULL DEFAULT 0,
+    due_at TEXT,
+    labels TEXT NOT NULL DEFAULT '[]',
+    parent_task_id TEXT REFERENCES tasks(id),
+    project_id TEXT REFERENCES projects(id),
+    milestone_id TEXT REFERENCES milestones(id),
+    module_id TEXT REFERENCES modules(id),
+    assessment_id TEXT REFERENCES assessments(id),
+    client_id TEXT REFERENCES clients(id),
+    today_date TEXT,
+    today_rank INTEGER,
+    sort REAL NOT NULL DEFAULT 0,
+    completed_at TEXT
+  );
+  CREATE INDEX idx_tasks_mode_status ON tasks(mode, status);
+  CREATE INDEX idx_tasks_parent ON tasks(parent_task_id);
+  CREATE INDEX idx_tasks_project ON tasks(project_id);
+  CREATE INDEX idx_tasks_due ON tasks(due_at);
+
+  CREATE TABLE focus_sessions (${base},
+    kind TEXT NOT NULL DEFAULT 'focus',
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    planned_minutes INTEGER NOT NULL,
+    focused_seconds INTEGER NOT NULL DEFAULT 0,
+    completed INTEGER NOT NULL DEFAULT 0,
+    mode TEXT,
+    task_id TEXT REFERENCES tasks(id),
+    module_id TEXT REFERENCES modules(id),
+    project_id TEXT REFERENCES projects(id),
+    shared_timer_id TEXT
+  );
+  CREATE INDEX idx_focus_started ON focus_sessions(started_at);
+
+  -- Local-only: which reminders were already shown (so each fires once)
+  CREATE TABLE notifications_sent (key TEXT PRIMARY KEY, sent_at TEXT NOT NULL);
   `
 ]

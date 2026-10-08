@@ -1,27 +1,165 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
-import interactionPlugin from '@fullcalendar/interaction'
+import interactionPlugin, { Draggable, type EventReceiveArg } from '@fullcalendar/interaction'
 import type { EventInput, EventApi, DateSelectArg, EventClickArg } from '@fullcalendar/core'
-import type { CalEvent } from '@shared/types'
+import type { CalEvent, Task } from '@shared/types'
 import { AutoText } from '@/components/AutoField'
 import { ColorPicker, Icon, Modal, PALETTE } from '@/components/ui'
 import { api, db, useLive, useRows } from '@/lib/data'
 import { addDays, formatDateTime, isoToLocalInput, localInputToIso, relativeDue } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
+import { useMode } from '@/lib/profile'
+import { addToTop3, isOverdue, openTask, removeFromTop3, setDone, todayStr } from '@/lib/tasks'
 
 export function HomePage(): React.JSX.Element {
+  // Task rows in the side panels can be dragged onto the calendar to block out time.
+  const sideRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!sideRef.current) return
+    const d = new Draggable(sideRef.current, {
+      itemSelector: '[data-task-drag]',
+      eventData: (el) => ({
+        title: el.getAttribute('data-title') ?? 'Task',
+        duration: '01:00',
+        create: true,
+        extendedProps: { taskId: el.getAttribute('data-task-drag') }
+      })
+    })
+    return () => d.destroy()
+  }, [])
+
   return (
     <div className="flex h-full gap-5 p-5">
       <div className="card min-w-0 flex-1 p-4">
         <CalendarView />
       </div>
-      <div className="flex w-72 shrink-0 flex-col gap-5 overflow-auto">
+      <div ref={sideRef} className="flex w-80 shrink-0 flex-col gap-5 overflow-auto">
+        <Top3Panel />
+        <PlanPanel />
         <DeadlinesPanel />
         <SubscriptionsPanel />
       </div>
     </div>
+  )
+}
+
+/** A task row you can tick off, click to open, or drag onto the calendar. */
+function TaskRow({ task, trailing }: { task: Task; trailing?: React.ReactNode }): React.JSX.Element {
+  const done = task.status === 'done'
+  return (
+    <div
+      data-task-drag={task.id}
+      data-title={task.title}
+      className="group flex cursor-grab items-center gap-2 rounded-md px-1.5 py-1 hover:bg-canvas"
+      title="Drag onto the calendar to schedule it"
+    >
+      <input type="checkbox" checked={done} onChange={(e) => void setDone(task, e.target.checked)} />
+      <button className={`min-w-0 flex-1 truncate text-left text-sm ${done ? 'text-muted line-through' : ''}`} onClick={() => openTask(task.id)}>
+        {task.title}
+      </button>
+      {task.due_at && !done && (
+        <span className={`shrink-0 text-[11px] ${isOverdue(task) ? 'text-danger' : 'text-muted'}`}>
+          {isOverdue(task) ? 'overdue' : relativeDue(task.due_at)}
+        </span>
+      )}
+      {trailing}
+    </div>
+  )
+}
+
+// ---------- Top 3 today ----------
+
+function Top3Panel(): React.JSX.Element {
+  const mode = useMode()
+  const { data } = useLive(
+    ['tasks'],
+    async () => {
+      const [top, open] = await Promise.all([
+        api.list('tasks', { mode, today_date: todayStr() }, 'today_rank'),
+        api.list('tasks', { mode, parent_task_id: null }, 'sort')
+      ])
+      return { top, open: open.filter((t) => t.status !== 'done' && t.today_date !== todayStr()) }
+    },
+    [mode]
+  )
+  const [picking, setPicking] = useState(false)
+  const top = data?.top ?? []
+  const allDone = top.length === 3 && top.every((t) => t.status === 'done')
+
+  return (
+    <section className="card p-4">
+      <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
+        <Icon name="star" size={14} className="fill-current text-amber-500" /> Top 3 today
+        {allDone && <span className="ml-auto text-xs font-normal text-ok">All done 🎉</span>}
+      </h2>
+      {top.map((t) => (
+        <TaskRow
+          key={t.id}
+          task={t}
+          trailing={
+            <button className="opacity-0 group-hover:opacity-100" title="Remove from Top 3" onClick={() => void removeFromTop3(t)}>
+              <Icon name="x" size={13} className="text-muted" />
+            </button>
+          }
+        />
+      ))}
+      {top.length < 3 &&
+        (picking ? (
+          <select
+            autoFocus
+            className="field-boxed mt-1 text-sm"
+            value=""
+            onBlur={() => setPicking(false)}
+            onChange={(e) => {
+              const t = data?.open.find((x) => x.id === e.target.value)
+              if (t) void addToTop3(t)
+              setPicking(false)
+            }}
+          >
+            <option value="">Pick a task…</option>
+            {data?.open.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.title}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <button className="btn-ghost mt-1" onClick={() => setPicking(true)} disabled={!data?.open.length}>
+            <Icon name="plus" /> {data?.open.length ? `Pick ${3 - top.length} more` : 'Add tasks first'}
+          </button>
+        ))}
+    </section>
+  )
+}
+
+// ---------- Tasks to schedule ----------
+
+function PlanPanel(): React.JSX.Element {
+  const mode = useMode()
+  const { data } = useLive(
+    ['tasks', 'events'],
+    async () => {
+      const tasks = await api.list('tasks', { mode, parent_task_id: null }, 'sort')
+      // Open tasks, soonest due first (undated last)
+      return tasks
+        .filter((t) => t.status !== 'done' && t.today_date !== todayStr())
+        .sort((a, b) => (a.due_at ?? '9999').localeCompare(b.due_at ?? '9999'))
+        .slice(0, 8)
+    },
+    [mode]
+  )
+  return (
+    <section className="card p-4">
+      <h2 className="mb-1 text-sm font-semibold">Plan your day</h2>
+      <p className="mb-2 text-[11px] text-muted">Drag a task onto the calendar to block time for it.</p>
+      {data?.length === 0 && <div className="text-xs text-muted">No open tasks.</div>}
+      {data?.map((t) => <TaskRow key={t.id} task={t} />)}
+      <button className="btn-ghost mt-1" onClick={() => navigate({ name: 'tasks' })}>
+        All tasks →
+      </button>
+    </section>
   )
 }
 
@@ -35,25 +173,41 @@ function toStored(date: Date, allDay: boolean, fallbackStr: string): string {
 }
 
 function CalendarView(): React.JSX.Element {
+  const mode = useMode()
   const ref = useRef<FullCalendar>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [external, setExternal] = useState<ExternalInfo | null>(null)
 
-  // Reload calendar data when events/assessments/feeds change.
-  useLive(['events', 'assessments', 'calendar_subscriptions', 'modules'], async () => ref.current?.getApi().refetchEvents(), [])
+  // Reload calendar data when events/assessments/tasks/feeds change.
+  useLive(
+    ['events', 'assessments', 'tasks', 'calendar_subscriptions', 'modules'],
+    async () => ref.current?.getApi().refetchEvents(),
+    []
+  )
 
   const loadEvents = async (info: { startStr: string; endStr: string }): Promise<EventInput[]> => {
-    const { events, external, assessments } = await api.calendar.range(info.startStr, info.endStr)
+    const { events, external, assessments, tasks } = await api.calendar.range(info.startStr, info.endStr, mode)
     return [
       ...events.map((e) => ({
         id: e.id,
-        title: e.title,
+        // Time blocks for tasks show a tick once the task is done
+        title: e.task_status === 'done' ? `✓ ${e.title}` : e.title,
         start: e.start_at,
         end: e.end_at,
         allDay: !!e.all_day,
         backgroundColor: e.color ?? undefined,
+        classNames: e.task_status === 'done' ? ['opacity-60'] : [],
         editable: true,
         extendedProps: { kind: 'local' }
+      })),
+      ...tasks.map((t) => ({
+        id: `task:${t.id}`,
+        title: `☐ ${t.title}`,
+        start: new Date(t.due_at!).toLocaleDateString('en-CA'),
+        allDay: true,
+        backgroundColor: '#64748b',
+        editable: false,
+        extendedProps: { kind: 'task', taskId: t.id }
       })),
       ...external.map((e) => ({
         id: `ext:${e.id}`,
@@ -102,9 +256,28 @@ function CalendarView(): React.JSX.Element {
     })
   }
 
+  // A task dropped from the side panel: save it as a time block linked to the task.
+  const onReceive = async (info: EventReceiveArg): Promise<void> => {
+    const { event } = info
+    const taskId = event.extendedProps.taskId as string
+    event.remove() // FullCalendar's temporary copy; the saved one comes back on refetch
+    const start = event.start!
+    const allDay = event.allDay
+    const task = await api.get('tasks', taskId)
+    await db.create('events', {
+      title: task?.title ?? event.title,
+      task_id: taskId,
+      module_id: task?.module_id ?? null,
+      all_day: allDay ? 1 : 0,
+      start_at: toStored(start, allDay, event.startStr),
+      end_at: allDay ? addDays(event.startStr.slice(0, 10), 1) : (event.end ?? new Date(start.getTime() + 36e5)).toISOString()
+    })
+  }
+
   const onClick = ({ event }: EventClickArg): void => {
     const p = event.extendedProps
     if (p.kind === 'local') setEditing(event.id)
+    else if (p.kind === 'task') openTask(p.taskId)
     else if (p.kind === 'assessment') navigate({ name: 'module', id: p.moduleId, tab: 'assessments' })
     else
       setExternal({
@@ -129,6 +302,8 @@ function CalendarView(): React.JSX.Element {
         selectable
         selectMirror
         editable
+        droppable
+        eventReceive={(info) => void onReceive(info)}
         dayMaxEvents
         scrollTime="08:00:00"
         events={(info, ok, fail) => void loadEvents(info).then(ok, fail)}
@@ -155,6 +330,7 @@ function CalendarView(): React.JSX.Element {
 
 function EventEditor({ id, onClose }: { id: string; onClose: () => void }): React.JSX.Element | null {
   const { data: ev } = useLive(['events'], () => api.get('events', id), [id])
+  const { data: task } = useLive(['tasks', 'events'], async () => (ev?.task_id ? api.get('tasks', ev.task_id) : null), [ev?.task_id])
   const modules = useRows('modules', { archived: 0 }, 'sort')
   if (!ev) return null
   const save = (patch: Partial<CalEvent>): Promise<unknown> => db.update('events', id, patch)
@@ -188,6 +364,21 @@ function EventEditor({ id, onClose }: { id: string; onClose: () => void }): Reac
     >
       <div className="flex flex-col gap-3">
         <AutoText value={ev.title} onSave={(v) => save({ title: v || 'Untitled' })} className="field-boxed text-base font-medium" autoFocus />
+        {task && (
+          <div className="flex items-center gap-2 rounded-lg bg-canvas px-3 py-2 text-sm">
+            <span className="text-xs text-muted">Task:</span>
+            <input type="checkbox" checked={task.status === 'done'} onChange={(e) => void setDone(task, e.target.checked)} />
+            <button
+              className={`flex-1 truncate text-left hover:text-accent ${task.status === 'done' ? 'text-muted line-through' : ''}`}
+              onClick={() => {
+                onClose()
+                openTask(task.id)
+              }}
+            >
+              {task.title}
+            </button>
+          </div>
+        )}
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={!!ev.all_day} onChange={(e) => setAllDay(e.target.checked)} /> All day
         </label>
@@ -262,27 +453,44 @@ function EventEditor({ id, onClose }: { id: string; onClose: () => void }): Reac
 // ---------- Upcoming deadlines ----------
 
 function DeadlinesPanel(): React.JSX.Element {
-  const { data } = useLive(['assessments', 'modules'], () => api.calendar.upcomingDeadlines(8), [])
+  const mode = useMode()
+  const { data } = useLive(
+    ['assessments', 'modules', 'tasks', 'projects', 'clients'],
+    () => api.calendar.upcomingDeadlines(8, mode),
+    [mode]
+  )
   return (
     <section className="card p-4">
       <h2 className="mb-3 text-sm font-semibold">Upcoming deadlines</h2>
-      {data?.length === 0 && <div className="text-xs text-muted">Nothing due. Add assessments with due dates in your modules.</div>}
+      {data?.length === 0 && (
+        <div className="text-xs text-muted">
+          Nothing due. {mode === 'study' ? 'Give assessments or tasks a due date.' : 'Give tasks a due date.'}
+        </div>
+      )}
       <ul className="flex flex-col gap-1">
-        {data?.map((a) => (
-          <li key={a.id}>
+        {data?.map((d) => (
+          <li key={`${d.kind}:${d.id}`}>
             <button
               className="flex w-full items-start gap-2 rounded-md p-1.5 text-left hover:bg-canvas"
-              onClick={() => navigate({ name: 'module', id: a.module_id, tab: 'assessments' })}
+              onClick={() =>
+                d.kind === 'task' ? openTask(d.id) : navigate({ name: 'module', id: d.module_id!, tab: 'assessments' })
+              }
             >
-              <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ background: a.module_color }} />
+              <span
+                className={`mt-1.5 h-2 w-2 shrink-0 ${d.kind === 'task' ? 'rounded-sm' : 'rounded-full'}`}
+                style={{ background: d.color }}
+              />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm">{a.title}</span>
+                <span className="block truncate text-sm">{d.title}</span>
                 <span className="block text-xs text-muted">
-                  {a.module_code || a.module_name}
-                  {a.weight_pct != null && ` · ${a.weight_pct}%`}
+                  {d.kind === 'assessment' ? '📌 ' : ''}
+                  {d.subtitle}
+                  {d.weight_pct != null && ` · ${d.weight_pct}%`}
                 </span>
               </span>
-              <span className="shrink-0 text-xs font-medium text-accent">{relativeDue(a.due_at!)}</span>
+              <span className={`shrink-0 text-xs font-medium ${Date.parse(d.due_at) < Date.now() ? 'text-danger' : 'text-accent'}`}>
+                {relativeDue(d.due_at)}
+              </span>
             </button>
           </li>
         ))}

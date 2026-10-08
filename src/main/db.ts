@@ -15,12 +15,18 @@ export const now = (): string => new Date().toISOString()
 
 /** Tables the UI may access through the generic list/get/create/update/remove API. */
 const TABLES: readonly TableName[] = [
+  'profiles',
   'modules',
   'weeks',
   'materials',
   'assessments',
   'events',
-  'calendar_subscriptions'
+  'calendar_subscriptions',
+  'clients',
+  'projects',
+  'milestones',
+  'tasks',
+  'focus_sessions'
 ]
 
 /** When a parent is soft-deleted, these children are soft-deleted too. */
@@ -30,7 +36,12 @@ const CHILDREN: Partial<Record<TableName, { table: TableName; fk: string }[]>> =
     { table: 'materials', fk: 'module_id' },
     { table: 'assessments', fk: 'module_id' }
   ],
-  weeks: [{ table: 'materials', fk: 'week_id' }]
+  weeks: [{ table: 'materials', fk: 'week_id' }],
+  projects: [
+    { table: 'milestones', fk: 'project_id' },
+    { table: 'tasks', fk: 'project_id' }
+  ],
+  tasks: [{ table: 'tasks', fk: 'parent_task_id' }] // subtasks
 }
 
 /** Columns the UI is never allowed to set directly. */
@@ -105,6 +116,10 @@ function ensureLocalProfile(): string {
   setSetting('local_profile_id', id)
   queueSync('profiles', id)
   return id
+}
+
+export function getProfileId(): string {
+  return profileId
 }
 
 /** Remember that a row changed so the Phase 5 sync engine pushes it. */

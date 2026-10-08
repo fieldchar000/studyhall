@@ -1,11 +1,18 @@
 // Minimal in-app navigation (no router library needed for a desktop app).
 
 import { useSyncExternalStore } from 'react'
+import { api } from './data'
 
 export type Route =
   | { name: 'home' }
+  | { name: 'tasks' }
+  | { name: 'projects' }
+  | { name: 'project'; id: string }
   | { name: 'modules' }
-  | { name: 'module'; id: string; tab?: 'weeks' | 'assessments' }
+  | { name: 'module'; id: string; tab?: 'weeks' | 'assessments' | 'tasks' }
+  | { name: 'clients' }
+  | { name: 'client'; id: string }
+  | { name: 'focus' }
   | { name: 'settings' }
 
 let current: Route = { name: 'home' }
@@ -25,3 +32,8 @@ export function useRoute(): Route {
     () => current
   )
 }
+
+// The tray menu and notifications can ask for a page.
+api.app.onNavigate((page) => {
+  if (page === 'focus' || page === 'home' || page === 'tasks') navigate({ name: page })
+})

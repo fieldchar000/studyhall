@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import type { Module } from '@shared/types'
 import { AutoNumber, AutoText } from '@/components/AutoField'
+import { Board } from '@/components/Board'
 import { ColorPicker, Icon } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { navigate } from '@/lib/nav'
 import { AssessmentsTab } from './module/AssessmentsTab'
 import { WeeksTab } from './module/WeeksTab'
 
-export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'weeks' | 'assessments' }): React.JSX.Element {
+export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'weeks' | 'assessments' | 'tasks' }): React.JSX.Element {
   const [tab, setTab] = useState(initialTab ?? 'weeks')
   const [showColors, setShowColors] = useState(false)
   const { data: module } = useLive(['modules'], () => api.get('modules', id), [id])
@@ -111,7 +112,8 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
         {(
           [
             ['weeks', 'Weeks & materials'],
-            ['assessments', 'Assessments']
+            ['assessments', 'Assessments'],
+            ['tasks', 'Tasks']
           ] as const
         ).map(([key, label]) => (
           <button
@@ -126,7 +128,9 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
         ))}
       </div>
 
-      {tab === 'weeks' ? <WeeksTab moduleId={id} /> : <AssessmentsTab module={module} />}
+      {tab === 'weeks' && <WeeksTab moduleId={id} />}
+      {tab === 'assessments' && <AssessmentsTab module={module} />}
+      {tab === 'tasks' && <Board filter={{ module_id: id }} />}
     </div>
   )
 }
