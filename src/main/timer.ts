@@ -3,7 +3,7 @@
 // change, so a timer survives the app being closed and reopened.
 
 import { create, get, getProfileId, getSetting, setSetting, softDelete, update } from './db'
-import { creditFocusMinutes } from './game'
+import { reward } from './game'
 import type { FocusSession, Profile, TimerContext, TimerPhase, TimerSettings, TimerState } from '@shared/types'
 
 const DEFAULT_SETTINGS: TimerSettings = {
@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS: TimerSettings = {
 interface InternalState extends TimerState {
   focusedMs: number
   segmentStart: number | null
+  creditedMin?: number // whole focused minutes already saved to the session + game
 }
 
 type Listener = (state: TimerState, remainingMs: number, changed: boolean) => void
@@ -50,8 +51,30 @@ function idle(phase: TimerPhase): InternalState {
     taskId: state?.taskId ?? null,
     moduleId: state?.moduleId ?? null,
     projectId: state?.projectId ?? null,
+    languageId: state?.languageId ?? null,
     focusedMs: 0,
-    segmentStart: null
+    segmentStart: null,
+    creditedMin: 0
+  }
+}
+
+/** Focused time of the current session so far, including the running segment. */
+function focusedNow(t = Date.now()): number {
+  return state.focusedMs + (state.phase === 'focus' && state.running && state.segmentStart ? t - state.segmentStart : 0)
+}
+
+/** Save the session's focused time so far (every minute, on pause) so Stats and the
+ *  game see it straight away, not only when the session ends. */
+function checkpoint(t = Date.now()): void {
+  if (!state.sessionId) return
+  const ms = focusedNow(t)
+  update('focus_sessions', state.sessionId, { focused_seconds: Math.round(ms / 1000) })
+  const whole = Math.floor(ms / 60_000)
+  const credited = state.creditedMin ?? 0
+  if (whole > credited) {
+    reward('focus', whole - credited) // game gems
+    state.creditedMin = whole
+    setSetting('timer_state', state)
   }
 }
 
@@ -71,11 +94,15 @@ export function initTimer(onUpdate: Listener, onNotify: Notifier): void {
   state = getSetting<InternalState>('timer_state') ?? idle('focus')
   // The phase ended while the app was closed: record it, don't pop a stale notification.
   if (state.running && state.endsAt && state.endsAt <= Date.now()) complete(true)
+  else if (state.sessionId && state.focusedMs > 0) checkpoint() // older versions only saved at the end
 
   setInterval(() => {
     if (!state.running) return
     if (state.endsAt! <= Date.now()) complete(false)
-    else listener(state, remainingMs(), false) // per-second tick for the tray
+    else {
+      if (state.phase === 'focus' && Math.floor(focusedNow() / 60_000) > (state.creditedMin ?? 0)) checkpoint()
+      listener(state, remainingMs(), false) // per-second tick for the tray
+    }
   }, 1000)
 }
 
@@ -97,7 +124,8 @@ export function setContext(ctx: Partial<TimerContext>): void {
     update('focus_sessions', state.sessionId, {
       task_id: state.taskId,
       module_id: state.moduleId,
-      project_id: state.projectId
+      project_id: state.projectId,
+      language_id: state.languageId ?? null
     })
   }
   changed()
@@ -114,7 +142,8 @@ export function start(): void {
       mode,
       task_id: state.taskId,
       module_id: state.moduleId,
-      project_id: state.projectId
+      project_id: state.projectId,
+      language_id: state.languageId ?? null
     })
     state.sessionId = session.id
   }
@@ -137,6 +166,7 @@ export function pause(): void {
   accumulate(t)
   state.running = false
   state.endsAt = null
+  checkpoint(t)
   changed()
 }
 
@@ -151,10 +181,12 @@ function finishSession(completed: boolean, endT: number): void {
       focused_seconds: Math.round(state.focusedMs / 1000),
       completed: completed ? 1 : 0
     })
-    creditFocusMinutes(Math.floor(state.focusedMs / 60_000)) // idle-game coins
+    const left = Math.floor(state.focusedMs / 60_000) - (state.creditedMin ?? 0)
+    if (left > 0) reward('focus', left) // game gems for minutes not yet credited
   }
   state.sessionId = null
   state.focusedMs = 0
+  state.creditedMin = 0
 }
 
 /** Stop and rewind the current phase. */

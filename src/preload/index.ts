@@ -64,7 +64,8 @@ const api: Api = {
     shortcutStatus: () => ipcRenderer.invoke('capture:status')
   },
   game: {
-    get: () => ipcRenderer.invoke('game:get')
+    get: () => ipcRenderer.invoke('game:get'),
+    act: (action) => ipcRenderer.invoke('game:act', action)
   },
   cloud: {
     status: () => ipcRenderer.invoke('cloud:status'),

@@ -32,10 +32,10 @@ export function SettingsPage(): React.JSX.Element {
       <section className="card mb-4 p-5">
         <h2 className="mb-1 font-semibold">Mode</h2>
         <p className="mb-3 text-sm text-muted">
-          Study mode shows modules and assessments; Work mode shows clients. Tasks and projects are kept separately for each mode.
+          Study shows modules and assessments, Work shows clients, and Life is for everything else — languages, habits and personal goals. Tasks, projects and notes are kept separately for each. You can also switch at the top of the sidebar.
         </p>
         <div className="inline-flex gap-1 rounded-lg bg-line/50 p-1">
-          {(['study', 'work'] as Mode[]).map((m) => (
+          {(['study', 'work', 'life'] as Mode[]).map((m) => (
             <button
               key={m}
               onClick={() => void setMode(m)}

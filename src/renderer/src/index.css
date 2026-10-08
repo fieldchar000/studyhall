@@ -75,6 +75,95 @@ body {
 .card {
   @apply rounded-xl border border-line bg-panel;
 }
+
+/* Pixel Quest (the game keeps its own arcade look in light and dark mode) */
+.px {
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  -webkit-font-smoothing: none;
+}
+.px-box {
+  background: #1d1830;
+  color: #ede9fe;
+  box-shadow:
+    0 0 0 3px #0b0712,
+    inset 0 0 0 3px #3a3158;
+}
+.px-btn {
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 9px 12px 8px;
+  color: #fff;
+  background: #5b5bd6;
+  box-shadow:
+    0 0 0 3px #0b0712,
+    inset -3px -3px 0 rgba(0, 0, 0, 0.35),
+    inset 3px 3px 0 rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.px-btn:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+.px-btn:active:not(:disabled) {
+  transform: translate(1px, 2px);
+  box-shadow:
+    0 0 0 3px #0b0712,
+    inset 3px 3px 0 rgba(0, 0, 0, 0.35);
+}
+.px-btn:disabled {
+  background: #4b4560;
+  color: #9a93b5;
+  cursor: not-allowed;
+}
+.px-tab {
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  font-size: 10px;
+  padding: 10px 12px 8px;
+  color: #a79fc7;
+}
+.px-tab[data-active='true'] {
+  color: #fff;
+  background: #3a3158;
+  box-shadow: inset 0 -3px 0 #fde047;
+}
+}
+
+@keyframes px-pop {
+  0% {
+    transform: scale(0.3) rotate(-8deg);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.08) rotate(1deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+@keyframes px-shine {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px var(--glow)) brightness(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 12px var(--glow)) brightness(1.25);
+  }
+}
+@keyframes px-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+@keyframes px-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Slim scrollbars that suit both themes */

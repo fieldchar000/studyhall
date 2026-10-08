@@ -39,15 +39,16 @@ export function StatsPage(): React.JSX.Element {
   const mode = useMode()
   const [range, setRange] = useState(30)
   const { data } = useLive(
-    ['focus_sessions', 'tasks', 'modules', 'projects'],
+    ['focus_sessions', 'tasks', 'modules', 'projects', 'languages'],
     async () => {
-      const [sessions, tasks, modules, projects] = await Promise.all([
+      const [sessions, tasks, modules, projects, languages] = await Promise.all([
         api.list('focus_sessions', {}, 'started_at'),
         api.list('tasks', { mode }),
         api.list('modules'),
-        api.list('projects', { mode })
+        api.list('projects', { mode }),
+        api.list('languages')
       ])
-      return { sessions: sessions.filter((s) => (s.mode ?? 'study') === mode && s.ended_at), tasks, modules, projects }
+      return { sessions: sessions.filter((s) => (s.mode ?? 'study') === mode && s.focused_seconds > 0), tasks, modules, projects, languages }
     },
     [mode]
   )
@@ -70,16 +71,21 @@ export function StatsPage(): React.JSX.Element {
   }
 
   // Minutes per module (study) or project (work)
-  const groups = mode === 'study' ? data.modules.map((m) => ({ id: m.id, label: m.code ? `${m.code} · ${m.name}` : m.name, color: m.color })) : data.projects.map((p) => ({ id: p.id, label: p.title, color: p.color }))
+  const groups =
+    mode === 'study'
+      ? data.modules.map((m) => ({ id: m.id, label: m.code ? `${m.code} · ${m.name}` : m.name, color: m.color }))
+      : mode === 'life'
+        ? data.languages.map((l) => ({ id: l.id, label: l.name, color: l.color }))
+        : data.projects.map((p) => ({ id: p.id, label: p.title, color: p.color }))
   const perGroup = new Map<string, number>()
   for (const s of inRange) {
-    const key = (mode === 'study' ? s.module_id : s.project_id) ?? 'none'
+    const key = (mode === 'study' ? s.module_id : mode === 'life' ? s.language_id : s.project_id) ?? 'none'
     perGroup.set(key, (perGroup.get(key) ?? 0) + s.focused_seconds / 60)
   }
   const groupRows = [...perGroup.entries()]
     .map(([id, min]) => {
       const g = groups.find((x) => x.id === id)
-      return { id, min, label: g?.label ?? (mode === 'study' ? 'No module' : 'No project'), color: g?.color ?? 'var(--color-muted)' }
+      return { id, min, label: g?.label ?? (mode === 'study' ? 'No module' : mode === 'life' ? 'Other' : 'No project'), color: g?.color ?? 'var(--color-muted)' }
     })
     .sort((a, b) => b.min - a.min)
 
@@ -110,7 +116,7 @@ export function StatsPage(): React.JSX.Element {
       </section>
 
       <section className="card p-5">
-        <h2 className="mb-4 text-sm font-semibold">Focus time per {mode === 'study' ? 'module' : 'project'}</h2>
+        <h2 className="mb-4 text-sm font-semibold">Focus time per {mode === 'study' ? 'module' : mode === 'life' ? 'language' : 'project'}</h2>
         {groupRows.length === 0 ? (
           <div className="text-sm text-muted">No focus sessions in this period yet — start one in the Focus room.</div>
         ) : (

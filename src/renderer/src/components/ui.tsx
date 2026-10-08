@@ -45,7 +45,11 @@ const paths: Record<string, string> = {
   quote: 'M6 17c-2 0-3-1.5-3-4 0-3 2-6 5-7M16 17c-2 0-3-1.5-3-4 0-3 2-6 5-7',
   code: 'M8 7l-5 5 5 5M16 7l5 5-5 5',
   pencil: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
-  upload: 'M12 16V4M7 9l5-5 5 5M4 20h16'
+  upload: 'M12 16V4M7 9l5-5 5 5M4 20h16',
+  game: 'M6 8h12a4 4 0 0 1 4 4v1a4 4 0 0 1-7 2.6L14 14h-4l-1 1.6A4 4 0 0 1 2 13v-1a4 4 0 0 1 4-4zM7 10.5v3M5.5 12h3M16 11h.01M18 13h.01',
+  globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.5 9h17M3.5 15h17M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z',
+  flame: 'M12 21c-4 0-6.5-2.6-6.5-6 0-3.5 2.5-5.5 3.5-8.5 2 1.5 2.5 3.5 2.5 5 1-1 1.5-2.5 1.5-4 2.5 1.5 5.5 4.5 5.5 8 0 3-2.5 5.5-6.5 5.5z',
+  target: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 12h.01'
 }
 
 export function Icon({ name, size = 16, className = '' }: { name: string; size?: number; className?: string }): React.JSX.Element {

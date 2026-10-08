@@ -9,7 +9,7 @@ import { lookup, openSpotify } from './embeds'
 import { openSpotifyPlayer } from './spotify'
 import { checkForUpdates, installUpdate, updateState } from './updater'
 import { search } from './search'
-import { getGame } from './game'
+import { gameAct, getGame, reward } from './game'
 import { registerCloudIpc } from './cloud/ipc'
 import { spotifyParts } from '@shared/links'
 import * as timer from './timer'
@@ -19,6 +19,7 @@ import type {
   ClassOccurrence,
   TimetableSlot,
   Deadline,
+  GameAction,
   Mode,
   Prefs,
   Profile,
@@ -28,7 +29,7 @@ import type {
   Where
 } from '@shared/types'
 
-const asMode = (m: unknown): Mode => (m === 'work' ? 'work' : 'study')
+const asMode = (m: unknown): Mode => (m === 'work' || m === 'life' ? m : 'study')
 
 const SLOT_LABEL: Record<string, string> = {
   lecture: 'Lecture',
@@ -108,10 +109,20 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   // Generic data access (tables/columns are whitelisted in db.ts)
   handle('db:list', (_e, table: string, where?: Where, orderBy?: string) => list(table, where, orderBy))
   handle('db:get', (_e, table: string, id: string) => get(table, id))
-  handle('db:create', (_e, table: string, values: Record<string, unknown>) => create(table, values))
-  handle('db:update', (_e, table: string, id: string, patch: Record<string, unknown>) =>
-    update(table, id, patch)
-  )
+  handle('db:create', (_e, table: string, values: Record<string, unknown>) => {
+    const row = create<Record<string, unknown>>(table, values)
+    // Pixel Quest gems for studying
+    if (table === 'habit_checks') reward('habit', 1)
+    if (table === 'language_logs') reward('language', Number(row.minutes) || 0)
+    return row
+  })
+  handle('db:update', (_e, table: string, id: string, patch: Record<string, unknown>) => {
+    const before = table === 'tasks' ? get<Task>('tasks', id) : null
+    const row = update<Record<string, unknown>>(table, id, patch)
+    if (table === 'tasks' && before && !before.completed_at && row.completed_at && before.owner_id === getProfileId()) reward('task', 1)
+    if (table === 'flashcards' && typeof patch.last_reviewed_at === 'string') reward('card', 1)
+    return row
+  })
   handle('db:remove', (_e, table: string, id: string) => softDelete(table, id))
 
   // Materials
@@ -237,7 +248,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('timer:skip', () => timer.skip())
   handle('timer:context', (_e, ctx: Record<string, unknown>) => {
     const clean: Partial<TimerContext> = {}
-    for (const k of ['taskId', 'moduleId', 'projectId'] as const) {
+    for (const k of ['taskId', 'moduleId', 'projectId', 'languageId'] as const) {
       if (k in ctx) clean[k] = typeof ctx[k] === 'string' ? (ctx[k] as string) : null
     }
     timer.setContext(clean)
@@ -286,6 +297,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('capture:hide', () => deps.hideCapture())
   handle('capture:status', () => deps.shortcutStatus())
   handle('game:get', () => getGame())
+  handle('game:act', (_e, action: GameAction) => gameAct(action))
 
   // Phase 5: account, sync, friends, servers, video rooms
   registerCloudIpc(handle)

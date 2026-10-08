@@ -17,8 +17,8 @@ import type {
   ShareRow,
   TimerAction
 } from '@shared/cloud'
-import { create, getDb } from '../db'
-import { creditFocusMinutes } from '../game'
+import { create, get, getDb, getProfileId } from '../db'
+import { reward } from '../game'
 import * as timer from '../timer'
 import { currentUserId } from './account'
 import { isNetworkError, supabase } from './client'
@@ -298,8 +298,9 @@ export function recordSharedFocus(minutes: number): void {
   const m = Math.max(1, Math.min(180, Math.round(minutes)))
   const end = new Date()
   const start = new Date(end.getTime() - m * 60_000)
-  create('focus_sessions', { started_at: start.toISOString(), ended_at: end.toISOString(), planned_minutes: m, focused_seconds: m * 60, completed: 1, mode: 'study' })
-  creditFocusMinutes(m)
+  const mode = get<{ mode: string }>('profiles', getProfileId())?.mode ?? 'study'
+  create('focus_sessions', { started_at: start.toISOString(), ended_at: end.toISOString(), planned_minutes: m, focused_seconds: m * 60, completed: 1, mode })
+  reward('focus', m)
 }
 
 // ---------- video rooms ----------

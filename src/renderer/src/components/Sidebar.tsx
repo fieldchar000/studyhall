@@ -1,7 +1,7 @@
 import type { Mode } from '@shared/types'
 import { api, useLive } from '@/lib/data'
 import { navigate, useRoute, type Route } from '@/lib/nav'
-import { useMode } from '@/lib/profile'
+import { setMode, useMode } from '@/lib/profile'
 import { fmtClock, PHASE_LABEL, useRemaining, useTimerState } from '@/lib/timer'
 import { openSearch } from './SearchPalette'
 import { useCloud } from '@/lib/cloud'
@@ -16,38 +16,65 @@ interface NavItem {
   modes: Mode[]
 }
 
-const BOTH: Mode[] = ['study', 'work']
+const ALL: Mode[] = ['study', 'work', 'life']
+const MODES: { mode: Mode; label: string }[] = [
+  { mode: 'study', label: 'Study' },
+  { mode: 'work', label: 'Work' },
+  { mode: 'life', label: 'Life' }
+]
 
-// The Study/Work switch (Settings) changes which pages appear here.
+// The Study / Work / Life switch at the top changes which pages appear here.
+const projects = (label: string, modes: Mode[]): NavItem => ({ label, icon: 'projects', route: { name: 'projects' }, match: ['projects', 'project'], modes })
 const groups: NavItem[][] = [
   [
-    { label: 'Home', icon: 'home', route: { name: 'home' }, match: ['home'], modes: BOTH },
-    { label: 'Inbox', icon: 'upload', route: { name: 'inbox' }, match: ['inbox'], modes: BOTH },
-    { label: 'Tasks', icon: 'tasks', route: { name: 'tasks' }, match: ['tasks'], modes: BOTH },
-    { label: 'Projects', icon: 'projects', route: { name: 'projects' }, match: ['projects', 'project'], modes: BOTH },
-    { label: 'Focus', icon: 'focus', route: { name: 'focus' }, match: ['focus'], modes: BOTH }
+    { label: 'Home', icon: 'home', route: { name: 'home' }, match: ['home'], modes: ALL },
+    { label: 'Inbox', icon: 'upload', route: { name: 'inbox' }, match: ['inbox'], modes: ALL },
+    { label: 'Tasks', icon: 'tasks', route: { name: 'tasks' }, match: ['tasks'], modes: ALL },
+    { label: 'Focus', icon: 'focus', route: { name: 'focus' }, match: ['focus'], modes: ALL }
   ],
   [
+    // Study
     { label: 'Modules', icon: 'modules', route: { name: 'modules' }, match: ['modules', 'module'], modes: ['study'] },
-    { label: 'Clients', icon: 'clients', route: { name: 'clients' }, match: ['clients', 'client'], modes: ['work'] },
+    projects('Projects', ['study']),
     { label: 'Timetable', icon: 'calendar', route: { name: 'timetable' }, match: ['timetable'], modes: ['study'] },
-    { label: 'Notes', icon: 'note', route: { name: 'notes' }, match: ['notes'], modes: ['study'] },
+    // Work
+    { label: 'Clients', icon: 'clients', route: { name: 'clients' }, match: ['clients', 'client'], modes: ['work'] },
+    projects('Projects', ['work']),
     { label: 'Meeting notes', icon: 'note', route: { name: 'notes' }, match: ['notes'], modes: ['work'] },
-    { label: 'Mindmaps', icon: 'mindmap', route: { name: 'mindmaps' }, match: ['mindmaps', 'mindmap'], modes: BOTH },
-    { label: 'Flashcards', icon: 'cards', route: { name: 'flashcards' }, match: ['flashcards', 'deck'], modes: ['study'] },
-    { label: 'Videos', icon: 'play', route: { name: 'videos' }, match: ['videos', 'video'], modes: BOTH },
+    // Life
+    { label: 'Languages', icon: 'globe', route: { name: 'languages' }, match: ['languages', 'language'], modes: ['life'] },
+    { label: 'Habits', icon: 'flame', route: { name: 'habits' }, match: ['habits'], modes: ['life'] },
+    projects('Goals', ['life']),
+    // Shared
+    { label: 'Notes', icon: 'note', route: { name: 'notes' }, match: ['notes'], modes: ['study', 'life'] },
+    { label: 'Mindmaps', icon: 'mindmap', route: { name: 'mindmaps' }, match: ['mindmaps', 'mindmap'], modes: ALL },
+    { label: 'Flashcards', icon: 'cards', route: { name: 'flashcards' }, match: ['flashcards', 'deck'], modes: ['study', 'life'] },
+    { label: 'Videos', icon: 'play', route: { name: 'videos' }, match: ['videos', 'video'], modes: ALL },
     { label: 'Grades', icon: 'grades', route: { name: 'grades' }, match: ['grades'], modes: ['study'] }
   ],
   [
-    { label: 'Friends', icon: 'clients', route: { name: 'friends' }, match: ['friends'], modes: BOTH },
-    { label: 'Servers', icon: 'mindmap', route: { name: 'servers' }, match: ['servers'], modes: BOTH }
+    { label: 'Friends', icon: 'clients', route: { name: 'friends' }, match: ['friends'], modes: ALL },
+    { label: 'Servers', icon: 'mindmap', route: { name: 'servers' }, match: ['servers'], modes: ALL }
   ],
   [
-    { label: 'Stats', icon: 'grades', route: { name: 'stats' }, match: ['stats'], modes: BOTH },
-    { label: 'Study Garden', icon: 'star', route: { name: 'game' }, match: ['game'], modes: BOTH },
-    { label: 'Settings', icon: 'settings', route: { name: 'settings' }, match: ['settings'], modes: BOTH }
+    { label: 'Stats', icon: 'grades', route: { name: 'stats' }, match: ['stats'], modes: ALL },
+    { label: 'Pixel Quest', icon: 'game', route: { name: 'game' }, match: ['game'], modes: ALL },
+    { label: 'Settings', icon: 'settings', route: { name: 'settings' }, match: ['settings'], modes: ALL }
   ]
 ]
+
+/** Pages that only exist in some modes: switching away from them goes Home. */
+const MODE_PAGES: Partial<Record<Route['name'], Mode[]>> = {
+  modules: ['study'],
+  module: ['study'],
+  timetable: ['study'],
+  grades: ['study'],
+  clients: ['work'],
+  client: ['work'],
+  languages: ['life'],
+  language: ['life'],
+  habits: ['life']
+}
 
 export function Sidebar(): React.JSX.Element {
   const route = useRoute()
@@ -59,9 +86,27 @@ export function Sidebar(): React.JSX.Element {
   const badge = (label: string): number => (label === 'Inbox' ? inboxCount : label === 'Servers' ? serverUnread : 0)
   return (
     <aside className="flex w-52 shrink-0 flex-col border-r border-line bg-sidebar">
-      <div className="flex items-center gap-2 px-4 pt-5 pb-3">
+      <div className="px-4 pt-5 pb-2">
         <span className="text-base font-semibold tracking-tight">Studyhall</span>
-        <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-medium text-accent uppercase">{mode}</span>
+      </div>
+      <div className="mx-2 mb-2 grid grid-cols-3 gap-0.5 rounded-lg bg-line/60 p-0.5" role="tablist" aria-label="Category">
+        {MODES.map((m) => (
+          <button
+            key={m.mode}
+            role="tab"
+            aria-selected={mode === m.mode}
+            onClick={() => {
+              if (m.mode === mode) return
+              void setMode(m.mode)
+              const only = MODE_PAGES[route.name]
+              if (only && !only.includes(m.mode)) navigate({ name: 'home' })
+              else if (route.name === 'project') navigate({ name: 'projects' })
+            }}
+            className={`rounded-md py-1 text-xs ${mode === m.mode ? 'bg-panel font-semibold text-accent shadow-sm' : 'text-muted hover:text-ink'}`}
+          >
+            {m.label}
+          </button>
+        ))}
       </div>
       <button
         onClick={() => openSearch()}

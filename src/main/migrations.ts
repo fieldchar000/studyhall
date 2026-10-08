@@ -1,6 +1,12 @@
 // Database schema, as an ordered list of migrations.
 // NEVER edit a migration that has shipped — add a new one at the end instead.
 // Each runs once, inside a transaction, and is recorded in schema_migrations.
+// A migration can also be a function, for changes SQL alone can't do in SQLite
+// (like widening a CHECK constraint, which means rebuilding the table).
+
+import type { DatabaseSync } from 'node:sqlite'
+
+export type Migration = string | ((db: DatabaseSync) => void)
 
 // Columns every syncable table gets (sync-ready from day one).
 const base = `
@@ -10,7 +16,7 @@ const base = `
   deleted_at TEXT,
   owner_id TEXT NOT NULL`
 
-export const migrations: string[] = [
+export const migrations: Migration[] = [
   // 1 — Phase 1: profile, modules/weeks/materials/assessments, calendar
   `
   -- Local-only key/value settings (window position, local profile id, ...)
@@ -295,5 +301,66 @@ export const migrations: string[] = [
     currency REAL NOT NULL DEFAULT 0,
     state TEXT NOT NULL DEFAULT '{}'
   );
-  `
+  `,
+
+  // 5 — Life category (languages, habits); focus sessions can be about a language
+  (db) => {
+    // Rebuild the tables whose CHECK only allowed study/work (SQLite's documented way).
+    for (const table of ['profiles', 'projects', 'tasks', 'notes', 'mindmaps', 'videos']) {
+      const { sql } = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string }
+      const widened = sql.replaceAll("CHECK (mode IN ('study','work'))", "CHECK (mode IN ('study','work','life'))")
+      if (widened === sql) throw new Error(`mode check not found on ${table}`)
+      const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL").all(table) as { sql: string }[]
+      db.exec(widened.replace(/^CREATE TABLE "?\w+"?/, `CREATE TABLE ${table}__new`))
+      db.exec(`INSERT INTO ${table}__new SELECT * FROM ${table}`)
+      db.exec(`DROP TABLE ${table}`)
+      db.exec(`ALTER TABLE ${table}__new RENAME TO ${table}`)
+      for (const i of indexes) db.exec(i.sql)
+    }
+    db.exec(`
+    CREATE TABLE languages (${base},
+      name TEXT NOT NULL DEFAULT 'New language',
+      native_name TEXT NOT NULL DEFAULT '',
+      code TEXT NOT NULL DEFAULT '',
+      flag TEXT NOT NULL DEFAULT '🌐',
+      color TEXT NOT NULL DEFAULT '#6366f1',
+      level TEXT NOT NULL DEFAULT 'A0',
+      target_level TEXT NOT NULL DEFAULT 'A2',
+      target_date TEXT,
+      daily_goal_min INTEGER NOT NULL DEFAULT 15,
+      deck_id TEXT REFERENCES flashcard_decks(id),
+      resources TEXT NOT NULL DEFAULT '[]',
+      why TEXT NOT NULL DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1,
+      sort REAL NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE language_logs (${base},
+      language_id TEXT NOT NULL REFERENCES languages(id),
+      date TEXT NOT NULL,
+      minutes INTEGER NOT NULL DEFAULT 0,
+      skill TEXT NOT NULL DEFAULT 'vocab'
+        CHECK (skill IN ('listening','speaking','reading','writing','vocab','grammar')),
+      activity TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX idx_langlogs_lang ON language_logs(language_id, date);
+
+    CREATE TABLE habits (${base},
+      name TEXT NOT NULL DEFAULT 'New habit',
+      emoji TEXT NOT NULL DEFAULT '✅',
+      color TEXT NOT NULL DEFAULT '#10b981',
+      days_per_week INTEGER NOT NULL DEFAULT 7 CHECK (days_per_week BETWEEN 1 AND 7),
+      archived INTEGER NOT NULL DEFAULT 0,
+      sort REAL NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE habit_checks (${base},
+      habit_id TEXT NOT NULL REFERENCES habits(id),
+      date TEXT NOT NULL
+    );
+    CREATE INDEX idx_habitchecks_habit ON habit_checks(habit_id, date);
+
+    ALTER TABLE focus_sessions ADD COLUMN language_id TEXT REFERENCES languages(id);
+    `)
+  }
 ]

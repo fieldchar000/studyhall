@@ -47,16 +47,17 @@ export function ProjectsPage(): React.JSX.Element {
 
   const add = async (): Promise<void> => {
     const n = data?.projects.length ?? 0
-    const p = await db.create('projects', { title: 'New project', mode, color: PALETTE[(n + 2) % PALETTE.length], sort: n })
+    const p = await db.create('projects', { title: mode === 'life' ? 'New goal' : 'New project', mode, color: PALETTE[(n + 2) % PALETTE.length], sort: n })
     navigate({ name: 'project', id: p.id })
   }
 
   const shown = data?.projects.filter((p) => p.status === status) ?? []
+  const noun = mode === 'life' ? 'goal' : 'project' // Life mode calls projects "goals"
 
   return (
     <div className="mx-auto max-w-5xl p-8">
       <div className="mb-6 flex items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{mode === 'life' ? 'Goals' : 'Projects'}</h1>
         <div className="ml-4 flex gap-1 rounded-lg bg-line/50 p-0.5">
           {(Object.keys(STATUS_LABEL) as ProjectStatus[]).map((s) => (
             <button
@@ -70,15 +71,17 @@ export function ProjectsPage(): React.JSX.Element {
         </div>
         <div className="flex-1" />
         <button className="btn-primary" onClick={() => void add()}>
-          <Icon name="plus" /> New project
+          <Icon name="plus" /> New {noun}
         </button>
       </div>
 
       {data && shown.length === 0 && (
         <div className="card p-10 text-center text-muted">
           {status === 'active'
-            ? 'No active projects. Projects group tasks with milestones and a deadline — e.g. a dissertation or a client job.'
-            : `No ${STATUS_LABEL[status].toLowerCase()} projects.`}
+            ? mode === 'life'
+              ? 'No active goals. A goal groups tasks with milestones and a deadline — e.g. run a 10K, cook 20 new recipes, or pass JLPT N4.'
+              : 'No active projects. Projects group tasks with milestones and a deadline — e.g. a dissertation or a client job.'
+            : `No ${STATUS_LABEL[status].toLowerCase()} ${noun}s.`}
         </div>
       )}
 

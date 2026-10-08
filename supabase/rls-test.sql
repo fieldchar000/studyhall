@@ -62,6 +62,9 @@ begin
   insert into modules (id, owner_id, created_at, updated_at, name, code) values ('mod-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-05-01T00:00:00.000Z', 'Alice module', 'A1');
   insert into notes (id, owner_id, created_at, updated_at, title, content, plain_text, kind, mode) values ('note-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'Alice note', '', '', 'note', 'study');
   insert into focus_sessions (id, owner_id, created_at, updated_at, started_at, planned_minutes, focused_seconds, completed, kind) values ('fs-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-06-01T00:00:00.000Z', 25, 1500, 1, 'focus');
+  insert into languages (id, owner_id, created_at, updated_at, name) values ('lang-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'Japanese');
+  insert into habits (id, owner_id, created_at, updated_at, name) values ('habit-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'Read');
+  insert into game_state (id, owner_id, created_at, updated_at, currency, state) values ('game-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 300, '{}');
   begin
     insert into modules (id, owner_id, created_at, updated_at, name) values ('mod-hack', b::text, 'x', 'x', 'pretend to be Bob');
     r := r || E'\nFAIL Alice created a row owned by Bob';
@@ -85,6 +88,11 @@ begin
   select count(*) into n from modules; r := r || case when n = 0 then E'\nPASS Bob sees none of Alice''s modules before sharing' else E'\nFAIL Bob sees ' || n || ' modules' end;
   select count(*) into n from focus_sessions; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s focus sessions' else E'\nFAIL focus sessions leaked' end;
   select count(*) into n from profiles where id = a::text; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s profile settings' else E'\nFAIL profile leaked' end;
+  select count(*) into n from languages; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s languages' else E'\nFAIL languages leaked' end;
+  select count(*) into n from habits; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s habits' else E'\nFAIL habits leaked' end;
+  select count(*) into n from game_state; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s game save' else E'\nFAIL game save leaked' end;
+  update game_state set currency = 0, updated_at = '2026-08-01T00:00:00.000Z' where id = 'game-a1'; get diagnostics n = row_count;
+  r := r || case when n = 0 then E'\nPASS Bob cannot change Alice''s game save' else E'\nFAIL Bob changed the game save' end;
   execute 'reset role';
 
   -- A shares module (view) and note (edit) with B

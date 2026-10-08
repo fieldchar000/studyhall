@@ -1,3 +1,5 @@
+import type { GameData, SummonResult } from './game'
+
 // Types shared by the main process, preload and the React UI.
 
 import type { CloudApi } from './cloud'
@@ -98,7 +100,7 @@ export interface SubscriptionEvent {
   location: string | null
 }
 
-export type Mode = 'study' | 'work'
+export type Mode = 'study' | 'work' | 'life'
 
 export interface Profile extends BaseRow {
   username: string | null
@@ -172,6 +174,53 @@ export interface FocusSession extends BaseRow {
   module_id: string | null
   project_id: string | null
   shared_timer_id: string | null
+  language_id: string | null
+}
+
+export type LanguageSkill = 'listening' | 'speaking' | 'reading' | 'writing' | 'vocab' | 'grammar'
+
+export interface LanguageResource {
+  title: string
+  url: string
+}
+
+export interface Language extends BaseRow {
+  name: string
+  native_name: string
+  code: string // ISO 639-1, e.g. 'ja'
+  flag: string
+  color: string
+  level: string // 'A0' (just starting) … 'C2'
+  target_level: string
+  target_date: string | null // YYYY-MM-DD, e.g. an exam date
+  daily_goal_min: number
+  deck_id: string | null // the language's vocabulary flashcard deck
+  resources: string // JSON LanguageResource[]
+  why: string
+  active: number
+  sort: number
+}
+
+export interface LanguageLog extends BaseRow {
+  language_id: string
+  date: string // YYYY-MM-DD (local)
+  minutes: number
+  skill: LanguageSkill
+  activity: string
+}
+
+export interface Habit extends BaseRow {
+  name: string
+  emoji: string
+  color: string
+  days_per_week: number
+  archived: number
+  sort: number
+}
+
+export interface HabitCheck extends BaseRow {
+  habit_id: string
+  date: string // YYYY-MM-DD (local)
 }
 
 export type SlotKind = 'lecture' | 'tutorial' | 'lab' | 'seminar' | 'other'
@@ -268,13 +317,24 @@ export interface GameRow extends BaseRow {
   state: string // JSON GameData
 }
 
-/** What the idle game remembers (inside game_state.state). */
-export interface GameData {
-  owned: Record<string, number> // building id -> count
-  focusLevel: number // upgrade: coins per focus minute
-  lastTick: string // ISO: passive income is counted from here
-  totalEarned: number
-  focusMinutesCredited: number
+/** Things the player can do in Pixel Quest (all checked in the main process). */
+export type GameAction =
+  | { type: 'tick'; taps: number }
+  | { type: 'summon'; count: 1 | 10; free?: boolean }
+  | { type: 'level'; hero: string; n: number }
+  | { type: 'star'; hero: string }
+  | { type: 'party'; party: string[] }
+  | { type: 'boss'; taps: number; elapsed: number }
+  | { type: 'autoBoss'; on: boolean }
+  | { type: 'rebirth' }
+  | { type: 'dismissAway' }
+
+export interface GameResult {
+  data: GameData
+  summon?: SummonResult[]
+  boss?: { win: boolean; gems: number }
+  relics?: number
+  error?: string
 }
 
 /** Result of oEmbed lookups (title/thumbnail) for YouTube or Spotify links. */
@@ -329,6 +389,10 @@ export interface TableMap {
   videos: Video
   inbox_items: InboxItem
   game_state: GameRow
+  languages: Language
+  language_logs: LanguageLog
+  habits: Habit
+  habit_checks: HabitCheck
 }
 export type TableName = keyof TableMap
 
@@ -388,6 +452,7 @@ export interface TimerContext {
   taskId: string | null
   moduleId: string | null
   projectId: string | null
+  languageId?: string | null
 }
 
 export interface TimerState extends TimerContext {
@@ -465,8 +530,9 @@ export interface Api {
     shortcutStatus(): Promise<{ accelerator: string; registered: boolean }>
   }
   game: {
-    /** Coins earned from focus sessions since the last visit are added server-side; returns the row. */
-    get(): Promise<GameRow>
+    /** Current game state (fights up to now first). */
+    get(): Promise<GameResult>
+    act(action: GameAction): Promise<GameResult>
   }
   /** A row changed in another window (e.g. quick capture). */
   onDbChanged(cb: (table: string) => void): () => void

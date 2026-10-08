@@ -121,7 +121,7 @@ export function ProjectDetailPage({ id }: { id: string }): React.JSX.Element {
                 ))}
               </select>
             </label>
-          ) : (
+          ) : mode === 'life' ? null : (
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">Client</span>
               <select className="field-boxed" value={p.client_id ?? ''} onChange={(e) => void save({ client_id: e.target.value || null })}>

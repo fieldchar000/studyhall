@@ -24,6 +24,9 @@ export type Route =
   | { name: 'video'; id: string }
   | { name: 'stats' }
   | { name: 'game' }
+  | { name: 'languages' }
+  | { name: 'language'; id: string }
+  | { name: 'habits' }
   | { name: 'friends' }
   | { name: 'servers'; serverId?: string; channelId?: string }
   | { name: 'focus' }

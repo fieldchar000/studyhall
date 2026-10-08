@@ -233,7 +233,7 @@ function DrawerBody({ id }: { id: string }): React.JSX.Element | null {
                 </select>
               </Field>
             </>
-          ) : (
+          ) : mode === 'work' ? (
             <Field label="Client" wide>
               <select className="field-boxed" value={t.client_id ?? ''} onChange={(e) => void save({ client_id: e.target.value || null })}>
                 <option value="">—</option>
@@ -244,7 +244,7 @@ function DrawerBody({ id }: { id: string }): React.JSX.Element | null {
                 ))}
               </select>
             </Field>
-          )}
+          ) : null}
 
           <Field label="Labels" wide>
             <LabelInput labels={parseLabels(t)} known={knownLabels} onChange={(l) => void save({ labels: JSON.stringify(l) })} />

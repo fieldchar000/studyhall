@@ -28,22 +28,23 @@ export async function openWeekNote(moduleId: string, weekId: string, title: stri
 export function NotesPage({ id }: { id?: string }): React.JSX.Element {
   const mode = useMode()
   const [search, setSearch] = useState('')
-  const [group, setGroup] = useState('') // module (study) or client (work) filter
+  const [group, setGroup] = useState('') // module (study), client (work) or goal (life) filter
   const { data } = useLive(
-    ['notes', 'modules', 'clients'],
+    ['notes', 'modules', 'clients', 'projects'],
     async () => {
-      const [notes, modules, clients] = await Promise.all([
+      const [notes, modules, clients, projects] = await Promise.all([
         api.list('notes', { mode }, 'updated_at'),
         api.list('modules', {}, 'sort'),
-        api.list('clients', {}, 'name')
+        api.list('clients', {}, 'name'),
+        api.list('projects', { mode }, 'sort')
       ])
-      return { notes: notes.reverse(), modules, clients } // newest first
+      return { notes: notes.reverse(), modules, clients, projects } // newest first
     },
     [mode]
   )
   const selectedId = id ?? data?.notes[0]?.id
   const q = search.trim().toLowerCase()
-  const groupKey = mode === 'study' ? 'module_id' : 'client_id'
+  const groupKey = mode === 'study' ? 'module_id' : mode === 'life' ? 'project_id' : 'client_id'
   const shown = (data?.notes ?? [])
     .filter((n) => (!q || n.title.toLowerCase().includes(q) || n.plain_text.toLowerCase().includes(q)) && (!group || n[groupKey] === group))
     .sort((a, b) => b.pinned - a.pinned)
@@ -52,6 +53,7 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
       const m = data?.modules.find((x) => x.id === n.module_id)
       return m ? m.code || m.name : null
     }
+    if (mode === 'life') return data?.projects.find((x) => x.id === n.project_id)?.title ?? null
     return data?.clients.find((x) => x.id === n.client_id)?.name ?? null
   }
 
@@ -59,7 +61,7 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
     <div className="flex h-full">
       <aside className="flex w-72 shrink-0 flex-col border-r border-line">
         <div className="flex items-center gap-2 px-4 pt-5 pb-3">
-          <h1 className="flex-1 text-lg font-semibold">{mode === 'study' ? 'Notes' : 'Meeting notes'}</h1>
+          <h1 className="flex-1 text-lg font-semibold">{mode === 'work' ? 'Meeting notes' : 'Notes'}</h1>
           <button
             className="btn-primary px-2 py-1"
             title="New note"
@@ -67,7 +69,9 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
               void newNote(
                 mode === 'study'
                   ? { mode, module_id: group || null }
-                  : { mode, kind: 'meeting', client_id: group || null, title: 'Meeting', meeting_at: new Date().toISOString() }
+                  : mode === 'life'
+                    ? { mode, project_id: group || null }
+                    : { mode, kind: 'meeting', client_id: group || null, title: 'Meeting', meeting_at: new Date().toISOString() }
               )
             }
           >
@@ -77,8 +81,13 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
         <div className="flex flex-col gap-2 px-3 pb-2">
           <input className="field-boxed" placeholder="Search notes…" value={search} onChange={(e) => setSearch(e.target.value)} />
           <select className="field-boxed" value={group} onChange={(e) => setGroup(e.target.value)}>
-            <option value="">{mode === 'study' ? 'All modules' : 'All clients'}</option>
-            {(mode === 'study' ? data?.modules.map((m) => ({ id: m.id, name: m.code || m.name })) : data?.clients)?.map((g) => (
+            <option value="">{mode === 'study' ? 'All modules' : mode === 'life' ? 'All goals' : 'All clients'}</option>
+            {(mode === 'study'
+              ? data?.modules.map((m) => ({ id: m.id, name: m.code || m.name }))
+              : mode === 'life'
+                ? data?.projects.map((p) => ({ id: p.id, name: p.title }))
+                : data?.clients
+            )?.map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name}
               </option>
@@ -118,7 +127,9 @@ function EmptyState({ mode }: { mode: string }): React.JSX.Element {
     <div className="m-auto max-w-sm text-center text-sm text-muted">
       {mode === 'study'
         ? 'Notes can be linked to a module and week. Open a week in a module and click “Notes”, or press + to start one.'
-        : 'Keep notes for each meeting, linked to a client or project. Press + to start one.'}
+        : mode === 'life'
+          ? 'Notes for everything else in life: recipes, ideas, journal entries, phrases you learned. Press + to start one.'
+          : 'Keep notes for each meeting, linked to a client or project. Press + to start one.'}
     </div>
   )
 }
@@ -190,7 +201,7 @@ export function NoteView({ id, compact = false }: { id: string; compact?: boolea
                   ))}
                 </select>
               </>
-            ) : (
+            ) : n.mode === 'life' ? null : (
               <>
                 <input
                   type="datetime-local"

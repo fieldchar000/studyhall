@@ -107,14 +107,15 @@ function WorkingOn(): React.JSX.Element {
   const mode = useMode()
   const s = useTimerState()
   const { data } = useLive(
-    ['tasks', 'modules', 'projects'],
+    ['tasks', 'modules', 'projects', 'languages'],
     async () => {
-      const [tasks, modules, projects] = await Promise.all([
+      const [tasks, modules, projects, languages] = await Promise.all([
         api.list('tasks', { mode }, 'sort'),
         api.list('modules', { archived: 0 }, 'sort'),
-        api.list('projects', { mode, status: 'active' }, 'sort')
+        api.list('projects', { mode, status: 'active' }, 'sort'),
+        api.list('languages', { active: 1 }, 'sort')
       ])
-      return { tasks: tasks.filter((t) => t.status !== 'done' || t.id === s?.taskId), modules, projects }
+      return { tasks: tasks.filter((t) => t.status !== 'done' || t.id === s?.taskId), modules, projects, languages }
     },
     [mode, s?.taskId]
   )
@@ -127,6 +128,21 @@ function WorkingOn(): React.JSX.Element {
   return (
     <div className="card flex flex-col gap-3 p-5">
       <h2 className="text-sm font-semibold">Working on</h2>
+      {mode === 'life' && (
+        <select
+          className="field-boxed text-sm"
+          value={s.languageId ?? ''}
+          onChange={(e) => void api.timer.setContext({ languageId: e.target.value || null })}
+          title="Focus time on a language counts towards its daily goal"
+        >
+          <option value="">Not language practice</option>
+          {data.languages.map((l) => (
+            <option key={l.id} value={l.id}>
+              Practising {l.name}
+            </option>
+          ))}
+        </select>
+      )}
       <div className="grid grid-cols-2 gap-3 text-sm">
         {mode === 'study' ? (
           <select className="field-boxed" value={s.moduleId ?? ''} onChange={(e) => void api.timer.setContext({ moduleId: e.target.value || null, taskId: null })}>
@@ -140,7 +156,7 @@ function WorkingOn(): React.JSX.Element {
           </select>
         ) : (
           <select className="field-boxed" value={s.projectId ?? ''} onChange={(e) => void api.timer.setContext({ projectId: e.target.value || null, taskId: null })}>
-            <option value="">Any project</option>
+            <option value="">{mode === 'life' ? 'Any goal' : 'Any project'}</option>
             {data.projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.title}
@@ -243,7 +259,7 @@ function TodayCard(): React.JSX.Element {
         api.list('projects')
       ])
       const today = localDate(new Date())
-      const todays = sessions.filter((s) => s.ended_at && localDate(new Date(s.started_at)) === today).reverse()
+      const todays = sessions.filter((s) => s.focused_seconds > 0 && localDate(new Date(s.started_at)) === today).reverse()
       const name = (id: string | null, rows: { id: string; title?: string; name?: string; code?: string }[]): string | null => {
         const r = rows.find((x) => x.id === id)
         return r ? (r.title ?? (r.code || r.name) ?? null) : null

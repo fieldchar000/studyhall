@@ -14,8 +14,10 @@ import { useMode } from '@/lib/profile'
 import { addToTop3, isOverdue, openTask, removeFromTop3, setDone, todayStr } from '@/lib/tasks'
 import { ExamCountdownPanel } from '@/components/RevisionPlanner'
 import { SpotifyPanel } from '@/components/SpotifyPanel'
+import { LifeTodayCard } from './Habits'
 
 export function HomePage(): React.JSX.Element {
+  const mode = useMode()
   // Task rows in the side panels can be dragged onto the calendar to block out time.
   const sideRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -38,6 +40,7 @@ export function HomePage(): React.JSX.Element {
         <CalendarView />
       </div>
       <div ref={sideRef} className="flex w-80 shrink-0 flex-col gap-5 overflow-auto">
+        {mode === 'life' && <LifeTodayCard />}
         <Top3Panel />
         <ExamCountdownPanel />
         <PlanPanel />

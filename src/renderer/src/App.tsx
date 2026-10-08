@@ -19,6 +19,8 @@ import { InboxPage } from './pages/Inbox'
 import { VideoPage, VideosPage } from './pages/Videos'
 import { StatsPage } from './pages/Stats'
 import { GamePage } from './pages/Game'
+import { LanguageDetailPage, LanguagesPage } from './pages/Languages'
+import { HabitsPage } from './pages/Habits'
 import { SearchPalette } from './components/SearchPalette'
 import { FriendsPage } from './pages/Friends'
 import { ServersPage } from './pages/Servers'
@@ -50,6 +52,9 @@ export function App(): React.JSX.Element {
         {route.name === 'video' && <VideoPage key={route.id} id={route.id} />}
         {route.name === 'stats' && <StatsPage />}
         {route.name === 'game' && <GamePage />}
+        {route.name === 'languages' && <LanguagesPage />}
+        {route.name === 'language' && <LanguageDetailPage key={route.id} id={route.id} />}
+        {route.name === 'habits' && <HabitsPage />}
         {route.name === 'friends' && <FriendsPage />}
         {route.name === 'servers' && <ServersPage key={route.serverId ?? ''} serverId={route.serverId} channelId={route.channelId} />}
         {route.name === 'focus' && <FocusPage />}

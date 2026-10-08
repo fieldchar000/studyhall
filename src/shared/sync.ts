@@ -25,7 +25,11 @@ export const SYNC_TABLES = [
   'flashcards',
   'videos',
   'inbox_items',
-  'game_state'
+  'game_state',
+  'languages',
+  'language_logs',
+  'habits',
+  'habit_checks'
 ] as const
 
 export type SyncTable = (typeof SYNC_TABLES)[number]

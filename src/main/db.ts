@@ -36,7 +36,11 @@ const TABLES: readonly TableName[] = [
   'flashcards',
   'videos',
   'inbox_items',
-  'game_state'
+  'game_state',
+  'languages',
+  'language_logs',
+  'habits',
+  'habit_checks'
 ]
 
 /** When a parent is soft-deleted, these children are soft-deleted too. */
@@ -61,7 +65,9 @@ const CHILDREN: Partial<Record<TableName, { table: TableName; fk: string }[]>> =
     { table: 'milestones', fk: 'project_id' },
     { table: 'tasks', fk: 'project_id' }
   ],
-  tasks: [{ table: 'tasks', fk: 'parent_task_id' }] // subtasks
+  tasks: [{ table: 'tasks', fk: 'parent_task_id' }], // subtasks
+  languages: [{ table: 'language_logs', fk: 'language_id' }],
+  habits: [{ table: 'habit_checks', fk: 'habit_id' }]
 }
 
 /** Columns the UI is never allowed to set directly. */
@@ -102,13 +108,24 @@ function migrate(): void {
   )
   const row = db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number | null }
   const current = row.v ?? 0
-  migrations.forEach((sql, i) => {
+  migrations.forEach((m, i) => {
     const version = i + 1
     if (version <= current) return
-    tx(() => {
-      db.exec(sql)
-      db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(version, now())
-    })
+    // Table rebuilds need foreign keys off (it can't change inside a transaction).
+    if (typeof m === 'function') db.exec('PRAGMA foreign_keys = OFF')
+    try {
+      tx(() => {
+        if (typeof m === 'function') {
+          // (Synced rows may already point at missing parents; only fail if the migration made it worse.)
+          const before = db.prepare('PRAGMA foreign_key_check').all().length
+          m(db)
+          if (db.prepare('PRAGMA foreign_key_check').all().length > before) throw new Error(`Migration ${version} broke references`)
+        } else db.exec(m)
+        db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(version, now())
+      })
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON')
+    }
   })
 }
 

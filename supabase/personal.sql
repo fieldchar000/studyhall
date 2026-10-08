@@ -309,6 +309,7 @@ alter table public.focus_sessions add column if not exists task_id text;
 alter table public.focus_sessions add column if not exists module_id text;
 alter table public.focus_sessions add column if not exists project_id text;
 alter table public.focus_sessions add column if not exists shared_timer_id text;
+alter table public.focus_sessions add column if not exists language_id text;
 alter table public.focus_sessions add column if not exists server_updated_at timestamptz not null default now();
 create index if not exists focus_sessions_sync_idx on public.focus_sessions (server_updated_at);
 create index if not exists focus_sessions_owner_idx on public.focus_sessions (owner_id);
@@ -548,3 +549,98 @@ revoke all on public.game_state from anon;
 revoke delete on public.game_state from authenticated; -- deletes are soft (deleted_at)
 drop trigger if exists game_state_sync_guard on public.game_state;
 create trigger game_state_sync_guard before insert or update on public.game_state for each row execute function public.sync_guard();
+
+-- languages
+create table if not exists public.languages (id text primary key);
+alter table public.languages add column if not exists created_at text;
+alter table public.languages add column if not exists updated_at text;
+alter table public.languages add column if not exists deleted_at text;
+alter table public.languages add column if not exists owner_id text;
+alter table public.languages add column if not exists name text;
+alter table public.languages add column if not exists native_name text;
+alter table public.languages add column if not exists code text;
+alter table public.languages add column if not exists flag text;
+alter table public.languages add column if not exists color text;
+alter table public.languages add column if not exists level text;
+alter table public.languages add column if not exists target_level text;
+alter table public.languages add column if not exists target_date text;
+alter table public.languages add column if not exists daily_goal_min bigint;
+alter table public.languages add column if not exists deck_id text;
+alter table public.languages add column if not exists resources text;
+alter table public.languages add column if not exists why text;
+alter table public.languages add column if not exists active bigint;
+alter table public.languages add column if not exists sort double precision;
+alter table public.languages add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists languages_sync_idx on public.languages (server_updated_at);
+create index if not exists languages_owner_idx on public.languages (owner_id);
+alter table public.languages enable row level security;
+drop policy if exists "own rows" on public.languages;
+create policy "own rows" on public.languages for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.languages from anon;
+revoke delete on public.languages from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists languages_sync_guard on public.languages;
+create trigger languages_sync_guard before insert or update on public.languages for each row execute function public.sync_guard();
+
+-- language_logs
+create table if not exists public.language_logs (id text primary key);
+alter table public.language_logs add column if not exists created_at text;
+alter table public.language_logs add column if not exists updated_at text;
+alter table public.language_logs add column if not exists deleted_at text;
+alter table public.language_logs add column if not exists owner_id text;
+alter table public.language_logs add column if not exists language_id text;
+alter table public.language_logs add column if not exists date text;
+alter table public.language_logs add column if not exists minutes bigint;
+alter table public.language_logs add column if not exists skill text;
+alter table public.language_logs add column if not exists activity text;
+alter table public.language_logs add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists language_logs_sync_idx on public.language_logs (server_updated_at);
+create index if not exists language_logs_owner_idx on public.language_logs (owner_id);
+alter table public.language_logs enable row level security;
+drop policy if exists "own rows" on public.language_logs;
+create policy "own rows" on public.language_logs for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.language_logs from anon;
+revoke delete on public.language_logs from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists language_logs_sync_guard on public.language_logs;
+create trigger language_logs_sync_guard before insert or update on public.language_logs for each row execute function public.sync_guard();
+
+-- habits
+create table if not exists public.habits (id text primary key);
+alter table public.habits add column if not exists created_at text;
+alter table public.habits add column if not exists updated_at text;
+alter table public.habits add column if not exists deleted_at text;
+alter table public.habits add column if not exists owner_id text;
+alter table public.habits add column if not exists name text;
+alter table public.habits add column if not exists emoji text;
+alter table public.habits add column if not exists color text;
+alter table public.habits add column if not exists days_per_week bigint;
+alter table public.habits add column if not exists archived bigint;
+alter table public.habits add column if not exists sort double precision;
+alter table public.habits add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists habits_sync_idx on public.habits (server_updated_at);
+create index if not exists habits_owner_idx on public.habits (owner_id);
+alter table public.habits enable row level security;
+drop policy if exists "own rows" on public.habits;
+create policy "own rows" on public.habits for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.habits from anon;
+revoke delete on public.habits from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists habits_sync_guard on public.habits;
+create trigger habits_sync_guard before insert or update on public.habits for each row execute function public.sync_guard();
+
+-- habit_checks
+create table if not exists public.habit_checks (id text primary key);
+alter table public.habit_checks add column if not exists created_at text;
+alter table public.habit_checks add column if not exists updated_at text;
+alter table public.habit_checks add column if not exists deleted_at text;
+alter table public.habit_checks add column if not exists owner_id text;
+alter table public.habit_checks add column if not exists habit_id text;
+alter table public.habit_checks add column if not exists date text;
+alter table public.habit_checks add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists habit_checks_sync_idx on public.habit_checks (server_updated_at);
+create index if not exists habit_checks_owner_idx on public.habit_checks (owner_id);
+alter table public.habit_checks enable row level security;
+drop policy if exists "own rows" on public.habit_checks;
+create policy "own rows" on public.habit_checks for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.habit_checks from anon;
+revoke delete on public.habit_checks from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists habit_checks_sync_guard on public.habit_checks;
+create trigger habit_checks_sync_guard before insert or update on public.habit_checks for each row execute function public.sync_guard();
