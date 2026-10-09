@@ -6,6 +6,7 @@ import { FocusPage } from './pages/Focus'
 import { HomePage } from './pages/Home'
 import { ModuleDetailPage } from './pages/ModuleDetail'
 import { ModulesPage } from './pages/Modules'
+import { MaterialsPage } from './pages/Materials'
 import { ProjectDetailPage } from './pages/ProjectDetail'
 import { ProjectsPage } from './pages/Projects'
 import { SettingsPage } from './pages/Settings'
@@ -47,6 +48,7 @@ export function App(): React.JSX.Element {
         {route.name === 'projects' && <ProjectsPage />}
         {route.name === 'project' && <ProjectDetailPage key={route.id} id={route.id} />}
         {route.name === 'modules' && <ModulesPage />}
+        {route.name === 'materials' && <MaterialsPage />}
         {route.name === 'module' && <ModuleDetailPage key={route.id} id={route.id} tab={route.tab} />}
         {route.name === 'clients' && <ClientsPage />}
         {route.name === 'client' && <ClientDetailPage key={route.id} id={route.id} />}

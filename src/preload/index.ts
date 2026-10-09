@@ -21,6 +21,9 @@ const api: Api = {
   materials: {
     pickAndImport: (weekId) => ipcRenderer.invoke('materials:pick', weekId),
     importPaths: (weekId, paths) => ipcRenderer.invoke('materials:import', weekId, paths),
+    pickTo: (place) => ipcRenderer.invoke('materials:pickTo', place),
+    importTo: (place, paths) => ipcRenderer.invoke('materials:importTo', place, paths),
+    read: (id) => ipcRenderer.invoke('materials:read', id),
     openExternal: (id) => ipcRenderer.invoke('materials:open', id),
     showInFolder: (id) => ipcRenderer.invoke('materials:reveal', id),
     pathForFile: (file) => webUtils.getPathForFile(file)

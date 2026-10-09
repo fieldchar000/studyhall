@@ -2,7 +2,7 @@
 
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { create, get, getDb, getProfileId, list, softDelete, update } from './db'
-import { importPapers, importPaths, openExternal, openPaperExternal, paperDoc, pickAndImport, pickPapers, showInFolder } from './files'
+import { importMaterials, importPapers, importPaths, openExternal, openPaperExternal, paperDoc, pickAndImport, pickMaterials, pickPapers, readMaterial, showInFolder } from './files'
 import { refreshSubscriptions } from './ics'
 import { getPrefs, setPrefs, SHORTCUTS } from './prefs'
 import { lookup, openSpotify } from './embeds'
@@ -138,6 +138,10 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     return pickAndImport(win, weekId)
   })
   handle('materials:import', (_e, weekId: string, paths: string[]) => importPaths(weekId, paths))
+  type Place = { moduleId: string | null; weekId: string | null } | null
+  handle('materials:pickTo', (e, place: Place) => pickMaterials(BrowserWindow.fromWebContents(e.sender)!, place))
+  handle('materials:importTo', (_e, place: Place, paths: string[]) => importMaterials(place, paths))
+  handle('materials:read', (_e, id: string) => readMaterial(id))
   handle('materials:open', (_e, id: string) => openExternal(id))
   handle('materials:reveal', (_e, id: string) => showInFolder(id))
 

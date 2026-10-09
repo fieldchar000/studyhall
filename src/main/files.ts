@@ -9,7 +9,7 @@ import { basename, extname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { create, get, list, update } from './db'
 import { ensureLocalFile } from './cloud/sync'
-import type { ExamPaper, Material, MaterialKind, PaperKind, PickedDoc, Week } from '@shared/types'
+import type { ExamPaper, Material, MaterialKind, Module, PaperKind, PickedDoc, Week } from '@shared/types'
 import { readDocs } from './docs'
 
 const dataDir = (): string => app.getPath('userData')
@@ -41,33 +41,78 @@ export function absolutePath(m: { local_path: string | null }): string {
 export async function importPaths(weekId: string, paths: string[]): Promise<Material[]> {
   const week = get<Week>('weeks', weekId)
   if (!week) throw new Error('Week not found')
-  await mkdir(join(dataDir(), 'materials'), { recursive: true })
+  return importMaterials({ moduleId: week.module_id, weekId }, paths)
+}
 
-  let sort = list<Material>('materials', { week_id: weekId }).length
+const squash = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
+
+/** Guess where a file belongs from its name: "CS101_Week3_Lecture.pptx" → module CS101, week 3. */
+function guessPlace(fileName: string): { moduleId: string | null; weekId: string | null } {
+  const base = fileName.replace(/\.[^.]+$/, '')
+  const flat = squash(base)
+  const words = ` ${base.toLowerCase().replace(/[^a-z0-9]+/g, ' ')} `
+  const modules = list<Module>('modules', { archived: 0 })
+  const byCode = modules.filter((m) => squash(m.code).length >= 3 && flat.includes(squash(m.code)))
+  const byName = modules.filter((m) => m.name.trim().length >= 4 && words.includes(` ${m.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `))
+  // Longest code wins ("CS1010" over "CS10"); a unique name match is the fallback.
+  const mod = byCode.sort((a, b) => squash(b.code).length - squash(a.code).length)[0] ?? (byName.length === 1 ? byName[0] : null)
+  if (!mod) return { moduleId: null, weekId: null }
+  const n = Number(/(?:^|[^a-z])(?:week|wk|w)[\s_-]*0?(\d{1,2})(?![0-9])/i.exec(base)?.[1] ?? 0)
+  if (!n || n > 30) return { moduleId: mod.id, weekId: null }
+  const week = list<Week>('weeks', { module_id: mod.id }).find((w) => w.number === n) ?? create<Week>('weeks', { module_id: mod.id, number: n, title: '' })
+  return { moduleId: mod.id, weekId: week.id }
+}
+
+/** Copy files into the library. With no target, each file is sorted by its name (or left in "Other"). */
+export async function importMaterials(target: { moduleId: string | null; weekId: string | null } | null, paths: string[]): Promise<Material[]> {
+  await mkdir(join(dataDir(), 'materials'), { recursive: true })
   const imported: Material[] = []
-  for (const src of paths) {
+  for (const src of paths.slice(0, 300)) {
     const info = await stat(src).catch(() => null)
     if (!info?.isFile()) continue // skip folders / missing files
     const ext = extname(src).toLowerCase()
+    const name = basename(src)
+    const place = target ?? guessPlace(name)
     const rel = `materials/${randomUUID()}${ext}`
     const dest = join(dataDir(), rel)
     await copyFile(src, dest)
-    const name = basename(src)
+    const siblings = place.weekId ? list<Material>('materials', { week_id: place.weekId }).length : list<Material>('materials', { module_id: place.moduleId }).length
     imported.push(
       create<Material>('materials', {
-        module_id: week.module_id,
-        week_id: weekId,
+        module_id: place.moduleId,
+        week_id: place.weekId,
         title: name.slice(0, name.length - ext.length) || name,
         kind: kindFor(ext),
         file_name: name,
         local_path: rel,
         size_bytes: info.size,
         sha256: await hashFile(dest),
-        sort: sort++
+        sort: siblings
       })
     )
   }
   return imported
+}
+
+export async function pickMaterials(win: BrowserWindow, target: { moduleId: string | null; weekId: string | null } | null): Promise<Material[]> {
+  const result = await dialog.showOpenDialog(win, {
+    title: 'Add materials',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Course materials', extensions: ['pdf', 'html', 'htm', 'ppt', 'pptx', 'odp', 'doc', 'docx', 'odt', 'md', 'txt', 'rtf'] },
+      { name: 'All files', extensions: ['*'] }
+    ]
+  })
+  return result.canceled ? [] : importMaterials(target, result.filePaths)
+}
+
+/** A material's bytes for the in-app document viewer (Word, PowerPoint, Markdown…). */
+export async function readMaterial(id: string): Promise<PickedDoc | null> {
+  const m = get<Material>('materials', id)
+  if (!m?.local_path) return null
+  if (!(await ensureLocalFile(m))) throw new Error('This file is only on the PC it was added on (turn on "Sync file" there).')
+  const [doc] = await readDocs([absolutePath(m)])
+  return doc ? { ...doc, name: m.file_name } : null
 }
 
 export async function pickAndImport(win: BrowserWindow, weekId: string): Promise<Material[]> {

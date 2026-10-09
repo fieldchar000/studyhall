@@ -74,7 +74,7 @@ function openResult(r: SearchResult): void {
     case 'assessment':
       return navigate({ name: 'module', id: r.parent_id!, tab: 'assessments' })
     case 'material':
-      return navigate({ name: 'module', id: r.parent_id! })
+      return navigate(r.parent_id ? { name: 'module', id: r.parent_id } : { name: 'materials' })
     case 'flashcard':
       return navigate({ name: 'deck', id: r.parent_id! })
     case 'deck':

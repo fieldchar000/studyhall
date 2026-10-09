@@ -1,22 +1,19 @@
 import { useState } from 'react'
 import type { Material, Week } from '@shared/types'
 import { AutoText } from '@/components/AutoField'
-import { Icon, Modal } from '@/components/ui'
+import { Icon } from '@/components/ui'
 import { api, db, notifyChanged, track, useRows } from '@/lib/data'
 import { formatBytes } from '@/lib/dates'
+import { navigate } from '@/lib/nav'
 import { openWeekNote } from '../Notes'
 import { useCloud } from '@/lib/cloud'
+import { MaterialViewer, fileType, openMaterial } from '@/components/MaterialViewer'
 
-const KIND_LABEL: Record<Material['kind'], string> = { pdf: 'PDF', html: 'HTML', slides: 'Slides', other: 'File' }
-const KIND_COLOR: Record<Material['kind'], string> = {
-  pdf: 'bg-red-500/15 text-red-600 dark:text-red-400',
-  html: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
-  slides: 'bg-orange-500/15 text-orange-600 dark:text-orange-400',
-  other: 'bg-slate-500/15 text-slate-600 dark:text-slate-400'
-}
+const DRAG = 'application/x-studyhall-item'
 
 export function WeeksTab({ moduleId }: { moduleId: string }): React.JSX.Element {
   const weeks = useRows('weeks', { module_id: moduleId }, 'number')
+  const loose = useRows('materials', { module_id: moduleId, week_id: null }, 'sort')
   const [preview, setPreview] = useState<Material | null>(null)
 
   const addWeek = (): void => {
@@ -29,19 +26,31 @@ export function WeeksTab({ moduleId }: { moduleId: string }): React.JSX.Element 
       {weeks?.length === 0 && (
         <div className="card p-8 text-center text-muted">No weeks yet. Add one, then drop lecture files onto it.</div>
       )}
+      {loose && loose.length > 0 && (
+        <div className="card px-3 py-2">
+          <div className="flex items-center gap-2 py-1 text-sm font-semibold">
+            Not in a week yet
+            <span className="text-xs font-normal text-muted">drag them onto a week, or use Materials → Move to…</span>
+          </div>
+          {loose.map((m) => (
+            <MaterialRow key={m.id} material={m} onPreview={setPreview} />
+          ))}
+        </div>
+      )}
       {weeks?.map((w) => <WeekCard key={w.id} week={w} onPreview={setPreview} />)}
       <div>
         <button className="btn" onClick={addWeek}>
           <Icon name="plus" /> Add week
         </button>
       </div>
-      {preview && <MaterialPreview material={preview} onClose={() => setPreview(null)} />}
+      {preview && <MaterialViewer material={preview} onClose={() => setPreview(null)} />}
     </div>
   )
 }
 
 function WeekCard({ week, onPreview }: { week: Week; onPreview: (m: Material) => void }): React.JSX.Element {
   const materials = useRows('materials', { week_id: week.id }, 'sort')
+  const notes = useRows('notes', { week_id: week.id }, 'created_at')
   const [open, setOpen] = useState(true)
   const [dragging, setDragging] = useState(false)
 
@@ -53,6 +62,12 @@ function WeekCard({ week, onPreview }: { week: Week; onPreview: (m: Material) =>
   const onDrop = (e: React.DragEvent): void => {
     e.preventDefault()
     setDragging(false)
+    const moved = e.dataTransfer.getData(DRAG)
+    if (moved) {
+      const { table, id } = JSON.parse(moved) as { table: 'materials' | 'notes'; id: string }
+      void db.update(table, id, { module_id: week.module_id, week_id: week.id })
+      return
+    }
     const paths = [...e.dataTransfer.files].map((f) => api.materials.pathForFile(f)).filter(Boolean)
     if (paths.length) void importFiles(api.materials.importPaths(week.id, paths))
   }
@@ -93,7 +108,10 @@ function WeekCard({ week, onPreview }: { week: Week; onPreview: (m: Material) =>
           title="Week start date"
           onChange={(e) => void db.update('weeks', week.id, { start_date: e.target.value || null })}
         />
-        <span className="text-xs whitespace-nowrap text-muted">{materials?.length ?? 0} files</span>
+        <span className="text-xs whitespace-nowrap text-muted">
+          {materials?.length ?? 0} file{materials?.length === 1 ? '' : 's'}
+          {notes?.length ? ` · ${notes.length} note${notes.length === 1 ? '' : 's'}` : ''}
+        </span>
         <button
           className="btn-ghost"
           title="Open this week's notes"
@@ -108,12 +126,20 @@ function WeekCard({ week, onPreview }: { week: Week; onPreview: (m: Material) =>
 
       {open && (
         <div className="border-t border-line px-3 py-2">
+          {notes?.map((n) => (
+            <div key={n.id} className="flex items-center gap-2 rounded-md py-0.5 pl-1 hover:bg-canvas">
+              <span className="w-14 shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-center text-[11px] font-semibold text-accent">Note</span>
+              <button className="min-w-0 flex-1 truncate px-2 py-1 text-left hover:text-accent" onClick={() => navigate({ name: 'notes', id: n.id })}>
+                {n.title || 'Untitled note'}
+              </button>
+            </div>
+          ))}
           {materials?.map((m) => <MaterialRow key={m.id} material={m} onPreview={onPreview} />)}
           <div className="flex items-center gap-3 py-1.5">
             <button className="btn-ghost" onClick={() => void importFiles(api.materials.pickAndImport(week.id))}>
               <Icon name="upload" /> Add files
             </button>
-            <span className="text-xs text-muted">or drag files here — PDF, HTML, PowerPoint…</span>
+            <span className="text-xs text-muted">or drag files here — PDF, Word, PowerPoint, HTML…</span>
           </div>
         </div>
       )}
@@ -124,16 +150,19 @@ function WeekCard({ week, onPreview }: { week: Week; onPreview: (m: Material) =>
 function MaterialRow({ material: m, onPreview }: { material: Material; onPreview: (m: Material) => void }): React.JSX.Element {
   const [renaming, setRenaming] = useState(false)
   const cloud = useCloud()
-  const previewable = m.kind === 'pdf' || m.kind === 'html'
-  const open = (): void => {
-    if (previewable) onPreview(m)
-    else void api.materials.openExternal(m.id).catch((e) => alert(`Couldn't open the file: ${e.message}`))
-  }
+  const type = fileType(m)
+  const previewable = type.view !== 'external'
+  const open = (): void => openMaterial(m, onPreview)
   return (
-    <div className="group flex items-center gap-2 rounded-md py-0.5 pl-1 hover:bg-canvas">
-      <span className={`w-14 shrink-0 rounded px-1.5 py-0.5 text-center text-[11px] font-semibold ${KIND_COLOR[m.kind]}`}>
-        {KIND_LABEL[m.kind]}
-      </span>
+    <div
+      className="group flex items-center gap-2 rounded-md py-0.5 pl-1 hover:bg-canvas"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(DRAG, JSON.stringify({ table: 'materials', id: m.id }))
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+    >
+      <span className={`w-14 shrink-0 rounded px-1.5 py-0.5 text-center text-[11px] font-semibold ${type.cls}`}>{type.label}</span>
       {renaming ? (
         <div className="min-w-0 flex-1" onBlur={() => setRenaming(false)}>
           <AutoText value={m.title} onSave={(v) => db.update('materials', m.id, { title: v || m.file_name })} autoFocus />
@@ -172,30 +201,5 @@ function MaterialRow({ material: m, onPreview }: { material: Material; onPreview
         </button>
       </div>
     </div>
-  )
-}
-
-/** In-app viewer. PDFs use Chromium's built-in viewer; HTML runs in a locked-down sandbox. */
-function MaterialPreview({ material: m, onClose }: { material: Material; onClose: () => void }): React.JSX.Element {
-  const src = `material://local/${m.id}/${encodeURIComponent(m.file_name)}`
-  return (
-    <Modal
-      wide
-      title={m.title}
-      onClose={onClose}
-      actions={
-        <button className="btn-ghost" onClick={() => void api.materials.openExternal(m.id)}>
-          <Icon name="external" /> Open in default app
-        </button>
-      }
-    >
-      {m.kind === 'html' ? (
-        // allow-scripts only: no same-origin, no popups, no top navigation, no forms.
-        // The file is also served with a CSP that blocks all network access.
-        <iframe title={m.title} src={src} sandbox="allow-scripts" className="h-full w-full bg-white" />
-      ) : (
-        <iframe title={m.title} src={src} className="h-full w-full" />
-      )}
-    </Modal>
   )
 }

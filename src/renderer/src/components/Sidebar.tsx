@@ -43,6 +43,7 @@ const groups: { title?: string; items: NavItem[] }[] = [
     items: [
       // Study
       { label: 'Modules', icon: 'modules', route: { name: 'modules' }, match: ['modules', 'module'], modes: ['study'] },
+      { label: 'Materials', icon: 'folder', route: { name: 'materials' }, match: ['materials'], modes: ['study'] },
       projects('Projects', ['study']),
       { label: 'Exam Prep', icon: 'target', route: { name: 'exams' }, match: ['exams', 'paper', 'quiz'], modes: ['study'] },
       { label: 'Timetable', icon: 'calendar', route: { name: 'timetable' }, match: ['timetable'], modes: ['study'] },
@@ -92,6 +93,7 @@ const groups: { title?: string; items: NavItem[] }[] = [
 const MODE_PAGES: Partial<Record<Route['name'], Mode[]>> = {
   modules: ['study'],
   module: ['study'],
+  materials: ['study'],
   timetable: ['study'],
   grades: ['study'],
   exams: ['study'],

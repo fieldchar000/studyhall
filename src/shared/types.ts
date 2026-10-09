@@ -41,8 +41,8 @@ export interface Week extends BaseRow {
 export type MaterialKind = 'pdf' | 'html' | 'slides' | 'other'
 
 export interface Material extends BaseRow {
-  module_id: string
-  week_id: string
+  module_id: string | null // null = unsorted ("Other" in the library)
+  week_id: string | null // null = in the module but no week yet
   title: string
   kind: MaterialKind
   file_name: string // original file name
@@ -354,6 +354,11 @@ export interface GameResult {
 }
 
 /** A document picked for import (old .doc/.ppt already converted to .docx/.pptx). */
+export interface MaterialPlace {
+  moduleId: string | null
+  weekId: string | null
+}
+
 export interface PickedDoc {
   name: string
   ext: string // docx | pptx | pdf | html | md | txt | odt | odp
@@ -721,6 +726,11 @@ export interface Api {
   materials: {
     pickAndImport(weekId: string): Promise<Material[]>
     importPaths(weekId: string, paths: string[]): Promise<Material[]>
+    /** Add to a module/week; with null, each file is sorted by its name (or goes to "Other"). */
+    pickTo(place: MaterialPlace | null): Promise<Material[]>
+    importTo(place: MaterialPlace | null, paths: string[]): Promise<Material[]>
+    /** File bytes for the in-app document viewer. */
+    read(id: string): Promise<PickedDoc | null>
     openExternal(id: string): Promise<void>
     showInFolder(id: string): Promise<void>
     /** Real file path of a file dropped onto the window. */

@@ -586,5 +586,21 @@ export const migrations: Migration[] = [
   ALTER TABLE mindmap_nodes ADD COLUMN source TEXT NOT NULL DEFAULT '';
   ALTER TABLE mindmap_nodes ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE mindmap_edges ADD COLUMN kind TEXT NOT NULL DEFAULT '';
-  `
+  `,
+
+  // 9 — Materials library: files can be unsorted ("Other") or in a module without a week yet
+  (db) => {
+    const { sql } = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'materials'").get() as { sql: string }
+    const widened = sql
+      .replace('module_id TEXT NOT NULL REFERENCES modules(id)', 'module_id TEXT REFERENCES modules(id)')
+      .replace('week_id TEXT NOT NULL REFERENCES weeks(id)', 'week_id TEXT REFERENCES weeks(id)')
+    if (!widened.includes('module_id TEXT REFERENCES') || !widened.includes('week_id TEXT REFERENCES')) throw new Error('materials columns not found')
+    const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'materials' AND sql IS NOT NULL").all() as { sql: string }[]
+    db.exec(widened.replace(/^CREATE TABLE "?\w+"?/, 'CREATE TABLE materials__new'))
+    db.exec('INSERT INTO materials__new SELECT * FROM materials')
+    db.exec('DROP TABLE materials')
+    db.exec('ALTER TABLE materials__new RENAME TO materials')
+    for (const i of indexes) db.exec(i.sql)
+    db.exec('CREATE INDEX idx_materials_module ON materials(module_id)')
+  }
 ]
