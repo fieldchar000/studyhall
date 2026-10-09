@@ -25,6 +25,12 @@ import { ExamsPage, PaperPage, QuizPage } from './pages/Exams'
 import { JournalPage } from './pages/Journal'
 import { LibraryPage } from './pages/Library'
 import { MoneyPage } from './pages/Money'
+import { BriefingPage } from './pages/dev/Briefing'
+import { FeedsPage } from './pages/dev/Feeds'
+import { ReadingPage } from './pages/dev/Reading'
+import { CodexPage } from './pages/dev/Codex'
+import { ForecastsPage } from './pages/dev/Forecasts'
+import { DevKitUnlock } from './components/DevKitUnlock'
 import { SearchPalette } from './components/SearchPalette'
 import { FriendsPage } from './pages/Friends'
 import { ServersPage } from './pages/Servers'
@@ -63,6 +69,11 @@ export function App(): React.JSX.Element {
         {route.name === 'journal' && <JournalPage />}
         {route.name === 'library' && <LibraryPage />}
         {route.name === 'money' && <MoneyPage />}
+        {route.name === 'briefing' && <BriefingPage />}
+        {route.name === 'feeds' && <FeedsPage />}
+        {route.name === 'reading' && <ReadingPage />}
+        {route.name === 'codex' && <CodexPage />}
+        {route.name === 'forecasts' && <ForecastsPage />}
         {route.name === 'paper' && <PaperPage key={route.id + String(route.timed)} id={route.id} timed={route.timed} tab={route.tab} />}
         {route.name === 'quiz' && <QuizPage key={JSON.stringify(route)} paperId={route.paperId} moduleId={route.moduleId} review={route.review} />}
         {route.name === 'friends' && <FriendsPage />}
@@ -73,6 +84,7 @@ export function App(): React.JSX.Element {
       <TaskDrawer />
       <SearchPalette />
       <InviteLinkHandler />
+      <DevKitUnlock />
     </div>
   )
 }

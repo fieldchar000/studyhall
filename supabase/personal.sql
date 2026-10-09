@@ -31,6 +31,7 @@ alter table public.profiles add column if not exists target_gpa double precision
 alter table public.profiles add column if not exists leaderboard_opt_in bigint;
 alter table public.profiles add column if not exists enabled_modes text;
 alter table public.profiles add column if not exists currency text;
+alter table public.profiles add column if not exists devkit bigint;
 alter table public.profiles add column if not exists server_updated_at timestamptz not null default now();
 create index if not exists profiles_sync_idx on public.profiles (server_updated_at);
 create index if not exists profiles_owner_idx on public.profiles (owner_id);
@@ -178,6 +179,11 @@ alter table public.projects add column if not exists color text;
 alter table public.projects add column if not exists module_id text;
 alter table public.projects add column if not exists client_id text;
 alter table public.projects add column if not exists sort double precision;
+alter table public.projects add column if not exists kind text;
+alter table public.projects add column if not exists stage text;
+alter table public.projects add column if not exists repo_url text;
+alter table public.projects add column if not exists links text;
+alter table public.projects add column if not exists tech text;
 alter table public.projects add column if not exists server_updated_at timestamptz not null default now();
 create index if not exists projects_sync_idx on public.projects (server_updated_at);
 create index if not exists projects_owner_idx on public.projects (owner_id);
@@ -877,3 +883,123 @@ revoke all on public.lang_items from anon;
 revoke delete on public.lang_items from authenticated; -- deletes are soft (deleted_at)
 drop trigger if exists lang_items_sync_guard on public.lang_items;
 create trigger lang_items_sync_guard before insert or update on public.lang_items for each row execute function public.sync_guard();
+
+-- feeds
+create table if not exists public.feeds (id text primary key);
+alter table public.feeds add column if not exists created_at text;
+alter table public.feeds add column if not exists updated_at text;
+alter table public.feeds add column if not exists deleted_at text;
+alter table public.feeds add column if not exists owner_id text;
+alter table public.feeds add column if not exists name text;
+alter table public.feeds add column if not exists url text;
+alter table public.feeds add column if not exists topic text;
+alter table public.feeds add column if not exists lean text;
+alter table public.feeds add column if not exists enabled bigint;
+alter table public.feeds add column if not exists sort double precision;
+alter table public.feeds add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists feeds_sync_idx on public.feeds (server_updated_at);
+create index if not exists feeds_owner_idx on public.feeds (owner_id);
+alter table public.feeds enable row level security;
+drop policy if exists "own rows" on public.feeds;
+create policy "own rows" on public.feeds for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.feeds from anon;
+revoke delete on public.feeds from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists feeds_sync_guard on public.feeds;
+create trigger feeds_sync_guard before insert or update on public.feeds for each row execute function public.sync_guard();
+
+-- saved_items
+create table if not exists public.saved_items (id text primary key);
+alter table public.saved_items add column if not exists created_at text;
+alter table public.saved_items add column if not exists updated_at text;
+alter table public.saved_items add column if not exists deleted_at text;
+alter table public.saved_items add column if not exists owner_id text;
+alter table public.saved_items add column if not exists url text;
+alter table public.saved_items add column if not exists title text;
+alter table public.saved_items add column if not exists source text;
+alter table public.saved_items add column if not exists topic text;
+alter table public.saved_items add column if not exists lean text;
+alter table public.saved_items add column if not exists summary text;
+alter table public.saved_items add column if not exists published_at text;
+alter table public.saved_items add column if not exists notes text;
+alter table public.saved_items add column if not exists status text;
+alter table public.saved_items add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists saved_items_sync_idx on public.saved_items (server_updated_at);
+create index if not exists saved_items_owner_idx on public.saved_items (owner_id);
+alter table public.saved_items enable row level security;
+drop policy if exists "own rows" on public.saved_items;
+create policy "own rows" on public.saved_items for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.saved_items from anon;
+revoke delete on public.saved_items from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists saved_items_sync_guard on public.saved_items;
+create trigger saved_items_sync_guard before insert or update on public.saved_items for each row execute function public.sync_guard();
+
+-- predictions
+create table if not exists public.predictions (id text primary key);
+alter table public.predictions add column if not exists created_at text;
+alter table public.predictions add column if not exists updated_at text;
+alter table public.predictions add column if not exists deleted_at text;
+alter table public.predictions add column if not exists owner_id text;
+alter table public.predictions add column if not exists question text;
+alter table public.predictions add column if not exists probability double precision;
+alter table public.predictions add column if not exists topic text;
+alter table public.predictions add column if not exists resolve_by text;
+alter table public.predictions add column if not exists outcome bigint;
+alter table public.predictions add column if not exists resolved_at text;
+alter table public.predictions add column if not exists reasoning text;
+alter table public.predictions add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists predictions_sync_idx on public.predictions (server_updated_at);
+create index if not exists predictions_owner_idx on public.predictions (owner_id);
+alter table public.predictions enable row level security;
+drop policy if exists "own rows" on public.predictions;
+create policy "own rows" on public.predictions for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.predictions from anon;
+revoke delete on public.predictions from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists predictions_sync_guard on public.predictions;
+create trigger predictions_sync_guard before insert or update on public.predictions for each row execute function public.sync_guard();
+
+-- devlogs
+create table if not exists public.devlogs (id text primary key);
+alter table public.devlogs add column if not exists created_at text;
+alter table public.devlogs add column if not exists updated_at text;
+alter table public.devlogs add column if not exists deleted_at text;
+alter table public.devlogs add column if not exists owner_id text;
+alter table public.devlogs add column if not exists project_id text;
+alter table public.devlogs add column if not exists date text;
+alter table public.devlogs add column if not exists kind text;
+alter table public.devlogs add column if not exists content text;
+alter table public.devlogs add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists devlogs_sync_idx on public.devlogs (server_updated_at);
+create index if not exists devlogs_owner_idx on public.devlogs (owner_id);
+alter table public.devlogs enable row level security;
+drop policy if exists "own rows" on public.devlogs;
+create policy "own rows" on public.devlogs for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.devlogs from anon;
+revoke delete on public.devlogs from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists devlogs_sync_guard on public.devlogs;
+create trigger devlogs_sync_guard before insert or update on public.devlogs for each row execute function public.sync_guard();
+
+-- experiments
+create table if not exists public.experiments (id text primary key);
+alter table public.experiments add column if not exists created_at text;
+alter table public.experiments add column if not exists updated_at text;
+alter table public.experiments add column if not exists deleted_at text;
+alter table public.experiments add column if not exists owner_id text;
+alter table public.experiments add column if not exists project_id text;
+alter table public.experiments add column if not exists name text;
+alter table public.experiments add column if not exists date text;
+alter table public.experiments add column if not exists hypothesis text;
+alter table public.experiments add column if not exists config text;
+alter table public.experiments add column if not exists metric_name text;
+alter table public.experiments add column if not exists metric_value double precision;
+alter table public.experiments add column if not exists result text;
+alter table public.experiments add column if not exists status text;
+alter table public.experiments add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists experiments_sync_idx on public.experiments (server_updated_at);
+create index if not exists experiments_owner_idx on public.experiments (owner_id);
+alter table public.experiments enable row level security;
+drop policy if exists "own rows" on public.experiments;
+create policy "own rows" on public.experiments for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.experiments from anon;
+revoke delete on public.experiments from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists experiments_sync_guard on public.experiments;
+create trigger experiments_sync_guard before insert or update on public.experiments for each row execute function public.sync_guard();

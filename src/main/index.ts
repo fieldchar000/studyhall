@@ -10,6 +10,7 @@ import { configureSync, requestSync } from './cloud/sync'
 import { closeAllVideoRooms, isVideoContents } from './video'
 import { closeSpotifyPlayer, isSpotifyContents, openSpotifyPlayer } from './spotify'
 import { initUpdater } from './updater'
+import { startFeedRefresh } from './feeds'
 import { SYNC_TABLES } from '@shared/sync'
 import type { DeepLink } from '@shared/cloud'
 import { serveMaterial } from './files'
@@ -354,6 +355,7 @@ if (!app.requestSingleInstanceLock()) {
     void restoreSession()
 
     // Auto-update (installed app only). Tell the UI so it can offer "Restart to update".
+    startFeedRefresh(() => broadcast('feeds:changed'))
     initUpdater((s) => {
       broadcast('app:update', s)
       if (s.status === 'ready') notify('Studyhall update ready', `Version ${s.version} will install when you restart Studyhall.`)

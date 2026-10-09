@@ -482,5 +482,98 @@ export const migrations: Migration[] = [
     last_at TEXT
   );
   CREATE INDEX idx_langitems_lang ON lang_items(language_id, kind);
-  `
+  `,
+
+  // 7 — DevKit category (unlockable): feeds, reading list, forecasts, dev projects
+  (db) => {
+    for (const table of ['profiles', 'projects', 'tasks', 'notes', 'mindmaps', 'videos']) {
+      const { sql } = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string }
+      const widened = sql.replaceAll("CHECK (mode IN ('study','work','life'))", "CHECK (mode IN ('study','work','life','dev'))")
+      if (widened === sql) throw new Error(`mode check not found on ${table}`)
+      const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL").all(table) as { sql: string }[]
+      db.exec(widened.replace(/^CREATE TABLE "?\w+"?/, `CREATE TABLE ${table}__new`))
+      db.exec(`INSERT INTO ${table}__new SELECT * FROM ${table}`)
+      db.exec(`DROP TABLE ${table}`)
+      db.exec(`ALTER TABLE ${table}__new RENAME TO ${table}`)
+      for (const i of indexes) db.exec(i.sql)
+    }
+    db.exec(`
+    ALTER TABLE profiles ADD COLUMN devkit INTEGER NOT NULL DEFAULT 0;
+
+    ALTER TABLE projects ADD COLUMN kind TEXT NOT NULL DEFAULT '';
+    ALTER TABLE projects ADD COLUMN stage TEXT NOT NULL DEFAULT '';
+    ALTER TABLE projects ADD COLUMN repo_url TEXT NOT NULL DEFAULT '';
+    ALTER TABLE projects ADD COLUMN links TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE projects ADD COLUMN tech TEXT NOT NULL DEFAULT '';
+
+    CREATE TABLE feeds (${base},
+      name TEXT NOT NULL DEFAULT 'Feed',
+      url TEXT NOT NULL,
+      topic TEXT NOT NULL DEFAULT 'other',
+      lean TEXT NOT NULL DEFAULT '',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      sort REAL NOT NULL DEFAULT 0
+    );
+
+    -- Local-only cache of fetched articles (never synced; refetched from the feeds)
+    CREATE TABLE feed_items (
+      id TEXT PRIMARY KEY,
+      feed_id TEXT NOT NULL,
+      guid TEXT NOT NULL,
+      title TEXT NOT NULL,
+      link TEXT NOT NULL DEFAULT '',
+      author TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL DEFAULT '',
+      published_at TEXT NOT NULL,
+      fetched_at TEXT NOT NULL,
+      read_at TEXT,
+      UNIQUE (feed_id, guid)
+    );
+    CREATE INDEX idx_feeditems_pub ON feed_items(published_at);
+    CREATE INDEX idx_feeditems_feed ON feed_items(feed_id);
+
+    CREATE TABLE saved_items (${base},
+      url TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL DEFAULT '',
+      topic TEXT NOT NULL DEFAULT 'other',
+      lean TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL DEFAULT '',
+      published_at TEXT,
+      notes TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'later' CHECK (status IN ('later','read','archived'))
+    );
+
+    CREATE TABLE predictions (${base},
+      question TEXT NOT NULL DEFAULT '',
+      probability REAL NOT NULL DEFAULT 50,
+      topic TEXT NOT NULL DEFAULT 'other',
+      resolve_by TEXT,
+      outcome INTEGER CHECK (outcome IN (0, 1)),
+      resolved_at TEXT,
+      reasoning TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE devlogs (${base},
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      date TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'log',
+      content TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX idx_devlogs_project ON devlogs(project_id, date);
+
+    CREATE TABLE experiments (${base},
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      name TEXT NOT NULL DEFAULT 'Experiment',
+      date TEXT NOT NULL,
+      hypothesis TEXT NOT NULL DEFAULT '',
+      config TEXT NOT NULL DEFAULT '',
+      metric_name TEXT NOT NULL DEFAULT '',
+      metric_value REAL,
+      result TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','running','done','failed'))
+    );
+    CREATE INDEX idx_experiments_project ON experiments(project_id);
+    `)
+  }
 ]

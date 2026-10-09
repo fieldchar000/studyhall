@@ -11,6 +11,7 @@ import { checkForUpdates, installUpdate, updateState } from './updater'
 import { search } from './search'
 import { gameAct, getGame, reward } from './game'
 import { docxToHtml, docxToText, pickDocs, readDocs } from './docs'
+import { feedItems, feedStatus, fetchArticle, markRead, refreshFeeds, repoInfo, seedDefaultFeeds, unreadCounts } from './feeds'
 import { registerCloudIpc } from './cloud/ipc'
 import { spotifyParts } from '@shared/links'
 import * as timer from './timer'
@@ -30,7 +31,7 @@ import type {
   Where
 } from '@shared/types'
 
-const asMode = (m: unknown): Mode => (m === 'work' || m === 'life' ? m : 'study')
+const asMode = (m: unknown): Mode => (m === 'work' || m === 'life' || m === 'dev' ? m : 'study')
 
 const SLOT_LABEL: Record<string, string> = {
   lecture: 'Lecture',
@@ -238,6 +239,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
         /* ignore invalid JSON */
       }
     }
+    if (patch.devkit === 1) safe.devkit = 1
     if (typeof patch.currency === 'string' && /^[A-Z]{3}$|^$/.test(patch.currency)) safe.currency = patch.currency
     if (typeof patch.display_name === 'string') safe.display_name = patch.display_name
     if ('leaderboard_opt_in' in patch) safe.leaderboard_opt_in = patch.leaderboard_opt_in ? 1 : 0
@@ -311,6 +313,24 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('search', (_e, q: string) => search(String(q)))
   handle('capture:hide', () => deps.hideCapture())
   handle('capture:status', () => deps.shortcutStatus())
+  // DevKit feeds + GitHub
+  handle('feeds:items', (_e, opts: Record<string, unknown>) =>
+    feedItems({
+      topic: typeof opts?.topic === 'string' ? opts.topic : undefined,
+      feedId: typeof opts?.feedId === 'string' ? opts.feedId : undefined,
+      unread: !!opts?.unread,
+      limit: Number(opts?.limit) || undefined,
+      q: typeof opts?.q === 'string' && opts.q.trim() ? opts.q.trim().slice(0, 100) : undefined
+    })
+  )
+  handle('feeds:unread', () => unreadCounts())
+  handle('feeds:markRead', (_e, ids: string[], read: boolean) => markRead((Array.isArray(ids) ? ids : []).map(String), !!read))
+  handle('feeds:refresh', () => refreshFeeds())
+  handle('feeds:status', () => feedStatus())
+  handle('feeds:seed', () => seedDefaultFeeds())
+  handle('feeds:article', (_e, url: string) => fetchArticle(String(url)))
+  handle('github:repo', (_e, url: string) => repoInfo(String(url)))
+
   // Exam papers
   handle('papers:pick', (e, moduleId: string | null) => pickPapers(BrowserWindow.fromWebContents(e.sender)!, moduleId ? String(moduleId) : null))
   handle('papers:import', (_e, moduleId: string | null, paths: string[]) => importPapers(moduleId ? String(moduleId) : null, (Array.isArray(paths) ? paths : []).map(String)))

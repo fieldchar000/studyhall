@@ -87,7 +87,7 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
   )
   const selectedId = id ?? data?.notes[0]?.id
   const q = search.trim().toLowerCase()
-  const groupKey = mode === 'study' ? 'module_id' : mode === 'life' ? 'project_id' : 'client_id'
+  const groupKey = mode === 'study' ? 'module_id' : mode === 'life' || mode === 'dev' ? 'project_id' : 'client_id'
   const shown = (data?.notes ?? [])
     .filter((n) => (!q || n.title.toLowerCase().includes(q) || n.plain_text.toLowerCase().includes(q)) && (!group || n[groupKey] === group))
     .sort((a, b) => b.pinned - a.pinned)
@@ -96,7 +96,7 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
       const m = data?.modules.find((x) => x.id === n.module_id)
       return m ? m.code || m.name : null
     }
-    if (mode === 'life') return data?.projects.find((x) => x.id === n.project_id)?.title ?? null
+    if (mode === 'life' || mode === 'dev') return data?.projects.find((x) => x.id === n.project_id)?.title ?? null
     return data?.clients.find((x) => x.id === n.client_id)?.name ?? null
   }
 
@@ -142,7 +142,7 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
               void newNote(
                 mode === 'study'
                   ? { mode, module_id: group || null }
-                  : mode === 'life'
+                  : mode === 'life' || mode === 'dev'
                     ? { mode, project_id: group || null }
                     : { mode, kind: 'meeting', client_id: group || null, title: 'Meeting', meeting_at: new Date().toISOString() }
               )
@@ -164,10 +164,10 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
         <div className="flex flex-col gap-2 px-3 pb-2">
           <input className="field-boxed" placeholder="Search notes…" value={search} onChange={(e) => setSearch(e.target.value)} />
           <select className="field-boxed" value={group} onChange={(e) => setGroup(e.target.value)}>
-            <option value="">{mode === 'study' ? 'All modules' : mode === 'life' ? 'All goals' : 'All clients'}</option>
+            <option value="">{mode === 'study' ? 'All modules' : mode === 'life' ? 'All goals' : mode === 'dev' ? 'All projects' : 'All clients'}</option>
             {(mode === 'study'
               ? data?.modules.map((m) => ({ id: m.id, name: m.code || m.name }))
-              : mode === 'life'
+              : mode === 'life' || mode === 'dev'
                 ? data?.projects.map((p) => ({ id: p.id, name: p.title }))
                 : data?.clients
             )?.map((g) => (
@@ -284,7 +284,7 @@ export function NoteView({ id, compact = false }: { id: string; compact?: boolea
                   ))}
                 </select>
               </>
-            ) : n.mode === 'life' ? null : (
+            ) : n.mode === 'life' || n.mode === 'dev' ? null : (
               <>
                 <input
                   type="datetime-local"

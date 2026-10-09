@@ -63,6 +63,23 @@ const api: Api = {
     hide: () => void ipcRenderer.invoke('capture:hide'),
     shortcutStatus: () => ipcRenderer.invoke('capture:status')
   },
+  feeds: {
+    items: (opts) => ipcRenderer.invoke('feeds:items', opts),
+    unreadCounts: () => ipcRenderer.invoke('feeds:unread'),
+    markRead: (ids, read) => ipcRenderer.invoke('feeds:markRead', ids, read),
+    refresh: () => ipcRenderer.invoke('feeds:refresh'),
+    status: () => ipcRenderer.invoke('feeds:status'),
+    seedDefaults: () => ipcRenderer.invoke('feeds:seed'),
+    article: (url) => ipcRenderer.invoke('feeds:article', url),
+    onChange: (cb) => {
+      const l = (): void => cb()
+      ipcRenderer.on('feeds:changed', l)
+      return () => ipcRenderer.removeListener('feeds:changed', l)
+    }
+  },
+  github: {
+    repo: (url) => ipcRenderer.invoke('github:repo', url)
+  },
   papers: {
     pick: (moduleId) => ipcRenderer.invoke('papers:pick', moduleId),
     importPaths: (moduleId, paths) => ipcRenderer.invoke('papers:import', moduleId, paths),

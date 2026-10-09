@@ -28,6 +28,11 @@ export type Route =
   | { name: 'language'; id: string }
   | { name: 'habits' }
   | { name: 'exams' }
+  | { name: 'briefing' }
+  | { name: 'feeds' }
+  | { name: 'reading' }
+  | { name: 'codex' }
+  | { name: 'forecasts' }
   | { name: 'journal' }
   | { name: 'library' }
   | { name: 'money' }

@@ -9,6 +9,7 @@ import { navigate } from '@/lib/nav'
 import { useMode } from '@/lib/profile'
 import { openTask } from '@/lib/tasks'
 import { progressOf, ProgressBar, STATUS_LABEL } from './Projects'
+import { DevPanel } from './dev/DevProject'
 
 /** <input type="date"> value <-> end of that local day as ISO. */
 const dateToIso = (d: string): string | null => (d ? new Date(`${d}T23:59`).toISOString() : null)
@@ -121,7 +122,7 @@ export function ProjectDetailPage({ id }: { id: string }): React.JSX.Element {
                 ))}
               </select>
             </label>
-          ) : mode === 'life' ? null : (
+          ) : mode === 'life' || mode === 'dev' ? null : (
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">Client</span>
               <select className="field-boxed" value={p.client_id ?? ''} onChange={(e) => void save({ client_id: e.target.value || null })}>
@@ -148,6 +149,8 @@ export function ProjectDetailPage({ id }: { id: string }): React.JSX.Element {
           </div>
         </div>
       </div>
+
+      {p.mode === 'dev' && <DevPanel project={p} />}
 
       <Milestones projectId={id} milestones={milestones} />
 

@@ -100,7 +100,7 @@ export interface SubscriptionEvent {
   location: string | null
 }
 
-export type Mode = 'study' | 'work' | 'life'
+export type Mode = 'study' | 'work' | 'life' | 'dev'
 
 export interface Profile extends BaseRow {
   username: string | null
@@ -108,6 +108,7 @@ export interface Profile extends BaseRow {
   mode: Mode
   enabled_modes: string // JSON Mode[]: the categories shown in the sidebar
   currency: string // e.g. "GBP" ('' = from the system locale)
+  devkit: number // 1 once the DevKit category has been unlocked
   grade_scale: string | null
   target_gpa: number | null
   leaderboard_opt_in: number
@@ -132,6 +133,12 @@ export interface Project extends BaseRow {
   module_id: string | null
   client_id: string | null
   sort: number
+  // DevKit projects
+  kind: string // 'game' | 'ai' | 'tool' | 'web' | 'other'
+  stage: string // 'idea' | 'prototype' | 'building' | 'polish' | 'shipped' | 'paused'
+  repo_url: string
+  links: string // JSON {title,url}[]
+  tech: string // comma-separated
 }
 
 export interface Milestone extends BaseRow {
@@ -411,6 +418,99 @@ export interface TableMap {
   budgets: Budget
   savings_goals: SavingsGoal
   lang_items: LangItem
+  feeds: Feed
+  saved_items: SavedItem
+  predictions: Prediction
+  devlogs: Devlog
+  experiments: Experiment
+}
+
+export type FeedTopic = 'ai' | 'geo' | 'politics' | 'philosophy' | 'tech' | 'games' | 'science' | 'other'
+
+export interface Feed extends BaseRow {
+  name: string
+  url: string
+  topic: FeedTopic
+  lean: string // politics: 'left' | 'lean-left' | 'centre' | 'lean-right' | 'right' | 'libertarian' | 'mixed'
+  enabled: number
+  sort: number
+}
+
+/** A fetched article (kept on this PC only). */
+export interface FeedItem {
+  id: string
+  feed_id: string
+  guid: string
+  title: string
+  link: string
+  author: string
+  summary: string
+  published_at: string
+  fetched_at: string
+  read_at: string | null
+  // joined from the feed
+  feed_name: string
+  topic: FeedTopic
+  lean: string
+}
+
+export interface SavedItem extends BaseRow {
+  url: string
+  title: string
+  source: string
+  topic: FeedTopic
+  lean: string
+  summary: string
+  published_at: string | null
+  notes: string
+  status: 'later' | 'read' | 'archived'
+}
+
+export interface Prediction extends BaseRow {
+  question: string
+  probability: number // 1–99 (%)
+  topic: FeedTopic
+  resolve_by: string | null // YYYY-MM-DD
+  outcome: 0 | 1 | null
+  resolved_at: string | null
+  reasoning: string
+}
+
+export interface Devlog extends BaseRow {
+  project_id: string
+  date: string
+  kind: 'log' | 'win' | 'blocker' | 'idea'
+  content: string
+}
+
+export interface Experiment extends BaseRow {
+  project_id: string
+  name: string
+  date: string
+  hypothesis: string
+  config: string
+  metric_name: string
+  metric_value: number | null
+  result: string
+  status: 'planned' | 'running' | 'done' | 'failed'
+}
+
+export interface FeedStatus {
+  refreshing: boolean
+  lastRefresh: string | null
+  errors: Record<string, string> // feed id → problem
+}
+
+export interface RepoInfo {
+  full_name: string
+  description: string
+  stars: number
+  forks: number
+  open_issues: number
+  language: string
+  pushed_at: string
+  html_url: string
+  commits: { sha: string; message: string; date: string; url: string }[]
 }
 
 export type PaperKind = 'past_paper' | 'mark_scheme' | 'mock' | 'practice' | 'other'
@@ -663,6 +763,22 @@ export interface Api {
     /** The paper's contents (for finding questions). */
     doc(id: string): Promise<PickedDoc | null>
     openExternal(id: string): Promise<void>
+  }
+  feeds: {
+    /** Articles from your feeds (newest first). */
+    items(opts: { topic?: string; feedId?: string; unread?: boolean; limit?: number; q?: string }): Promise<FeedItem[]>
+    unreadCounts(): Promise<Record<string, number>>
+    markRead(ids: string[], read: boolean): Promise<void>
+    refresh(): Promise<FeedStatus>
+    status(): Promise<FeedStatus>
+    /** Adds the built-in feed list (first unlock). */
+    seedDefaults(): Promise<number>
+    /** The web page of an article, for the reader view. */
+    article(url: string): Promise<string>
+    onChange(cb: () => void): () => void
+  }
+  github: {
+    repo(url: string): Promise<RepoInfo>
   }
   docs: {
     /** File picker for documents to import; returns their bytes. */

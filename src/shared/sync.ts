@@ -38,7 +38,12 @@ export const SYNC_TABLES = [
   'money_entries',
   'budgets',
   'savings_goals',
-  'lang_items'
+  'lang_items',
+  'feeds',
+  'saved_items',
+  'predictions',
+  'devlogs',
+  'experiments'
 ] as const
 
 export type SyncTable = (typeof SYNC_TABLES)[number]

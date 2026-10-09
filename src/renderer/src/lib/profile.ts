@@ -7,7 +7,7 @@ export function useProfile(): Profile | undefined {
   return useLive(['profiles'], () => api.profile.get(), []).data
 }
 
-const ALL_MODES: Mode[] = ['study', 'work', 'life']
+const ALL_MODES: Mode[] = ['study', 'work', 'life', 'dev']
 
 export function enabledModes(p: { enabled_modes?: string } | undefined): Mode[] {
   try {

@@ -5,6 +5,7 @@ import { api, db, useLive } from '@/lib/data'
 import { relativeDue } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
 import { useMode } from '@/lib/profile'
+import { KINDS, STAGES } from './dev/DevProject'
 
 export const STATUS_LABEL: Record<ProjectStatus, string> = { active: 'Active', on_hold: 'On hold', done: 'Done' }
 
@@ -80,7 +81,9 @@ export function ProjectsPage(): React.JSX.Element {
           {status === 'active'
             ? mode === 'life'
               ? 'No active goals. A goal groups tasks with milestones and a deadline — e.g. run a 10K, cook 20 new recipes, or pass JLPT N4.'
-              : 'No active projects. Projects group tasks with milestones and a deadline — e.g. a dissertation or a client job.'
+              : mode === 'dev'
+                ? 'No projects yet. Track a game or AI project: stage, devlog, experiments, GitHub activity, tasks and milestones.'
+                : 'No active projects. Projects group tasks with milestones and a deadline — e.g. a dissertation or a client job.'
             : `No ${STATUS_LABEL[status].toLowerCase()} ${noun}s.`}
         </div>
       )}
@@ -94,6 +97,8 @@ export function ProjectsPage(): React.JSX.Element {
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full" style={{ background: p.color }} />
                 <span className="truncate font-semibold">{p.title}</span>
+                {mode === 'dev' && p.kind && <span className="ml-auto text-sm">{KINDS.find((k) => k.id === p.kind)?.icon}</span>}
+                {mode === 'dev' && p.stage && <span className="chip">{STAGES.find((x) => x.id === p.stage)?.label}</span>}
               </div>
               <div className="mt-1 h-4 text-xs text-muted">
                 {link}

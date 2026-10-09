@@ -1,39 +1,68 @@
 @import 'tailwindcss';
 
-/* Colour tokens. Use them as bg-canvas, text-ink, border-line, etc.
-   Dark mode follows Windows' light/dark setting automatically. */
+/* dark: utilities follow the app's theme (set from Settings → Appearance, or Windows) */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* ---------- Design tokens ----------
+   Use them as bg-canvas, text-ink, border-line, bg-accent, etc.
+   Light/dark follows Windows unless chosen in Settings → Appearance (data-theme).
+   Each category has its own accent (data-mode), unless one is chosen (data-accent). */
 @theme {
-  --color-canvas: #f7f7f8;
+  --color-canvas: #f5f6fb;
   --color-panel: #ffffff;
-  --color-sidebar: #efeff2;
-  --color-line: #e3e3e8;
-  --color-ink: #17181c;
-  --color-muted: #6b6e78;
-  --color-accent: #5b5bd6;
-  --color-accent-soft: #ececfb;
-  --color-danger: #d4363b;
-  --color-ok: #2f9e5b;
-  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --color-sidebar: #eef0f8;
+  --color-line: #e3e6ef;
+  --color-ink: #10131c;
+  --color-muted: #646b7d;
+  --color-accent: #7357ff;
+  --color-accent-2: #3d8bff;
+  --color-accent-soft: #eeeaff;
+  --color-danger: #e5484d;
+  --color-ok: #20a464;
+  --font-sans: 'Inter Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans Variable', 'Inter Variable', 'Segoe UI', system-ui, sans-serif;
 }
 
+/* Dark palette: deep navy rather than flat grey */
+:root[data-theme='dark'] {
+  --color-canvas: #090b12;
+  --color-panel: #121624;
+  --color-sidebar: #0d1019;
+  --color-line: #222838;
+  --color-ink: #eef1f8;
+  --color-muted: #8e96ab;
+  --color-accent-soft: #211d3f;
+  --color-danger: #ff6b70;
+  --color-ok: #4fd18b;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
-    --color-canvas: #0f1115;
-    --color-panel: #171a20;
-    --color-sidebar: #13151a;
-    --color-line: #272b34;
-    --color-ink: #e8e9ed;
-    --color-muted: #9599a6;
-    --color-accent: #8b8bf0;
-    --color-accent-soft: #23243d;
-    --color-danger: #f0686c;
-    --color-ok: #5cc98a;
+  :root:not([data-theme='light']) {
+    --color-canvas: #090b12;
+    --color-panel: #121624;
+    --color-sidebar: #0d1019;
+    --color-line: #222838;
+    --color-ink: #eef1f8;
+    --color-muted: #8e96ab;
+    --color-accent-soft: #211d3f;
+    --color-danger: #ff6b70;
+    --color-ok: #4fd18b;
   }
 }
+
+/* Accents: by category, or a fixed one chosen in Settings */
+:root[data-mode='study'], :root[data-accent='violet'] { --color-accent: #7357ff; --color-accent-2: #3d8bff; }
+:root[data-mode='work'], :root[data-accent='blue'] { --color-accent: #2f7bff; --color-accent-2: #06b6d4; }
+:root[data-mode='life'], :root[data-accent='emerald'] { --color-accent: #0fa97a; --color-accent-2: #14b8c4; }
+:root[data-mode='dev'], :root[data-accent='cyan'] { --color-accent: #0aa5c8; --color-accent-2: #7cc62a; }
+:root[data-accent='rose'] { --color-accent: #e8457a; --color-accent-2: #ff8a3d; }
+:root[data-accent='amber'] { --color-accent: #e98a0b; --color-accent-2: #f43f5e; }
+:root { --color-accent-soft: color-mix(in srgb, var(--color-accent) 12%, var(--color-panel)); }
 
 :root {
   color-scheme: light dark;
 }
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
 
 html,
 body,
@@ -47,7 +76,40 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: 14px;
+  font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
+}
+
+/* Soft colour glow behind everything (tinted by the current accent) */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(45% 40% at 12% -5%, color-mix(in srgb, var(--color-accent) 16%, transparent), transparent 70%),
+    radial-gradient(40% 35% at 95% 0%, color-mix(in srgb, var(--color-accent-2) 13%, transparent), transparent 70%),
+    radial-gradient(35% 35% at 75% 105%, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 70%);
+  transition: background 0.4s;
+}
+:root[data-glow='off'] body::before {
+  display: none;
+}
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Page titles everywhere use the display face */
+main h1 {
+  font-family: var(--font-display);
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+main h2 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 /* Reusable component classes. Inside @layer components so utility classes
@@ -55,25 +117,77 @@ body {
 @layer components {
 /* Inputs that look like plain text until you hover/focus them (inline editing). */
 .field {
-  @apply w-full rounded-md border border-transparent bg-transparent px-2 py-1 outline-none transition-colors;
+  @apply w-full rounded-lg border border-transparent bg-transparent px-2 py-1 outline-none transition-colors;
   @apply hover:border-line focus:border-accent focus:bg-panel;
 }
 .field-boxed {
-  @apply w-full rounded-md border border-line bg-panel px-2 py-1.5 outline-none focus:border-accent;
+  @apply w-full rounded-lg border border-line px-2.5 py-1.5 outline-none transition-shadow;
+  background: color-mix(in srgb, var(--color-panel) 70%, transparent);
+}
+.field-boxed:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 .btn {
-  @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium whitespace-nowrap;
-  @apply hover:bg-canvas disabled:opacity-50;
+  @apply inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-all;
+  @apply disabled:opacity-50;
+  background: color-mix(in srgb, var(--color-panel) 75%, transparent);
+}
+.btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-line));
+  background: var(--color-panel);
 }
 .btn-primary {
-  @apply inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90;
-  @apply disabled:cursor-not-allowed disabled:opacity-35;
+  @apply inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold text-white transition-all;
+  @apply disabled:cursor-not-allowed disabled:opacity-40;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.25) inset,
+    0 6px 16px -6px color-mix(in srgb, var(--color-accent) 70%, transparent);
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.25) inset,
+    0 10px 22px -8px color-mix(in srgb, var(--color-accent) 75%, transparent);
 }
 .btn-ghost {
-  @apply inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted hover:bg-line/60 hover:text-ink;
+  @apply inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-muted transition-colors hover:bg-line/60 hover:text-ink;
 }
 .card {
-  @apply rounded-xl border border-line bg-panel;
+  @apply rounded-2xl border border-line;
+  background: color-mix(in srgb, var(--color-panel) 86%, transparent);
+  backdrop-filter: blur(14px) saturate(1.15);
+  box-shadow:
+    0 1px 2px rgb(16 24 40 / 0.04),
+    0 12px 32px -18px rgb(16 24 40 / 0.18);
+}
+button.card {
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s,
+    border-color 0.15s;
+}
+button.card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-line));
+  box-shadow:
+    0 1px 2px rgb(16 24 40 / 0.05),
+    0 18px 36px -18px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+/* A small coloured label */
+.chip {
+  @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+/* Gradient text for a highlight */
+.text-gradient {
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 /* Pixel Quest (the game keeps its own arcade look in light and dark mode) */
@@ -321,4 +435,41 @@ body {
 }
 .fc-event {
   cursor: pointer;
+}
+
+/* DevKit unlock animation */
+@keyframes devkit-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(10px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+@keyframes devkit-bar {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+/* Reader view: comfortable long-form text */
+.reader {
+  font-size: 16.5px;
+  line-height: 1.75;
+}
+.reader a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.reader h2,
+.reader h3 {
+  margin-top: 1.4em;
 }

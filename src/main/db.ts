@@ -49,7 +49,12 @@ const TABLES: readonly TableName[] = [
   'money_entries',
   'budgets',
   'savings_goals',
-  'lang_items'
+  'lang_items',
+  'feeds',
+  'saved_items',
+  'predictions',
+  'devlogs',
+  'experiments'
 ]
 
 /** When a parent is soft-deleted, these children are soft-deleted too. */
@@ -72,7 +77,9 @@ const CHILDREN: Partial<Record<TableName, { table: TableName; fk: string }[]>> =
   weeks: [{ table: 'materials', fk: 'week_id' }],
   projects: [
     { table: 'milestones', fk: 'project_id' },
-    { table: 'tasks', fk: 'project_id' }
+    { table: 'tasks', fk: 'project_id' },
+    { table: 'devlogs', fk: 'project_id' },
+    { table: 'experiments', fk: 'project_id' }
   ],
   tasks: [{ table: 'tasks', fk: 'parent_task_id' }], // subtasks
   languages: [

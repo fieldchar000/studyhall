@@ -1,7 +1,8 @@
 import type { Mode, Prefs } from '@shared/types'
 import { Icon } from '@/components/ui'
 import { api, notifyChanged, track, useLive } from '@/lib/data'
-import { setEnabledModes, setMode, useEnabledModes, useMode } from '@/lib/profile'
+import { setEnabledModes, setMode, useEnabledModes, useMode, useProfile } from '@/lib/profile'
+import { setAppearance, useAppearance, type Accent, type Theme } from '@/lib/appearance'
 import { shortcutLabel } from './Inbox'
 import { AccountCard } from '@/components/AccountCard'
 import { UpdatesCard } from '@/components/UpdateBanner'
@@ -9,6 +10,8 @@ import { UpdatesCard } from '@/components/UpdateBanner'
 export function SettingsPage(): React.JSX.Element {
   const mode = useMode()
   const enabled = useEnabledModes()
+  const profile = useProfile()
+  const look = useAppearance()
   const { data } = useLive([], async () => ({ path: await api.app.dataPath(), version: await api.app.version() }), [])
   const { data: prefs } = useLive(['prefs'], () => api.prefs.get(), [])
   const { data: shortcut } = useLive(['prefs'], () => api.capture.shortcutStatus(), [])
@@ -40,7 +43,8 @@ export function SettingsPage(): React.JSX.Element {
             [
               ['study', 'Study', 'Modules, timetable, assessments, exam prep, grades'],
               ['work', 'Work', 'Clients, client projects and meeting notes'],
-              ['life', 'Life', 'Languages, habits, journal, library, money and personal goals']
+              ['life', 'Life', 'Languages, habits, journal, library, money and personal goals'],
+              ...(profile?.devkit ? [['dev', 'DevKit', 'Your briefing, feeds on AI, geopolitics, politics and philosophy, the codex, forecasts and your game/AI projects']] : [])
             ] as [Mode, string, string][]
           ).map(([m, label, hint]) => (
             <label key={m} className="flex items-start gap-3 py-1.5">
@@ -62,6 +66,51 @@ export function SettingsPage(): React.JSX.Element {
               )}
             </label>
           ))}
+        </div>
+      </section>
+
+      <section className="card mb-4 p-5">
+        <h2 className="mb-1 font-semibold">Appearance</h2>
+        <p className="mb-3 text-sm text-muted">On this PC only.</p>
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-4">
+            <span className="w-20 text-sm">Theme</span>
+            <div className="flex gap-0.5 rounded-lg bg-line/50 p-0.5 text-sm">
+              {(['system', 'light', 'dark'] as Theme[]).map((t) => (
+                <button key={t} onClick={() => setAppearance({ theme: t })} className={`rounded-md px-3 py-1 capitalize ${look.theme === t ? 'bg-panel font-medium shadow-sm' : 'text-muted'}`}>
+                  {t === 'system' ? 'Match Windows' : t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="w-20 text-sm">Accent</span>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ['mode', 'By category', 'conic-gradient(#7357ff, #0fa97a, #0aa5c8, #2f7bff, #7357ff)'],
+                  ['violet', 'Violet', 'linear-gradient(135deg,#7357ff,#3d8bff)'],
+                  ['blue', 'Blue', 'linear-gradient(135deg,#2f7bff,#06b6d4)'],
+                  ['emerald', 'Emerald', 'linear-gradient(135deg,#0fa97a,#14b8c4)'],
+                  ['cyan', 'Cyan', 'linear-gradient(135deg,#0aa5c8,#7cc62a)'],
+                  ['rose', 'Rose', 'linear-gradient(135deg,#e8457a,#ff8a3d)'],
+                  ['amber', 'Amber', 'linear-gradient(135deg,#e98a0b,#f43f5e)']
+                ] as [Accent, string, string][]
+              ).map(([a, label, bg]) => (
+                <button
+                  key={a}
+                  title={label}
+                  onClick={() => setAppearance({ accent: a })}
+                  className={`h-8 w-8 rounded-full ring-offset-2 ring-offset-panel transition-transform hover:scale-110 ${look.accent === a ? 'ring-2 ring-ink' : ''}`}
+                  style={{ background: bg }}
+                />
+              ))}
+            </div>
+          </div>
+          <label className="flex items-center gap-3 text-sm">
+            <input type="checkbox" checked={look.glow} onChange={(e) => setAppearance({ glow: e.target.checked })} />
+            Soft colour glow in the background
+          </label>
         </div>
       </section>
 

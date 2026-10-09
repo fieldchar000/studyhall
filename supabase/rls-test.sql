@@ -68,6 +68,8 @@ begin
   insert into journal_entries (id, owner_id, created_at, updated_at, date, mood, content) values ('journal-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01', 4, 'private thoughts');
   insert into money_entries (id, owner_id, created_at, updated_at, date, amount, kind, category) values ('money-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01', 12.5, 'expense', 'Food & drink');
   insert into exam_papers (id, owner_id, created_at, updated_at, title, kind) values ('paper-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2024 Paper 1', 'past_paper');
+  insert into predictions (id, owner_id, created_at, updated_at, question, probability) values ('pred-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'secret forecast', 70);
+  insert into saved_items (id, owner_id, created_at, updated_at, url, title, notes) values ('saved-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'https://example.com', 'x', 'private notes');
   begin
     insert into modules (id, owner_id, created_at, updated_at, name) values ('mod-hack', b::text, 'x', 'x', 'pretend to be Bob');
     r := r || E'\nFAIL Alice created a row owned by Bob';
@@ -99,6 +101,8 @@ begin
   select count(*) into n from journal_entries; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s journal' else E'\nFAIL journal leaked' end;
   select count(*) into n from money_entries; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s money' else E'\nFAIL money leaked' end;
   select count(*) into n from exam_papers; r := r || case when n = 0 then E'\nPASS Bob cannot see Alice''s exam papers' else E'\nFAIL exam papers leaked' end;
+  select count(*) into n from predictions; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s forecasts' else E'\nFAIL forecasts leaked' end;
+  select count(*) into n from saved_items; r := r || case when n = 0 then E'\nPASS Bob cannot read Alice''s reading list' else E'\nFAIL reading list leaked' end;
   execute 'reset role';
 
   -- A shares module (view) and note (edit) with B
