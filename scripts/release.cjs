@@ -47,3 +47,8 @@ run('npm', ['run', 'build'])
 const notesArg = notes ? [`-c.releaseInfo.releaseNotes=${JSON.stringify(notes)}`] : []
 run('npx', ['electron-builder', '--win', '--x64', '--publish', 'always', ...notesArg], { GH_TOKEN: env.GITHUB_TOKEN })
 console.log(`Released v${version}: https://github.com/fieldchar000/studyhall/releases/tag/v${version}`)
+
+// 4. A copy with a fixed name, so one link always gets friends the newest installer
+require('./upload-stable.cjs')
+  .uploadStable(version)
+  .catch((e) => console.error('Stable download link not updated:', e.message))
