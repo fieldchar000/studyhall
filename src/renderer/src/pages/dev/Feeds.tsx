@@ -7,7 +7,9 @@ import type { Feed, FeedItem, FeedStatus, FeedTopic } from '@shared/types'
 import { Icon, Modal } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { LEANS, topicOf, TOPICS } from '@/lib/devContent'
-import { MindmapGenerator } from '@/components/MindmapGenerator'
+import { MindmapGenerator, quickArticleNotes } from '@/components/MindmapGenerator'
+import { navigate } from '@/lib/nav'
+import { useMode } from '@/lib/profile'
 
 export const ago = (iso: string): string => {
   const s = (Date.now() - Date.parse(iso)) / 1000
@@ -47,9 +49,18 @@ export function FeedsPage(): React.JSX.Element {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState<FeedItem | null>(null)
   const [manage, setManage] = useState(false)
-  const [mapIt, setMapIt] = useState(false)
+  const [mapIt, setMapIt] = useState<'mindmap' | 'notes' | false>(false)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const togglePick = (id: string): void =>
+    setPicked((p) => {
+      const n = new Set(p)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
   const [status, setStatus] = useState<FeedStatus | null>(null)
   const { items, reload } = useFeedItems({ topic: topic || undefined, unread, q: q || undefined, limit: 200 })
+  const pickedItems = items.filter((i) => picked.has(i.id))
   const [counts, setCounts] = useState<Record<string, number>>({})
   const feeds = useLive(['feeds'], () => api.list('feeds', {}, 'sort'), []).data ?? []
   const saved = useLive(['saved_items'], () => api.list('saved_items'), []).data ?? []
@@ -146,7 +157,12 @@ export function FeedsPage(): React.JSX.Element {
             </div>
             <div className="flex-1" />
             {items.length > 1 && (
-              <button className="text-muted hover:text-ink" onClick={() => setMapIt(true)} title="Mindmap of the themes in these articles">
+              <button className="text-muted hover:text-ink" onClick={() => setPicked(picked.size ? new Set() : new Set(items.slice(0, 20).map((i) => i.id)))} title="Select articles to mindmap or make notes from">
+                {picked.size ? 'Clear' : 'Select'}
+              </button>
+            )}
+            {items.length > 1 && (
+              <button className="text-muted hover:text-ink" onClick={() => setMapIt('mindmap')} title="Mindmap of the themes in these articles">
                 🧠 Map
               </button>
             )}
@@ -164,10 +180,17 @@ export function FeedsPage(): React.JSX.Element {
             </li>
           )}
           {items.map((it) => (
-            <li key={it.id}>
+            <li key={it.id} className="group relative">
+              <input
+                type="checkbox"
+                className={`absolute top-3.5 left-1.5 z-10 ${picked.size ? '' : 'opacity-0 group-hover:opacity-100'}`}
+                checked={picked.has(it.id)}
+                onChange={() => togglePick(it.id)}
+                title="Select"
+              />
               <button
-                onClick={() => open(it)}
-                className={`flex w-full flex-col gap-1 border-b border-line/50 px-4 py-3 text-left transition-colors ${sel?.id === it.id ? 'bg-accent-soft' : 'hover:bg-line/30'}`}
+                onClick={() => (picked.size ? togglePick(it.id) : open(it))}
+                className={`flex w-full flex-col gap-1 border-b border-line/50 py-3 pr-4 pl-6 text-left transition-colors ${picked.has(it.id) ? 'bg-accent-soft/70' : sel?.id === it.id ? 'bg-accent-soft' : 'hover:bg-line/30'}`}
               >
                 <div className="flex items-center gap-1.5 text-[11px] text-muted">
                   <span>{topicOf(it.topic).icon}</span>
@@ -182,6 +205,35 @@ export function FeedsPage(): React.JSX.Element {
             </li>
           ))}
         </ul>
+        {picked.size > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-line/70 bg-panel/90 p-2.5 text-xs backdrop-blur">
+            <span className="mr-1 font-semibold">{picked.size} selected</span>
+            <button className="btn-primary px-2.5 py-1 text-xs" onClick={() => setMapIt('mindmap')}>
+              🧠 Mindmap
+            </button>
+            <button className="btn px-2.5 py-1 text-xs" onClick={() => setMapIt('notes')}>
+              📝 Notes
+            </button>
+            <button className="btn px-2.5 py-1 text-xs" onClick={() => void Promise.all(pickedItems.map(saveForLater))}>
+              🔖 Save
+            </button>
+            <button
+              className="btn px-2.5 py-1 text-xs"
+              onClick={() =>
+                void api.feeds.markRead([...picked], true).then(() => {
+                  reload()
+                  loadCounts()
+                  setPicked(new Set())
+                })
+              }
+            >
+              ✓ Read
+            </button>
+            <button className="btn-ghost px-1.5 py-1 text-xs" onClick={() => setPicked(new Set())}>
+              ✕
+            </button>
+          </div>
+        )}
       </section>
 
       {/* Reader */}
@@ -196,7 +248,16 @@ export function FeedsPage(): React.JSX.Element {
         )}
       </section>
       {manage && <ManageFeeds feeds={feeds} status={status} onClose={() => setManage(false)} />}
-      {mapIt && <MindmapGenerator articles={items.slice(0, 12)} onClose={() => setMapIt(false)} />}
+      {mapIt && (
+        <MindmapGenerator
+          purpose={mapIt}
+          articles={pickedItems.length ? pickedItems : items.slice(0, 12)}
+          onClose={() => {
+            setMapIt(false)
+            setPicked(new Set())
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -236,6 +297,17 @@ function sanitize(html: string, base: string): string {
 export function Reader({ it, saved }: { it: Pick<FeedItem, 'link' | 'title' | 'feed_name' | 'topic' | 'lean' | 'summary' | 'published_at'> & { author?: string }; saved: boolean }): React.JSX.Element {
   const [full, setFull] = useState<{ html: string; minutes: number } | null>(null)
   const [state, setState] = useState<'idle' | 'loading' | 'failed'>('idle')
+  const [noting, setNoting] = useState(false)
+  const mode = useMode()
+  const makeNote = async (): Promise<void> => {
+    setNoting(true)
+    try {
+      const id = await quickArticleNotes([{ ...it, id: it.link, feed_id: '', guid: it.link, author: it.author ?? '', fetched_at: it.published_at, read_at: null }], mode)
+      if (id) navigate({ name: 'notes', id })
+    } finally {
+      setNoting(false)
+    }
+  }
   const load = async (): Promise<void> => {
     setState('loading')
     try {
@@ -269,6 +341,9 @@ export function Reader({ it, saved }: { it: Pick<FeedItem, 'link' | 'title' | 'f
         </button>
         <button className="btn" disabled={saved} onClick={() => void saveForLater(it)}>
           <Icon name="bookmark" /> {saved ? 'Saved' : 'Save for later'}
+        </button>
+        <button className="btn" disabled={noting} onClick={() => void makeNote()} title="Make a structured note: summary, key points, who & where, numbers, quotes">
+          📝 {noting ? 'Writing…' : 'Make notes'}
         </button>
         {!full && (
           <button className="btn" disabled={state === 'loading'} onClick={() => void load()}>

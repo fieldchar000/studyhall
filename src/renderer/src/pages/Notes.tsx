@@ -11,6 +11,7 @@ import { navigate } from '@/lib/nav'
 import { useMode } from '@/lib/profile'
 import { SharedBanner, ShareButton } from '@/components/ShareButton'
 import { docToNote } from '@/lib/importDoc'
+import { MindmapGenerator } from '@/components/MindmapGenerator'
 
 /** Create a note (optionally linked) and open it. */
 export async function newNote(values: Partial<Note>): Promise<Note> {
@@ -51,6 +52,7 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
   const [importing, setImporting] = useState<string | null>(null)
   const [importMsg, setImportMsg] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [auto, setAuto] = useState(false)
   const baseValues = (): Partial<Note> =>
     mode === 'study' ? { mode, module_id: group || null } : mode === 'life' ? { mode, project_id: group || null } : { mode, client_id: group || null }
   const runImport = async (docs: Promise<PickedDoc[]>): Promise<void> => {
@@ -124,6 +126,7 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
           Drop Word, PowerPoint, PDF, HTML, Markdown or text files to turn them into notes
         </div>
       )}
+      {auto && <MindmapGenerator purpose="notes" onClose={() => setAuto(false)} />}
       <aside className="flex w-72 shrink-0 flex-col border-r border-line">
         <div className="flex items-center gap-2 px-4 pt-5 pb-3">
           <h1 className="flex-1 text-lg font-semibold">{mode === 'work' ? 'Meeting notes' : 'Notes'}</h1>
@@ -134,6 +137,9 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
             onClick={() => void runImport(api.docs.pick('Import as notes'))}
           >
             <Icon name="upload" /> Import
+          </button>
+          <button className="btn px-2 py-1" title="Make notes automatically from files, other notes or articles" onClick={() => setAuto(true)}>
+            ✨ Auto
           </button>
           <button
             className="btn-primary px-2 py-1"

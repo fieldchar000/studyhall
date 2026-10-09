@@ -27,6 +27,9 @@ import { navigate } from '@/lib/nav'
 import { useMode } from '@/lib/profile'
 import { openTask } from '@/lib/tasks'
 import { radialLayout, type GenNode } from '@/lib/mindgen'
+import { splitSentences } from '@/lib/nlp'
+import { generateJSON } from '@tiptap/core'
+import { NOTE_EXTENSIONS, htmlToPlain } from '@/lib/noteSchema'
 import { MindmapGenerator } from '@/components/MindmapGenerator'
 
 // ---------- List ----------
@@ -117,6 +120,93 @@ const toFlowEdge = (e: MindmapEdge): Edge => ({ id: e.id, source: e.source_node_
 
 const LINK_ICON: Record<NodeLinkType, string> = { module: 'modules', note: 'note', task: 'tasks' }
 
+/** Draws the visible map onto a canvas (in the current theme) and returns it as a PNG. */
+async function drawMap(nodes: IdeaNode[], edges: Edge[]): Promise<Blob> {
+  const css = getComputedStyle(document.documentElement)
+  const token = (name: string, fallback: string): string => css.getPropertyValue(name).trim() || fallback
+  const bg = token('--color-canvas', '#ffffff')
+  const panel = token('--color-panel', '#ffffff')
+  const ink = token('--color-ink', '#111111')
+  const accent = token('--color-accent', '#7357ff')
+  const font = getComputedStyle(document.body).fontFamily
+  const box = new Map(nodes.map((n) => [n.id, { x: n.position.x, y: n.position.y, w: n.measured?.width ?? 200, h: n.measured?.height ?? 50 }]))
+  const PAD = 60
+  const xs = [...box.values()]
+  const minX = Math.min(...xs.map((b) => b.x)) - PAD
+  const minY = Math.min(...xs.map((b) => b.y)) - PAD
+  const W = Math.max(...xs.map((b) => b.x + b.w)) + PAD - minX
+  const H = Math.max(...xs.map((b) => b.y + b.h)) + PAD - minY
+  const scale = Math.min(2, 8000 / W, 8000 / H)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(W * scale)
+  canvas.height = Math.round(H * scale)
+  const ctx = canvas.getContext('2d')!
+  ctx.scale(scale, scale)
+  ctx.translate(-minX, -minY)
+  ctx.fillStyle = bg
+  ctx.fillRect(minX, minY, W, H)
+  const colorOf = new Map(nodes.map((n) => [n.id, n.data.color || accent]))
+  // Lines first, so boxes sit on top.
+  for (const e of edges) {
+    const a = box.get(e.source)
+    const b = box.get(e.target)
+    if (!a || !b) continue
+    const related = (e.data as { kind?: string } | undefined)?.kind === 'related'
+    const [ax, ay, bx, by] = [a.x + a.w / 2, a.y + a.h / 2, b.x + b.w / 2, b.y + b.h / 2]
+    ctx.beginPath()
+    ctx.moveTo(ax, ay)
+    ctx.bezierCurveTo((ax + bx) / 2, ay, (ax + bx) / 2, by, bx, by)
+    ctx.strokeStyle = related ? ink : (colorOf.get(e.target) ?? accent)
+    ctx.globalAlpha = related ? 0.35 : 0.7
+    ctx.lineWidth = related ? 1 : 1.6
+    ctx.setLineDash(related ? [5, 5] : [])
+    ctx.stroke()
+  }
+  ctx.globalAlpha = 1
+  ctx.setLineDash([])
+  const wrap = (text: string, max: number): string[] => {
+    const lines: string[] = []
+    let line = ''
+    for (const word of text.split(/\s+/)) {
+      const next = line ? `${line} ${word}` : word
+      if (ctx.measureText(next).width > max && line) {
+        lines.push(line)
+        line = word
+      } else line = next
+    }
+    if (line) lines.push(line)
+    return lines
+  }
+  for (const n of nodes) {
+    const b = box.get(n.id)!
+    const color = colorOf.get(n.id)!
+    const center = n.data.kind === 'center'
+    const big = center || ['theme', 'source', 'branch', 'group', ''].includes(n.data.kind)
+    ctx.beginPath()
+    ctx.roundRect(b.x, b.y, b.w, b.h, center ? 16 : 10)
+    ctx.fillStyle = center ? color : panel
+    ctx.fill()
+    if (!center && big) {
+      ctx.globalAlpha = 0.18
+      ctx.fillStyle = color
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+    ctx.strokeStyle = color
+    ctx.lineWidth = center ? 0 : big ? 2 : 1.4
+    if (!center) ctx.stroke()
+    const size = center ? 16 : big ? 13 : 11.5
+    ctx.font = `${big ? 700 : 500} ${size}px ${font}`
+    ctx.fillStyle = center ? '#ffffff' : ink
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const lines = wrap(n.data.label, b.w - 20)
+    const lh = size * 1.3
+    lines.forEach((l, i) => ctx.fillText(l, b.x + b.w / 2, b.y + b.h / 2 + (i - (lines.length - 1) / 2) * lh))
+  }
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not create the image'))), 'image/png'))
+}
+
 function IdeaNodeView({ data, selected }: NodeProps<IdeaNode>): React.JSX.Element {
   const color = data.color ?? 'var(--color-accent)'
   const ring = selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-canvas' : ''
@@ -156,7 +246,7 @@ function IdeaNodeView({ data, selected }: NodeProps<IdeaNode>): React.JSX.Elemen
       </div>
     )
   }
-  const big = data.kind === 'theme' || data.kind === 'source' || data.kind === 'branch' || data.kind === ''
+  const big = data.kind === 'theme' || data.kind === 'source' || data.kind === 'branch' || data.kind === 'group' || data.kind === ''
   return (
     <div
       className={`relative rounded-xl border-2 px-3 py-2 text-center shadow-sm ${big ? 'min-w-28 max-w-60 text-sm font-semibold' : 'max-w-64 text-xs'} ${ring}`}
@@ -196,6 +286,8 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
   const [loaded, setLoaded] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [focus, setFocus] = useState(true)
+  const [search, setSearch] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
   const { data: map } = useLive(['mindmaps'], () => api.get('mindmaps', id), [id])
   const modules = useLive(['modules'], () => api.list('modules', { archived: 0 }, 'sort'), []).data ?? []
 
@@ -328,6 +420,97 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
     setTimeout(() => void flow.fitView({ padding: 0.15, duration: 500 }), 250)
   }
 
+  /** Find an idea by text and fly to it. */
+  const find = (q: string): void => {
+    const hit = nodes.find((n) => !n.hidden && n.data.label.toLowerCase().includes(q.toLowerCase()))
+    if (!hit) return
+    setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === hit.id })))
+    setSelectedId(hit.id)
+    void flow.setCenter(hit.position.x + 100, hit.position.y + 30, { zoom: 1.1, duration: 500 })
+  }
+
+  const setAllCollapsed = (collapsed: boolean): void => {
+    const kids = treeChildren(edges)
+    setNodes((ns) =>
+      ns.map((n) => {
+        // Collapse the main branches (children of the centre); expanding opens everything.
+        const isBranch = (kids.get(n.id) ?? []).length > 0 && n.data.kind !== 'center'
+        const want = collapsed ? isBranch : false
+        if (n.data.collapsed !== want) void db.update('mindmap_nodes', n.id, { collapsed: want ? 1 : 0 })
+        return { ...n, data: { ...n.data, collapsed: want } }
+      })
+    )
+  }
+
+  /** Save the whole map as a PNG image. */
+  const exportPng = async (): Promise<void> => {
+    setBusy('Exporting…')
+    try {
+      const blob = await drawMap(
+        flow.getNodes().filter((n) => !n.hidden) as IdeaNode[],
+        flow.getEdges().filter((e) => !e.hidden)
+      )
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `${(map?.title || 'mindmap').replace(/[\\/:*?"<>|]+/g, ' ').trim()}.png`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /** The map as a structured note: branches become headings and nested bullets. */
+  const toNote = async (): Promise<void> => {
+    const kids = treeChildren(edges)
+    const byId = new Map(nodes.map((n) => [n.id, n]))
+    const hasParent = new Set([...kids.values()].flat())
+    const root = nodes.find((n) => n.data.kind === 'center') ?? nodes.find((n) => !hasParent.has(n.id))
+    if (!root) return
+    const esc = (t: string): string => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const item = (id: string, depth: number): string => {
+      const n = byId.get(id)
+      if (!n) return ''
+      // Shortened labels ("…") give way to the full sentence they came from (keeping a "1974 — " prefix);
+      // short labels (a theme, a name) keep their label and get the sentence as an explanation.
+      const { label, detail } = n.data
+      const usable = !!detail && detail !== label && detail.length < 600
+      const prefix = /^(.{1,24}?) — /.exec(label)?.[1]
+      const term = /^([^:]{2,40}): /.exec(label)?.[1] // "Working memory: a system that…"
+      const text = !usable
+        ? esc(label)
+        : term
+          ? `<strong>${esc(term)}</strong> — ${esc(detail)}`
+        : label.endsWith('…') || detail.startsWith(label.replace(/…$/, ''))
+          ? esc(prefix && !detail.includes(prefix) ? `${prefix} — ${detail}` : detail)
+          : `<strong>${esc(label)}</strong> — ${esc(detail)}`
+      const children = (kids.get(id) ?? []).map((c) => item(c, depth + 1)).join('')
+      const src = n.data.url ? ` <a href="${esc(n.data.url)}">↗</a>` : ''
+      return `<li><p>${text}${src}</p>${children ? `<ul>${children}</ul>` : ''}</li>`
+    }
+    let html = `<h1>${esc(root.data.label)}</h1><p><em>Made from the mindmap “${esc(map?.title ?? root.data.label)}”.</em></p>`
+    for (const c of kids.get(root.id) ?? []) {
+      const n = byId.get(c)
+      if (!n) continue
+      html += `<h2>${esc(n.data.label)}</h2>`
+      const sub = (kids.get(c) ?? []).map((g) => item(g, 1)).join('')
+      if (sub) html += `<ul>${sub}</ul>`
+      else if (n.data.detail) html += `<p>${esc(n.data.detail)}</p>`
+    }
+    const json = generateJSON(html, NOTE_EXTENSIONS)
+    const plain = htmlToPlain(html)
+    const note = await db.create('notes', { mode, title: map?.title ?? root.data.label, content: JSON.stringify(json), plain_text: plain })
+    navigate({ name: 'notes', id: note.id })
+  }
+
+  const sources = useMemo(() => {
+    try {
+      return (JSON.parse(map?.sources ?? '[]') as { title: string; url?: string; noteId?: string | null; text?: string }[]).filter((x) => x.text)
+    } catch {
+      return []
+    }
+  }, [map?.sources])
+
   const selected = nodes.find((n) => n.id === selectedId)
   const updateNode = (nodeId: string, patch: Partial<IdeaData>): void => {
     setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...patch } } : n)))
@@ -343,12 +526,12 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-2 border-b border-line px-4 py-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line px-4 py-2">
           <button className="btn-ghost" onClick={() => navigate({ name: 'mindmaps' })}>
             <Icon name="back" />
           </button>
           {map && (
-            <AutoText value={map.title} onSave={(v) => db.update('mindmaps', id, { title: v || 'Untitled mindmap' })} className="field max-w-md font-semibold" />
+            <AutoText value={map.title} onSave={(v) => db.update('mindmaps', id, { title: v || 'Untitled mindmap' })} className="field max-w-md min-w-40 font-semibold" />
           )}
           {map && mode === 'study' && (
             <select className="field-boxed w-auto text-sm" value={map.module_id ?? ''} onChange={(e) => void db.update('mindmaps', id, { module_id: e.target.value || null })}>
@@ -361,11 +544,30 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
             </select>
           )}
           <div className="flex-1" />
+          <input
+            className="field-boxed w-40 py-1 text-sm"
+            placeholder="Find an idea…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && search.trim() && find(search.trim())}
+          />
+          <button className="btn-ghost text-xs whitespace-nowrap" onClick={() => setAllCollapsed(false)} title="Show every branch">
+            Expand all
+          </button>
+          <button className="btn-ghost text-xs" onClick={() => setAllCollapsed(true)} title="Fold every branch to see the big picture">
+            Collapse
+          </button>
           <label className="flex items-center gap-1.5 text-xs text-muted" title="Dim everything not connected to the selected idea">
             <input type="checkbox" checked={focus} onChange={(e) => setFocus(e.target.checked)} /> Focus
           </label>
           <button className="btn" onClick={arrange} title="Arrange everything around the central idea">
             <Icon name="mindmap" /> Arrange
+          </button>
+          <button className="btn" onClick={() => void toNote()} title="Turn this map into a structured note">
+            <Icon name="note" /> Notes
+          </button>
+          <button className="btn" disabled={!!busy} onClick={() => void exportPng()} title="Save the map as a picture">
+            <Icon name="upload" /> {busy ?? 'PNG'}
           </button>
           <button className="btn" onClick={() => void addIdea(undefined, selectedId ?? undefined)}>
             <Icon name="plus" /> {selectedId ? 'Add connected idea' : 'Add idea'}
@@ -417,13 +619,29 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
         </div>
       </div>
 
-      {selected && <NodePanel key={selected.id} node={selected} mode={mode} onChange={(p) => updateNode(selected.id, p)} />}
+      {selected && <NodePanel key={selected.id} node={selected} mode={mode} sources={sources} onChange={(p) => updateNode(selected.id, p)} />}
     </div>
   )
 }
 
 /** Side panel for the selected idea: text, details, source, colour and link to a module/note/task. */
-function NodePanel({ node, mode, onChange }: { node: IdeaNode; mode: string; onChange: (p: Partial<IdeaData>) => void }): React.JSX.Element {
+type MapSource = { title: string; url?: string; noteId?: string | null; text?: string }
+
+/** Everything the map's sources say about an idea (sentences that mention it). */
+function evidenceFor(label: string, sources: MapSource[]): { text: string; src: MapSource }[] {
+  const term = label
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .split(/\s[·—:]\s|:\s/)[0]
+    .trim()
+  if (!term || term.split(' ').length > 6 || term.length < 3) return []
+  const re = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+  const out: { text: string; src: MapSource }[] = []
+  for (const src of sources) for (const s of splitSentences(src.text ?? '')) if (re.test(s)) out.push({ text: s, src })
+  return out.slice(0, 25)
+}
+
+function NodePanel({ node, mode, sources, onChange }: { node: IdeaNode; mode: string; sources: MapSource[]; onChange: (p: Partial<IdeaData>) => void }): React.JSX.Element {
+  const evidence = useMemo(() => evidenceFor(node.data.label, sources), [node.data.label, sources])
   const { linkType, linkId } = node.data
   const { data: targets } = useLive(
     ['modules', 'notes', 'tasks'],
@@ -454,6 +672,26 @@ function NodePanel({ node, mode, onChange }: { node: IdeaNode; mode: string; onC
               <Icon name="external" /> Open source
             </button>
           )}
+        </div>
+      )}
+      {evidence.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold text-muted">
+            Everything said about this · {evidence.length} mention{evidence.length === 1 ? '' : 's'}
+          </span>
+          <ul className="flex max-h-80 flex-col gap-2 overflow-auto">
+            {evidence.map((e, i) => (
+              <li key={i} className="rounded-lg bg-canvas/70 p-2 text-xs leading-relaxed">
+                {e.text}
+                <button
+                  className="mt-1 block text-[10px] text-accent hover:underline"
+                  onClick={() => (e.src.url ? window.open(e.src.url) : e.src.noteId ? navigate({ name: 'notes', id: e.src.noteId }) : undefined)}
+                >
+                  — {e.src.title}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       <div className="flex flex-col gap-1">

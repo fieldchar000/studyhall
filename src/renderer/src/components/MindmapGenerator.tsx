@@ -1,15 +1,17 @@
-// "Generate a mindmap": pick any mix of files (PDF, Word, PowerPoint, HTML…), notes and
-// news articles; Studyhall builds an interactive map from their structure and shared ideas.
+// "Generate a mindmap" / "Make notes": pick any mix of files (PDF, Word, PowerPoint,
+// HTML…), notes and news articles; Studyhall builds an interactive map or structured notes
+// from their structure, most central sentences and shared ideas (offline, no AI service).
 
 import { useMemo, useState } from 'react'
-import { generateHTML } from '@tiptap/core'
+import { generateHTML, generateJSON } from '@tiptap/core'
 import { Readability } from '@mozilla/readability'
-import type { FeedItem, Note, PickedDoc } from '@shared/types'
+import type { FeedItem, Mode, Note, PickedDoc } from '@shared/types'
 import { api, notifyChanged, useLive } from '@/lib/data'
 import { docToHtml, docToNote } from '@/lib/importDoc'
-import { bestOutline, buildBySource, buildByTheme, type Size, type Source } from '@/lib/mindgen'
+import { bestOutline, buildMap, sharedPhrases, type Size, type Source, type Style } from '@/lib/mindgen'
+import { makeNotes, type AutoNote } from '@/lib/autonotes'
 import { navigate } from '@/lib/nav'
-import { NOTE_EXTENSIONS } from '@/lib/noteSchema'
+import { NOTE_EXTENSIONS, htmlToPlain } from '@/lib/noteSchema'
 import { useMode, useProfile } from '@/lib/profile'
 import { topicOf } from '@/lib/devContent'
 import { Icon, Modal } from './ui'
@@ -19,7 +21,7 @@ type Tab = 'files' | 'notes' | 'articles'
 const errText = (e: unknown): string => String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
 /** Full article text via the reader view; falls back to the feed summary. */
-async function articleSource(it: { link: string; title: string; summary: string; feed_name: string }): Promise<Source> {
+export async function articleSource(it: { link: string; title: string; summary: string; feed_name: string }): Promise<Source> {
   let html = `<p>${it.summary}</p>`
   let text = it.summary
   try {
@@ -33,21 +35,61 @@ async function articleSource(it: { link: string; title: string; summary: string;
     /* paywalled or offline: use the summary */
   }
   // The publisher's own name turns up in every article; it's not a theme.
-  const site = it.feed_name.replace(/^📌s*/, '').split(/s+[—–-]s+/)[0]
-  const noise = [site, site.replace(/^(The|International)s+/, ''), new URL(it.link).hostname.replace(/^www./, '').split('.')[0]]
+  const site = it.feed_name.replace(/^📌\s*/, '').split(/\s+[—–-]\s+/)[0]
+  let host = ''
+  try {
+    host = new URL(it.link).hostname.replace(/^www\./, '').split('.')[0]
+  } catch {
+    /* not a URL */
+  }
+  const noise = [site, site.replace(/^(The|International)\s+/, ''), host].filter(Boolean)
   return { title: it.title, kind: 'article', text, sections: bestOutline(html, text, it.title), url: it.link, noise }
 }
 
-export function MindmapGenerator({ onClose, articles: preset }: { onClose: () => void; articles?: FeedItem[] }): React.JSX.Element {
+/** Save auto-notes as real notes (and flashcards if asked). Returns the first note's id. */
+export async function saveAutoNotes(list: AutoNote[], mode: Mode, flashcards: boolean): Promise<string | null> {
+  let first: string | null = null
+  for (const n of list) {
+    const json = generateJSON(n.html, NOTE_EXTENSIONS)
+    const plain = htmlToPlain(n.html)
+    const note = await api.create('notes', { mode, title: n.title.slice(0, 200), content: JSON.stringify(json), plain_text: plain })
+    first ??= note.id
+    if (flashcards && n.flashcards.length) {
+      const deck = await api.create('flashcard_decks', { name: `${n.title.slice(0, 80)} — auto flashcards` })
+      for (const c of n.flashcards) await api.create('flashcards', { deck_id: deck.id, front: c.front, back: c.back })
+    }
+  }
+  notifyChanged('*')
+  return first
+}
+
+/** One click: notes for one or more articles (used by the reader and Feeds). */
+export async function quickArticleNotes(items: FeedItem[], mode: Mode, combine = true): Promise<string | null> {
+  const sources: Source[] = []
+  for (const it of items) sources.push(await articleSource(it))
+  return saveAutoNotes(makeNotes(sources, { combine }), mode, false)
+}
+
+export function MindmapGenerator({
+  onClose,
+  articles: preset,
+  purpose = 'mindmap'
+}: {
+  onClose: () => void
+  articles?: FeedItem[]
+  purpose?: 'mindmap' | 'notes'
+}): React.JSX.Element {
   const mode = useMode()
+  const [combine, setCombine] = useState(true)
+  const [cards, setCards] = useState(true)
   const profile = useProfile()
   const [tab, setTab] = useState<Tab>(preset?.length ? 'articles' : 'files')
   const [title, setTitle] = useState('')
   const [files, setFiles] = useState<PickedDoc[]>([])
-  const [saveNotes, setSaveNotes] = useState(true)
+  const [saveNotes, setSaveNotes] = useState(purpose === 'mindmap')
   const [noteIds, setNoteIds] = useState<Set<string>>(new Set())
   const [articleIds, setArticleIds] = useState<Set<string>>(new Set(preset?.map((p) => p.id)))
-  const [style, setStyle] = useState<'source' | 'theme'>(preset?.length ? 'theme' : 'source')
+  const [style, setStyle] = useState<Style>('overview')
   const [size, setSize] = useState<Size>('compact')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -121,15 +163,26 @@ export function MindmapGenerator({ onClose, articles: preset }: { onClose: () =>
         sources.push(await articleSource(a))
       }
       if (!sources.length) return
+      if (purpose === 'notes') {
+        setBusy('Writing notes…')
+        const id = await saveAutoNotes(makeNotes(sources, { title: title.trim() || undefined, combine }), mode, cards)
+        onClose()
+        if (id) navigate({ name: 'notes', id })
+        return
+      }
       setBusy('Building the map…')
-      const name = title.trim() || (sources.length === 1 ? sources[0].title : style === 'theme' ? 'What these sources share' : `${sources.length} sources`)
-      const built = style === 'theme' ? buildByTheme(name, sources, size) : buildBySource(name, sources, size)
-      if (built.nodes.length < 2) throw new Error('Couldn’t find enough structure or shared ideas in these sources — try “By source”, or add more text.')
-      const map = await api.create('mindmaps', {
-        title: name.slice(0, 200),
-        mode,
-        sources: JSON.stringify(sources.map((s) => ({ title: s.title, kind: s.kind, url: s.url ?? '' })))
+      const themes = sharedPhrases(sources, 3).map((t) => t.text.charAt(0).toUpperCase() + t.text.slice(1))
+      const name = title.trim() || (sources.length === 1 ? sources[0].title : themes.length ? themes.join(' · ') : style === 'theme' ? 'What these sources share' : `${sources.length} sources`)
+      const built = buildMap(style, name, sources, size)
+      if (built.nodes.length < 2) throw new Error('Couldn’t find enough structure or shared ideas in these sources — try another style, or add more text.')
+      // Keep the sources' text (trimmed) so the map can show everything said about an idea.
+      let budget = 300_000
+      const kept = sources.map((s) => {
+        const text = s.text.slice(0, Math.min(25_000, Math.max(0, budget)))
+        budget -= text.length
+        return { title: s.title, kind: s.kind, url: s.url ?? '', noteId: s.noteId ?? null, text }
       })
+      const map = await api.create('mindmaps', { title: name.slice(0, 200), mode, sources: JSON.stringify(kept) })
       const ids = new Map<string, string>()
       for (const n of built.nodes) {
         const row = await api.create('mindmap_nodes', {
@@ -167,7 +220,7 @@ export function MindmapGenerator({ onClose, articles: preset }: { onClose: () =>
   const filteredArticles = articleList.filter((a) => !q || a.title.toLowerCase().includes(q.toLowerCase())).slice(0, 150)
 
   return (
-    <Modal title="✨ Generate a mindmap" onClose={onClose} wide>
+    <Modal title={purpose === 'notes' ? '📝 Make notes automatically' : '✨ Generate a mindmap'} onClose={onClose} wide>
       <div className="grid h-full min-h-0 grid-cols-[1fr_300px]">
         <div className="flex min-h-0 flex-col gap-3 p-5">
           <div className="flex flex-wrap items-center gap-2">
@@ -223,7 +276,7 @@ export function MindmapGenerator({ onClose, articles: preset }: { onClose: () =>
                   </li>
                 ))}
               </ul>
-              {files.length > 0 && (
+              {files.length > 0 && purpose === 'mindmap' && (
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={saveNotes} onChange={(e) => setSaveNotes(e.target.checked)} />
                   Also save each file as a note (map ideas link back to it)
@@ -273,35 +326,67 @@ export function MindmapGenerator({ onClose, articles: preset }: { onClose: () =>
             <span className="text-xs text-muted">Title (optional)</span>
             <input className="field-boxed" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Week 4 — Memory" />
           </label>
-          <div className="flex flex-col gap-2">
-            <span className="text-xs text-muted">Organise by</span>
-            {(
-              [
-                ['source', 'Source structure', 'Each file / note / article as a branch with its headings and key points. Best for lecture slides and notes.'],
-                ['theme', 'Shared themes', 'The ideas and names that come up across your sources, with what each says. Best for comparing news.']
-              ] as const
-            ).map(([k, label, hint]) => (
-              <button key={k} onClick={() => setStyle(k)} className={`rounded-xl border p-3 text-left ${style === k ? 'border-accent bg-accent-soft' : 'border-line hover:border-accent/40'}`}>
-                <div className="font-semibold">{label}</div>
-                <div className="text-xs text-muted">{hint}</div>
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted">Size</span>
-            <div className="flex gap-0.5 rounded-lg bg-line/50 p-0.5">
-              {(['compact', 'detailed'] as Size[]).map((s) => (
-                <button key={s} onClick={() => setSize(s)} className={`rounded-md px-3 py-1 capitalize ${size === s ? 'bg-panel font-medium shadow-sm' : 'text-muted'}`}>
-                  {s}
-                </button>
-              ))}
+          {purpose === 'mindmap' ? (
+            <>
+              <div className="flex flex-col gap-2">
+                <span className="text-xs text-muted">Style</span>
+                {(
+                  [
+                    ['overview', '✨ Overview', 'The full picture: the gist, key ideas, key terms, people / places / organisations, numbers, timeline, debate and sources.'],
+                    ['source', '📂 By source', 'Each file / note / article as a branch with its headings and best points. Great for lecture slides.'],
+                    ['theme', '🔗 Shared themes', 'The ideas and names your sources share, with what each one says. Great for comparing news.']
+                  ] as const
+                ).map(([k, label, hint]) => (
+                  <button key={k} onClick={() => setStyle(k)} className={`rounded-xl border p-3 text-left ${style === k ? 'border-accent bg-accent-soft' : 'border-line hover:border-accent/40'}`}>
+                    <div className="font-semibold">{label}</div>
+                    <div className="text-xs text-muted">{hint}</div>
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted">Size</span>
+                <div className="flex gap-0.5 rounded-lg bg-line/50 p-0.5">
+                  {(['compact', 'detailed'] as Size[]).map((sz) => (
+                    <button key={sz} onClick={() => setSize(sz)} className={`rounded-md px-3 py-1 capitalize ${size === sz ? 'bg-panel font-medium shadow-sm' : 'text-muted'}`}>
+                      {sz}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
+                <span className="text-xs text-muted">Notes</span>
+                {(
+                  [
+                    [true, 'One combined note', 'A briefing (articles) or revision notes (files) covering everything you picked.'],
+                    [false, 'One note per source', 'A separate note for each file, note or article.']
+                  ] as const
+                ).map(([k, label, hint]) => (
+                  <button key={String(k)} onClick={() => setCombine(k)} className={`rounded-xl border p-3 text-left ${combine === k ? 'border-accent bg-accent-soft' : 'border-line hover:border-accent/40'}`}>
+                    <div className="font-semibold">{label}</div>
+                    <div className="text-xs text-muted">{hint}</div>
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-1" checked={cards} onChange={(e) => setCards(e.target.checked)} />
+                <span>
+                  Also make flashcards
+                  <span className="block text-xs text-muted">From key terms and section headings in study material.</span>
+                </span>
+              </label>
+              <p className="text-xs text-muted">
+                Notes include a summary, key points, key terms, who &amp; where, numbers, quotes, a timeline and questions to test yourself — whatever the sources contain.
+              </p>
             </div>
-          </div>
+          )}
           <div className="mt-auto flex flex-col gap-2">
             <button className="btn-primary justify-center py-2" disabled={!count || !!busy} onClick={() => void generate()}>
-              <Icon name="spark" /> {busy ?? (count ? `Generate from ${count} source${count === 1 ? '' : 's'}` : 'Pick some sources')}
+              <Icon name="spark" /> {busy ?? (count ? `${purpose === 'notes' ? 'Make notes from' : 'Generate from'} ${count} source${count === 1 ? '' : 's'}` : 'Pick some sources')}
             </button>
-            <p className="text-[11px] text-muted">Built on this PC from the sources’ structure and key phrases — no AI service. Everything stays editable.</p>
+            <p className="text-[11px] text-muted">Built on this PC from the sources’ structure, most central sentences (TextRank) and shared phrases — no AI service. Everything stays editable.</p>
           </div>
         </aside>
       </div>

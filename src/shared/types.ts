@@ -277,7 +277,7 @@ export interface MindmapNode extends BaseRow {
   color: string | null
   link_type: NodeLinkType | null
   link_id: string | null
-  kind: '' | 'center' | 'branch' | 'leaf' | 'source' | 'theme'
+  kind: '' | 'center' | 'branch' | 'leaf' | 'source' | 'theme' | 'group'
   detail: string // longer text (e.g. the sentence a point came from)
   url: string // web source (articles)
   source: string // which document it came from

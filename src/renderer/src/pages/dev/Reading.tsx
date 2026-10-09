@@ -13,7 +13,7 @@ import { MindmapGenerator } from '@/components/MindmapGenerator'
 export function ReadingPage(): React.JSX.Element {
   const [status, setStatus] = useState<SavedItem['status']>('later')
   const [open, setOpen] = useState<SavedItem | null>(null)
-  const [mapIt, setMapIt] = useState(false)
+  const [mapIt, setMapIt] = useState<'mindmap' | 'notes' | false>(false)
   const saved = useLive(['saved_items'], () => api.list('saved_items', {}, 'created_at'), []).data ?? []
   const shown = saved.filter((s) => s.status === status).reverse()
 
@@ -70,12 +70,18 @@ export function ReadingPage(): React.JSX.Element {
           </div>
         </div>
         {shown.length > 1 && (
-          <button className="btn self-start" onClick={() => setMapIt(true)}>
-            <Icon name="mindmap" /> Mindmap these {shown.length}
-          </button>
+          <div className="flex gap-2">
+            <button className="btn" onClick={() => setMapIt('mindmap')}>
+              <Icon name="mindmap" /> Mindmap these {shown.length}
+            </button>
+            <button className="btn" onClick={() => setMapIt('notes')}>
+              📝 Make notes
+            </button>
+          </div>
         )}
         {mapIt && (
           <MindmapGenerator
+            purpose={mapIt}
             onClose={() => setMapIt(false)}
             articles={shown.map((s) => ({ id: `saved:${s.id}`, feed_id: '', guid: s.url, title: s.title, link: s.url, author: '', summary: s.summary, published_at: s.published_at ?? s.created_at, fetched_at: s.created_at, read_at: null, feed_name: s.source, topic: s.topic, lean: s.lean }))}
           />

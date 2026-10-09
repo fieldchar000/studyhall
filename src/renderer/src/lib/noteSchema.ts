@@ -11,3 +11,10 @@ export const NOTE_EXTENSIONS = [
   TaskItem.configure({ nested: true }),
   Image.configure({ allowBase64: true }) // pictures from imported slides and documents
 ]
+
+/** Searchable plain text of note HTML, one line per block (so headings don't run into the text after them). */
+export function htmlToPlain(html: string): string {
+  const body = new DOMParser().parseFromString(html, 'text/html').body
+  body.querySelectorAll('h1,h2,h3,h4,p,li,blockquote,pre').forEach((el) => el.append('\n'))
+  return (body.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim()
+}
