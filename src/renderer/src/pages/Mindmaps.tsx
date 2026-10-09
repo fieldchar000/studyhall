@@ -1,7 +1,7 @@
 // Mindmaps: a list page and a canvas editor (React Flow). Every change autosaves.
 // Nodes can link to a real module, note or task.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Background,
   Controls,
@@ -26,6 +26,8 @@ import { api, db, useLive } from '@/lib/data'
 import { navigate } from '@/lib/nav'
 import { useMode } from '@/lib/profile'
 import { openTask } from '@/lib/tasks'
+import { radialLayout, type GenNode } from '@/lib/mindgen'
+import { MindmapGenerator } from '@/components/MindmapGenerator'
 
 // ---------- List ----------
 
@@ -42,6 +44,7 @@ export function MindmapsPage(): React.JSX.Element {
     [mode]
   )
 
+  const [gen, setGen] = useState(false)
   const add = async (): Promise<void> => {
     const map = await db.create('mindmaps', { title: 'New mindmap', mode })
     await db.create('mindmap_nodes', { mindmap_id: map.id, label: 'Central idea', x: 0, y: 0, color: '#5b5bd6' })
@@ -52,12 +55,22 @@ export function MindmapsPage(): React.JSX.Element {
     <div className="mx-auto max-w-5xl p-8">
       <div className="mb-6 flex items-center">
         <h1 className="flex-1 text-2xl font-semibold tracking-tight">Mindmaps</h1>
-        <button className="btn-primary" onClick={() => void add()}>
-          <Icon name="plus" /> New mindmap
+        <button className="btn mr-2" onClick={() => void add()}>
+          <Icon name="plus" /> Blank mindmap
+        </button>
+        <button className="btn-primary" onClick={() => setGen(true)}>
+          <Icon name="spark" /> Generate from sources
         </button>
       </div>
+      {gen && <MindmapGenerator onClose={() => setGen(false)} />}
       {data?.length === 0 && (
-        <div className="card p-10 text-center text-muted">Map out a topic visually. Nodes can link to your modules, notes and tasks.</div>
+        <div className="card flex flex-col items-center gap-3 p-10 text-center text-muted">
+          <div className="text-3xl">🧠</div>
+          Map out a topic visually — or let Studyhall build one from your lecture slides, PDFs, notes or news articles.
+          <button className="btn-primary" onClick={() => setGen(true)}>
+            <Icon name="spark" /> Generate a mindmap
+          </button>
+        </div>
       )}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
         {data?.map(({ map, nodes, module }) => (
@@ -68,6 +81,7 @@ export function MindmapsPage(): React.JSX.Element {
             </div>
             <div className="mt-2 text-xs text-muted">
               {nodes} ideas{module && ` · ${module.code || module.name}`}
+              {map.sources && map.sources !== '[]' && <span className="chip ml-2">✨ generated</span>}
             </div>
           </button>
         ))}
@@ -78,34 +92,82 @@ export function MindmapsPage(): React.JSX.Element {
 
 // ---------- Editor ----------
 
-type IdeaData = { label: string; color: string | null; linkType: NodeLinkType | null; linkId: string | null }
+type IdeaData = {
+  label: string
+  color: string | null
+  linkType: NodeLinkType | null
+  linkId: string | null
+  kind: MindmapNode['kind']
+  detail: string
+  url: string
+  source: string
+  collapsed: boolean
+  childCount: number
+  onToggle?: () => void
+}
 type IdeaNode = Node<IdeaData, 'idea'>
 
 const toFlowNode = (n: MindmapNode): IdeaNode => ({
   id: n.id,
   type: 'idea',
   position: { x: n.x, y: n.y },
-  data: { label: n.label, color: n.color, linkType: n.link_type, linkId: n.link_id }
+  data: { label: n.label, color: n.color, linkType: n.link_type, linkId: n.link_id, kind: n.kind ?? '', detail: n.detail ?? '', url: n.url ?? '', source: n.source ?? '', collapsed: !!n.collapsed, childCount: 0 }
 })
-const toFlowEdge = (e: MindmapEdge): Edge => ({ id: e.id, source: e.source_node_id, target: e.target_node_id })
+const toFlowEdge = (e: MindmapEdge): Edge => ({ id: e.id, source: e.source_node_id, target: e.target_node_id, label: e.label || undefined, data: { kind: e.kind ?? '' } })
 
 const LINK_ICON: Record<NodeLinkType, string> = { module: 'modules', note: 'note', task: 'tasks' }
 
 function IdeaNodeView({ data, selected }: NodeProps<IdeaNode>): React.JSX.Element {
-  const color = data.color ?? 'var(--color-line)'
-  return (
-    <div
-      className={`min-w-28 max-w-60 rounded-xl border-2 bg-panel px-3 py-2 text-center text-sm shadow-sm ${selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-canvas' : ''}`}
-      style={{ borderColor: color }}
+  const color = data.color ?? 'var(--color-accent)'
+  const ring = selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-canvas' : ''
+  const toggle = data.childCount > 0 && (
+    <button
+      className="nodrag absolute top-1/2 -right-3 flex h-5 min-w-5 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-panel px-1 text-[10px] font-bold text-muted shadow-sm hover:text-ink"
+      title={data.collapsed ? 'Show branch' : 'Hide branch'}
+      onClick={(e) => {
+        e.stopPropagation()
+        data.onToggle?.()
+      }}
     >
-      <Handle type="target" position={Position.Left} className="!h-2.5 !w-2.5 !bg-muted" />
-      <div className="font-medium break-words whitespace-pre-wrap">{data.label || '…'}</div>
-      {data.linkType && (
-        <div className="mt-1 flex items-center justify-center gap-1 text-[10px] text-accent">
-          <Icon name={LINK_ICON[data.linkType]} size={11} /> linked {data.linkType}
+      {data.collapsed ? `+${data.childCount}` : '−'}
+    </button>
+  )
+  const marks = (
+    <>
+      {(data.detail || data.url || data.linkType) && (
+        <div className="mt-1 flex items-center justify-center gap-1.5 text-[10px] opacity-70">
+          {data.detail && <span title="Has details">ⓘ</span>}
+          {data.url && <span title="Has a source link">↗</span>}
+          {data.linkType && <Icon name={LINK_ICON[data.linkType]} size={10} />}
         </div>
       )}
-      <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !bg-accent" />
+    </>
+  )
+  if (data.kind === 'center') {
+    return (
+      <div
+        className={`relative max-w-72 rounded-2xl px-5 py-3 text-center text-base font-bold text-white shadow-lg ${ring}`}
+        style={{ background: 'linear-gradient(135deg, var(--color-accent), var(--color-accent-2))', fontFamily: 'var(--font-display)' }}
+      >
+        <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-white/70" />
+        <div className="break-words whitespace-pre-wrap">{data.label || '…'}</div>
+        <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0 !bg-white" />
+        {toggle}
+      </div>
+    )
+  }
+  const big = data.kind === 'theme' || data.kind === 'source' || data.kind === 'branch' || data.kind === ''
+  return (
+    <div
+      className={`relative rounded-xl border-2 px-3 py-2 text-center shadow-sm ${big ? 'min-w-28 max-w-60 text-sm font-semibold' : 'max-w-64 text-xs'} ${ring}`}
+      style={{ borderColor: color, background: big && data.kind ? `color-mix(in srgb, ${color} 14%, var(--color-panel))` : 'var(--color-panel)' }}
+    >
+      <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0" style={{ background: color }} />
+      {data.kind === 'source' && <div className="mb-0.5 text-[10px] font-medium tracking-wide uppercase opacity-60">source</div>}
+      <div className="break-words whitespace-pre-wrap">{data.label || '…'}</div>
+      {marks}
+      <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-0" style={{ background: color }} />
+      {toggle}
     </div>
   )
 }
@@ -119,6 +181,13 @@ export function MindmapEditorPage({ id }: { id: string }): React.JSX.Element {
   )
 }
 
+/** Children along branch (non-cross-link) edges. */
+function treeChildren(edges: Edge[]): Map<string, string[]> {
+  const m = new Map<string, string[]>()
+  for (const e of edges) if ((e.data as { kind?: string } | undefined)?.kind !== 'related') m.set(e.source, [...(m.get(e.source) ?? []), e.target])
+  return m
+}
+
 function MindmapEditor({ id }: { id: string }): React.JSX.Element {
   const mode = useMode()
   const flow = useReactFlow()
@@ -126,6 +195,7 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [loaded, setLoaded] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [focus, setFocus] = useState(true)
   const { data: map } = useLive(['mindmaps'], () => api.get('mindmaps', id), [id])
   const modules = useLive(['modules'], () => api.list('modules', { archived: 0 }, 'sort'), []).data ?? []
 
@@ -137,6 +207,67 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
       setLoaded(true)
     })
   }, [id, setNodes, setEdges])
+
+  const toggleCollapse = useCallback(
+    (nodeId: string) => {
+      setNodes((ns) =>
+        ns.map((n) => {
+          if (n.id !== nodeId) return n
+          void db.update('mindmap_nodes', nodeId, { collapsed: n.data.collapsed ? 0 : 1 })
+          return { ...n, data: { ...n.data, collapsed: !n.data.collapsed } }
+        })
+      )
+    },
+    [setNodes]
+  )
+
+  // What's visible (collapsed branches hide their descendants) and what's in focus.
+  const view = useMemo(() => {
+    const kids = treeChildren(edges)
+    const hidden = new Set<string>()
+    const hide = (nid: string): void => {
+      for (const c of kids.get(nid) ?? []) {
+        if (hidden.has(c)) continue
+        hidden.add(c)
+        hide(c)
+      }
+    }
+    for (const n of nodes) if (n.data.collapsed) hide(n.id)
+    const near = new Set<string>()
+    if (focus && selectedId) {
+      near.add(selectedId)
+      for (const e of edges) {
+        if (e.source === selectedId) near.add(e.target)
+        if (e.target === selectedId) near.add(e.source)
+      }
+    }
+    const colorOf = new Map(nodes.map((n) => [n.id, n.data.color]))
+    return {
+      nodes: nodes.map((n) => ({
+        ...n,
+        hidden: hidden.has(n.id),
+        style: near.size && !near.has(n.id) ? { opacity: 0.22, transition: 'opacity .2s' } : { opacity: 1, transition: 'opacity .2s' },
+        data: { ...n.data, childCount: (kids.get(n.id) ?? []).length, onToggle: () => toggleCollapse(n.id) }
+      })),
+      edges: edges.map((e) => {
+        const related = (e.data as { kind?: string } | undefined)?.kind === 'related'
+        const lit = !near.size || (near.has(e.source) && near.has(e.target) && (e.source === selectedId || e.target === selectedId))
+        return {
+          ...e,
+          hidden: hidden.has(e.source) || hidden.has(e.target),
+          animated: related,
+          style: {
+            stroke: related ? 'var(--color-muted)' : (colorOf.get(e.target) ?? 'var(--color-muted)'),
+            strokeWidth: related ? 1.2 : 2,
+            strokeDasharray: related ? '5 5' : undefined,
+            opacity: lit ? (related ? 0.7 : 0.85) : 0.08
+          },
+          labelStyle: { fontSize: 10, fill: 'var(--color-muted)' },
+          labelBgStyle: { fill: 'var(--color-panel)' }
+        }
+      })
+    }
+  }, [nodes, edges, focus, selectedId, toggleCollapse])
 
   const addIdea = useCallback(
     async (position?: { x: number; y: number }, parentId?: string) => {
@@ -150,7 +281,8 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
         pos = { x: parent.position.x + 240, y: parent.position.y + offset }
       }
       pos ??= flow.screenToFlowPosition({ x: (pane?.left ?? 0) + (pane?.width ?? 600) / 2, y: (pane?.top ?? 0) + (pane?.height ?? 400) / 2 })
-      const row = await db.create('mindmap_nodes', { mindmap_id: id, label: 'New idea', x: pos.x, y: pos.y })
+      const color = parent ? (parent.data as IdeaData).color : null
+      const row = await db.create('mindmap_nodes', { mindmap_id: id, label: 'New idea', x: pos.x, y: pos.y, color, kind: parent ? 'leaf' : '' })
       // Keep the parent selected so "Add connected idea" can be pressed repeatedly.
       setNodes((ns) => [...ns, { ...toFlowNode(row), selected: !parentId }])
       if (parentId) {
@@ -173,6 +305,29 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
     [id, setEdges]
   )
 
+  /** Tidy everything into a radial layout around the central idea. */
+  const arrange = (): void => {
+    const kids = treeChildren(edges)
+    const hasParent = new Set([...kids.values()].flat())
+    const root = nodes.find((n) => n.data.kind === 'center') ?? nodes.find((n) => !hasParent.has(n.id)) ?? nodes[0]
+    if (!root) return
+    const parent = new Map<string, string | null>([[root.id, null]])
+    const queue = [root.id]
+    while (queue.length) {
+      const cur = queue.shift()!
+      const next = [...(kids.get(cur) ?? []), ...edges.filter((e) => e.target === cur).map((e) => e.source), ...edges.filter((e) => e.source === cur).map((e) => e.target)]
+      for (const c of next) if (!parent.has(c)) parent.set(c, cur) && queue.push(c)
+    }
+    const gen: GenNode[] = nodes
+      .filter((n) => parent.has(n.id))
+      .map((n) => ({ key: n.id, parent: parent.get(n.id) ?? null, label: n.data.label, kind: 'leaf', detail: '', url: '', source: '', color: '', x: 0, y: 0 }))
+    radialLayout(gen)
+    const pos = new Map(gen.map((g) => [g.key, { x: g.x, y: g.y }]))
+    setNodes((ns) => ns.map((n) => (pos.has(n.id) ? { ...n, position: pos.get(n.id)! } : n)))
+    for (const [nid, p] of pos) void db.update('mindmap_nodes', nid, { x: p.x, y: p.y })
+    setTimeout(() => void flow.fitView({ padding: 0.15, duration: 500 }), 250)
+  }
+
   const selected = nodes.find((n) => n.id === selectedId)
   const updateNode = (nodeId: string, patch: Partial<IdeaData>): void => {
     setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...patch } } : n)))
@@ -181,6 +336,7 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
     if ('color' in patch) dbPatch.color = patch.color
     if ('linkType' in patch) dbPatch.link_type = patch.linkType
     if ('linkId' in patch) dbPatch.link_id = patch.linkId
+    if ('detail' in patch) dbPatch.detail = patch.detail
     void db.update('mindmap_nodes', nodeId, dbPatch)
   }
 
@@ -205,6 +361,12 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
             </select>
           )}
           <div className="flex-1" />
+          <label className="flex items-center gap-1.5 text-xs text-muted" title="Dim everything not connected to the selected idea">
+            <input type="checkbox" checked={focus} onChange={(e) => setFocus(e.target.checked)} /> Focus
+          </label>
+          <button className="btn" onClick={arrange} title="Arrange everything around the central idea">
+            <Icon name="mindmap" /> Arrange
+          </button>
           <button className="btn" onClick={() => void addIdea(undefined, selectedId ?? undefined)}>
             <Icon name="plus" /> {selectedId ? 'Add connected idea' : 'Add idea'}
           </button>
@@ -219,8 +381,8 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
         <div className="min-h-0 flex-1">
           {loaded && (
             <ReactFlow
-              nodes={nodes}
-              edges={edges}
+              nodes={view.nodes}
+              edges={view.edges}
               nodeTypes={nodeTypes}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
@@ -240,17 +402,18 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
               zoomOnDoubleClick={false}
               deleteKeyCode={['Delete', 'Backspace']}
               colorMode="system"
+              minZoom={0.15}
               fitView
-              fitViewOptions={{ maxZoom: 1, padding: 0.3 }}
+              fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
             >
-              <Background gap={20} />
+              <Background gap={22} />
               <Controls />
-              <MiniMap pannable zoomable position="top-right" style={{ width: 140, height: 90 }} className="!bg-panel" />
+              <MiniMap pannable zoomable position="top-right" style={{ width: 150, height: 100 }} className="!bg-panel" nodeColor={(n) => (n.data as IdeaData).color ?? '#7357ff'} />
             </ReactFlow>
           )}
         </div>
         <div className="border-t border-line px-4 py-1.5 text-[11px] text-muted">
-          Double-click empty space to add an idea · drag from a node's right dot to another node to connect · select + Delete to remove
+          Click an idea to focus its connections · the small button on an idea hides or shows its branch · double-click empty space to add · drag from a dot to connect · Delete removes
         </div>
       </div>
 
@@ -259,7 +422,7 @@ function MindmapEditor({ id }: { id: string }): React.JSX.Element {
   )
 }
 
-/** Side panel for the selected idea: text, colour and link to a module/note/task. */
+/** Side panel for the selected idea: text, details, source, colour and link to a module/note/task. */
 function NodePanel({ node, mode, onChange }: { node: IdeaNode; mode: string; onChange: (p: Partial<IdeaData>) => void }): React.JSX.Element {
   const { linkType, linkId } = node.data
   const { data: targets } = useLive(
@@ -279,9 +442,20 @@ function NodePanel({ node, mode, onChange }: { node: IdeaNode; mode: string; onC
     if (linkType === 'task') openTask(linkId)
   }
   return (
-    <aside className="flex w-72 shrink-0 flex-col gap-4 border-l border-line bg-panel p-4">
+    <aside className="flex w-80 shrink-0 flex-col gap-4 overflow-auto border-l border-line bg-panel/80 p-4 backdrop-blur">
       <h2 className="text-sm font-semibold">Idea</h2>
       <AutoText multiline rows={3} value={node.data.label} onSave={(v) => onChange({ label: v })} className="field-boxed" />
+      {(node.data.detail || node.data.source) && (
+        <div className="flex flex-col gap-2 rounded-xl bg-canvas/70 p-3 text-sm">
+          {node.data.source && <div className="text-[11px] font-medium text-muted">From: {node.data.source}</div>}
+          {node.data.detail && <p className="leading-relaxed">“{node.data.detail}”</p>}
+          {node.data.url && (
+            <button className="btn self-start" onClick={() => window.open(node.data.url)}>
+              <Icon name="external" /> Open source
+            </button>
+          )}
+        </div>
+      )}
       <div className="flex flex-col gap-1">
         <span className="text-xs text-muted">Colour</span>
         <ColorPicker value={node.data.color} onChange={(c) => onChange({ color: c })} />
@@ -306,7 +480,7 @@ function NodePanel({ node, mode, onChange }: { node: IdeaNode; mode: string; onC
         )}
         {linkId && (
           <button className="btn self-start" onClick={openLink}>
-            <Icon name="link" /> Open
+            <Icon name="link" /> Open {linkType}
           </button>
         )}
       </div>

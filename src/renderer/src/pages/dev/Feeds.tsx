@@ -7,6 +7,7 @@ import type { Feed, FeedItem, FeedStatus, FeedTopic } from '@shared/types'
 import { Icon, Modal } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { LEANS, topicOf, TOPICS } from '@/lib/devContent'
+import { MindmapGenerator } from '@/components/MindmapGenerator'
 
 export const ago = (iso: string): string => {
   const s = (Date.now() - Date.parse(iso)) / 1000
@@ -46,6 +47,7 @@ export function FeedsPage(): React.JSX.Element {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState<FeedItem | null>(null)
   const [manage, setManage] = useState(false)
+  const [mapIt, setMapIt] = useState(false)
   const [status, setStatus] = useState<FeedStatus | null>(null)
   const { items, reload } = useFeedItems({ topic: topic || undefined, unread, q: q || undefined, limit: 200 })
   const [counts, setCounts] = useState<Record<string, number>>({})
@@ -143,6 +145,11 @@ export function FeedsPage(): React.JSX.Element {
               ))}
             </div>
             <div className="flex-1" />
+            {items.length > 1 && (
+              <button className="text-muted hover:text-ink" onClick={() => setMapIt(true)} title="Mindmap of the themes in these articles">
+                🧠 Map
+              </button>
+            )}
             {items.some((i) => !i.read_at) && (
               <button className="text-muted hover:text-ink" onClick={() => void markAll()}>
                 Mark all read
@@ -189,6 +196,7 @@ export function FeedsPage(): React.JSX.Element {
         )}
       </section>
       {manage && <ManageFeeds feeds={feeds} status={status} onClose={() => setManage(false)} />}
+      {mapIt && <MindmapGenerator articles={items.slice(0, 12)} onClose={() => setMapIt(false)} />}
     </div>
   )
 }

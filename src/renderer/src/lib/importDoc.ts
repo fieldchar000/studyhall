@@ -249,7 +249,8 @@ export interface ImportedNote {
   skippedImages: number
 }
 
-export async function docToNote(d: PickedDoc): Promise<ImportedNote> {
+/** A document as cleaned HTML (headings, lists, paragraphs) — for notes and mindmaps. */
+export async function docToHtml(d: PickedDoc, withImages = true): Promise<{ title: string; html: string; text: string }> {
   let html = ''
   let title = titleOf(d.name)
   const text = new TextDecoder()
@@ -258,7 +259,7 @@ export async function docToNote(d: PickedDoc): Promise<ImportedNote> {
       html = await api.docs.docxToHtml(d.data)
       break
     case 'pptx':
-      html = (await pptx(d.data, true)).html
+      html = (await pptx(d.data, withImages)).html
       break
     case 'odt':
     case 'odp':
@@ -290,9 +291,14 @@ export async function docToNote(d: PickedDoc): Promise<ImportedNote> {
   }
   // (a line break after each block so the searchable plain text keeps its lines)
   const clean = cleanHtml(html.replace(/<\/(p|h[1-6]|li|blockquote|tr|div)>/gi, '$&\n'))
-  const shrunk = await shrinkImages(clean.html)
+  return { title: title.slice(0, 200), html: clean.html, text: clean.text.replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim() }
+}
+
+export async function docToNote(d: PickedDoc): Promise<ImportedNote> {
+  const doc = await docToHtml(d)
+  const shrunk = await shrinkImages(doc.html)
   const json = generateJSON(shrunk.html, NOTE_EXTENSIONS)
-  return { title: title.slice(0, 200), content: JSON.stringify(json), plain: clean.text.replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim(), skippedImages: shrunk.skipped }
+  return { title: doc.title, content: JSON.stringify(json), plain: doc.text, skippedImages: shrunk.skipped }
 }
 
 /** Plain text with line breaks (used to find questions in exam papers). */

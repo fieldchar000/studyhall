@@ -239,7 +239,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
         /* ignore invalid JSON */
       }
     }
-    if (patch.devkit === 1) safe.devkit = 1
+    if (patch.devkit === 0 || patch.devkit === 1) safe.devkit = patch.devkit
     if (typeof patch.currency === 'string' && /^[A-Z]{3}$|^$/.test(patch.currency)) safe.currency = patch.currency
     if (typeof patch.display_name === 'string') safe.display_name = patch.display_name
     if ('leaderboard_opt_in' in patch) safe.leaderboard_opt_in = patch.leaderboard_opt_in ? 1 : 0

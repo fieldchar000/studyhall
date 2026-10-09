@@ -575,5 +575,16 @@ export const migrations: Migration[] = [
     );
     CREATE INDEX idx_experiments_project ON experiments(project_id);
     `)
-  }
+  },
+
+  // 8 — Generated, interactive mindmaps: node types, details, source links, collapsing
+  `
+  ALTER TABLE mindmaps ADD COLUMN sources TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE mindmap_nodes ADD COLUMN kind TEXT NOT NULL DEFAULT '';
+  ALTER TABLE mindmap_nodes ADD COLUMN detail TEXT NOT NULL DEFAULT '';
+  ALTER TABLE mindmap_nodes ADD COLUMN url TEXT NOT NULL DEFAULT '';
+  ALTER TABLE mindmap_nodes ADD COLUMN source TEXT NOT NULL DEFAULT '';
+  ALTER TABLE mindmap_nodes ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE mindmap_edges ADD COLUMN kind TEXT NOT NULL DEFAULT '';
+  `
 ]

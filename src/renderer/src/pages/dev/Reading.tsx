@@ -8,10 +8,12 @@ import { Icon } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { LEANS, topicOf } from '@/lib/devContent'
 import { LeanDot, Reader } from './Feeds'
+import { MindmapGenerator } from '@/components/MindmapGenerator'
 
 export function ReadingPage(): React.JSX.Element {
   const [status, setStatus] = useState<SavedItem['status']>('later')
   const [open, setOpen] = useState<SavedItem | null>(null)
+  const [mapIt, setMapIt] = useState(false)
   const saved = useLive(['saved_items'], () => api.list('saved_items', {}, 'created_at'), []).data ?? []
   const shown = saved.filter((s) => s.status === status).reverse()
 
@@ -67,6 +69,17 @@ export function ReadingPage(): React.JSX.Element {
             ))}
           </div>
         </div>
+        {shown.length > 1 && (
+          <button className="btn self-start" onClick={() => setMapIt(true)}>
+            <Icon name="mindmap" /> Mindmap these {shown.length}
+          </button>
+        )}
+        {mapIt && (
+          <MindmapGenerator
+            onClose={() => setMapIt(false)}
+            articles={shown.map((s) => ({ id: `saved:${s.id}`, feed_id: '', guid: s.url, title: s.title, link: s.url, author: '', summary: s.summary, published_at: s.published_at ?? s.created_at, fetched_at: s.created_at, read_at: null, feed_name: s.source, topic: s.topic, lean: s.lean }))}
+          />
+        )}
         {shown.length === 0 && <div className="card p-8 text-center text-sm text-muted">{status === 'later' ? 'Nothing waiting. Save articles from Feeds or the Briefing with the bookmark button.' : 'Nothing here yet.'}</div>}
         {shown.map((s) => {
           const t = topicOf(s.topic)

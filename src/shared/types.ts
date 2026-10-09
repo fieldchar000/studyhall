@@ -264,6 +264,7 @@ export interface Mindmap extends BaseRow {
   title: string
   mode: Mode
   module_id: string | null
+  sources: string // JSON: what a generated map was made from
 }
 
 export type NodeLinkType = 'module' | 'note' | 'task'
@@ -276,6 +277,11 @@ export interface MindmapNode extends BaseRow {
   color: string | null
   link_type: NodeLinkType | null
   link_id: string | null
+  kind: '' | 'center' | 'branch' | 'leaf' | 'source' | 'theme'
+  detail: string // longer text (e.g. the sentence a point came from)
+  url: string // web source (articles)
+  source: string // which document it came from
+  collapsed: number // children hidden
 }
 
 export interface MindmapEdge extends BaseRow {
@@ -283,6 +289,7 @@ export interface MindmapEdge extends BaseRow {
   source_node_id: string
   target_node_id: string
   label: string
+  kind: '' | 'related' // '' = branch (parent → child); related = cross-link
 }
 
 export interface FlashcardDeck extends BaseRow {

@@ -10,6 +10,8 @@ import { localDate } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
 import { MENTAL_MODELS, ofTheDay, PAPERS, PHILOSOPHY, topicOf, TOPICS } from '@/lib/devContent'
 import { ago, LeanDot, Reader, saveForLater, useFeedItems } from './Feeds'
+import { MindmapGenerator } from '@/components/MindmapGenerator'
+import type { FeedStatus } from '@shared/types'
 
 /** Up to `n` fresh unread articles, taking turns between topics so no topic floods it. */
 function pickBriefing(items: FeedItem[], n: number): FeedItem[] {
@@ -39,8 +41,36 @@ function greeting(): string {
 }
 
 export function BriefingPage(): React.JSX.Element {
-  const { items } = useFeedItems({ unread: true, limit: 400 })
+  const { items, reload } = useFeedItems({ unread: true, limit: 400 })
   const [open, setOpen] = useState<FeedItem | null>(null)
+  const [status, setStatus] = useState<FeedStatus | null>(null)
+  const [mapIt, setMapIt] = useState(false)
+  // "New since you last looked" — remembered on this PC.
+  const [seenAt] = useState(() => {
+    try {
+      return localStorage.getItem('sh-briefing-seen') ?? new Date(0).toISOString()
+    } catch {
+      return new Date(0).toISOString()
+    }
+  })
+  useEffect(() => {
+    void api.feeds.status().then(setStatus)
+    const off = api.feeds.onChange(() => void api.feeds.status().then(setStatus))
+    return () => {
+      off()
+      try {
+        localStorage.setItem('sh-briefing-seen', new Date().toISOString())
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [])
+  const fresh = items.filter((i) => i.fetched_at > seenAt).length
+  const refresh = async (): Promise<void> => {
+    setStatus((s) => (s ? { ...s, refreshing: true } : { refreshing: true, lastRefresh: null, errors: {} }))
+    setStatus(await api.feeds.refresh())
+    reload()
+  }
   const brief = useMemo(() => pickBriefing(items, 10), [items])
   const data = useLive(
     ['predictions', 'projects', 'devlogs', 'saved_items', 'feeds'],
@@ -97,10 +127,25 @@ export function BriefingPage(): React.JSX.Element {
             {greeting()}, <span className="text-gradient">builder</span>.
           </h1>
         </div>
-        <button className="btn" onClick={() => navigate({ name: 'feeds' })}>
-          <Icon name="rss" /> All feeds
-        </button>
+        <div className="flex flex-col items-end gap-1.5">
+          <div className="flex gap-2">
+            <button className="btn" disabled={status?.refreshing} onClick={() => void refresh()} title="Fetch the latest from all feeds now (also happens every 45 minutes)">
+              <Icon name="refresh" className={status?.refreshing ? 'animate-spin' : ''} /> {status?.refreshing ? 'Fetching…' : 'Refresh'}
+            </button>
+            <button className="btn" onClick={() => setMapIt(true)} title="Turn today’s articles into a mindmap of shared themes">
+              <Icon name="mindmap" /> Map today
+            </button>
+            <button className="btn" onClick={() => navigate({ name: 'feeds' })}>
+              <Icon name="rss" /> All feeds
+            </button>
+          </div>
+          <span className="text-xs text-muted">
+            {status?.lastRefresh ? `Updated ${ago(status.lastRefresh)} ago` : 'Not fetched yet'}
+            {fresh > 0 && <span className="chip ml-2">{fresh} new since you last looked</span>}
+          </span>
+        </div>
       </header>
+      {mapIt && <MindmapGenerator articles={brief} onClose={() => setMapIt(false)} />}
 
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         {/* Today's reads */}
