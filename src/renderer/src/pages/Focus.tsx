@@ -77,7 +77,9 @@ function TimerCard(): React.JSX.Element {
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className="text-6xl font-semibold tabular-nums tracking-tight">{fmtClock(remaining)}</div>
+          <div className="font-display text-7xl font-medium tracking-tight" style={{ fontVariantNumeric: 'lining-nums tabular-nums' }}>
+            {fmtClock(remaining)}
+          </div>
           <div className="mt-1 text-sm text-muted">
             {s.phase === 'focus' ? `Round ${(s.roundsDone % longEvery) + 1} of ${longEvery}` : 'Take a breather'}
           </div>

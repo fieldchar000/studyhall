@@ -31,9 +31,9 @@ const projects = (label: string, modes: Mode[]): NavItem => ({ label, icon: 'pro
 const groups: { title?: string; items: NavItem[] }[] = [
   {
     items: [
-      { label: 'Briefing', icon: 'spark', route: { name: 'briefing' }, match: ['briefing'], modes: ['dev'] },
+      { label: 'Briefing', icon: 'news', route: { name: 'briefing' }, match: ['briefing'], modes: ['dev'] },
       { label: 'Home', icon: 'home', route: { name: 'home' }, match: ['home'], modes: ['study', 'work', 'life'] },
-      { label: 'Inbox', icon: 'upload', route: { name: 'inbox' }, match: ['inbox'], modes: ALL },
+      { label: 'Inbox', icon: 'inbox', route: { name: 'inbox' }, match: ['inbox'], modes: ALL },
       { label: 'Tasks', icon: 'tasks', route: { name: 'tasks' }, match: ['tasks'], modes: ALL },
       { label: 'Focus', icon: 'focus', route: { name: 'focus' }, match: ['focus'], modes: ALL }
     ]
@@ -43,25 +43,25 @@ const groups: { title?: string; items: NavItem[] }[] = [
     items: [
       // Study
       { label: 'Modules', icon: 'modules', route: { name: 'modules' }, match: ['modules', 'module'], modes: ['study'] },
-      { label: 'Materials', icon: 'folder', route: { name: 'materials' }, match: ['materials'], modes: ['study'] },
+      { label: 'Materials', icon: 'materials', route: { name: 'materials' }, match: ['materials'], modes: ['study'] },
       projects('Projects', ['study']),
-      { label: 'Exam Prep', icon: 'target', route: { name: 'exams' }, match: ['exams', 'paper', 'quiz'], modes: ['study'] },
+      { label: 'Exam Prep', icon: 'exam', route: { name: 'exams' }, match: ['exams', 'paper', 'quiz'], modes: ['study'] },
       { label: 'Timetable', icon: 'calendar', route: { name: 'timetable' }, match: ['timetable'], modes: ['study'] },
       // Work
       { label: 'Clients', icon: 'clients', route: { name: 'clients' }, match: ['clients', 'client'], modes: ['work'] },
       projects('Projects', ['work']),
-      { label: 'Meeting notes', icon: 'note', route: { name: 'notes' }, match: ['notes'], modes: ['work'] },
+      { label: 'Meeting notes', icon: 'pen', route: { name: 'notes' }, match: ['notes'], modes: ['work'] },
       // Life
       { label: 'Languages', icon: 'globe', route: { name: 'languages' }, match: ['languages', 'language'], modes: ['life'] },
       { label: 'Habits', icon: 'flame', route: { name: 'habits' }, match: ['habits'], modes: ['life'] },
-      { label: 'Journal', icon: 'pencil', route: { name: 'journal' }, match: ['journal'], modes: ['life'] },
+      { label: 'Journal', icon: 'quill', route: { name: 'journal' }, match: ['journal'], modes: ['life'] },
       { label: 'Library', icon: 'book', route: { name: 'library' }, match: ['library'], modes: ['life'] },
       { label: 'Money', icon: 'wallet', route: { name: 'money' }, match: ['money'], modes: ['life'] },
       projects('Goals', ['life']),
       // DevKit
       { label: 'Feeds', icon: 'rss', route: { name: 'feeds' }, match: ['feeds'], modes: ['dev'] },
       { label: 'Reading list', icon: 'bookmark', route: { name: 'reading' }, match: ['reading'], modes: ['dev'] },
-      { label: 'Codex', icon: 'book', route: { name: 'codex' }, match: ['codex'], modes: ['dev'] },
+      { label: 'Codex', icon: 'scroll', route: { name: 'codex' }, match: ['codex'], modes: ['dev'] },
       { label: 'Forecasts', icon: 'gauge', route: { name: 'forecasts' }, match: ['forecasts'], modes: ['dev'] },
       projects('Projects', ['dev']),
       // Shared tools
@@ -144,34 +144,35 @@ export function Sidebar(): React.JSX.Element {
   }
 
   return (
-    <aside
-      className="relative flex w-56 shrink-0 flex-col border-r border-line/80"
-      style={{ background: 'color-mix(in srgb, var(--color-sidebar) 78%, transparent)', backdropFilter: 'blur(20px)' }}
-    >
-      <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+    <aside className="relative flex w-56 shrink-0 flex-col border-r border-line bg-sidebar">
+      <div className="flex items-center gap-3 px-4 pt-5 pb-4">
         <span
-          className="flex h-8 w-8 items-center justify-center rounded-xl text-[15px] font-extrabold text-white shadow-md"
-          style={{ background: 'linear-gradient(135deg, var(--color-accent), var(--color-accent-2))', fontFamily: 'var(--font-display)' }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-[20px] leading-none text-on-accent"
+          style={{ fontFamily: 'var(--font-display)', fontWeight: 600, boxShadow: '0 0 0 2px var(--color-sidebar), 0 0 0 3px var(--color-brass)' }}
+          aria-hidden
         >
           S
         </span>
         <div className="leading-tight">
-          <div className="text-[15px] font-bold tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
+          <div className="text-[19px] font-semibold tracking-[-0.01em]" style={{ fontFamily: 'var(--font-display)' }}>
             Studyhall
           </div>
-          <div className="text-[11px] text-muted">{MODES.find((m) => m.mode === mode)?.label}</div>
+          <div className="label-caps mt-0.5" style={{ fontSize: 9.5 }}>
+            {MODES.find((m) => m.mode === mode)?.label}
+          </div>
         </div>
       </div>
 
       {shown.length > 1 && (
-        <div className="relative mx-3 mb-3 grid rounded-xl bg-line/50 p-1" style={{ gridTemplateColumns: `repeat(${shown.length}, 1fr)` }} role="tablist" aria-label="Category">
+        <div
+          className="relative mx-3 mb-3 grid rounded-lg border border-line p-0.5"
+          style={{ gridTemplateColumns: `repeat(${shown.length}, 1fr)`, background: 'color-mix(in srgb, var(--color-line) 35%, transparent)' }}
+          role="tablist"
+          aria-label="Category"
+        >
           <span
-            className="absolute top-1 bottom-1 left-1 rounded-lg shadow-sm transition-transform duration-300"
-            style={{
-              width: `calc((100% - 0.5rem) / ${shown.length})`,
-              transform: `translateX(${index * 100}%)`,
-              background: 'linear-gradient(135deg, var(--color-accent), var(--color-accent-2))'
-            }}
+            className="absolute top-0.5 bottom-0.5 left-0.5 rounded-md border border-line bg-panel shadow-sm transition-transform duration-300"
+            style={{ width: `calc((100% - 0.25rem) / ${shown.length})`, transform: `translateX(${index * 100}%)` }}
           />
           {shown.map((m) => (
             <button
@@ -179,7 +180,7 @@ export function Sidebar(): React.JSX.Element {
               role="tab"
               aria-selected={mode === m.mode}
               onClick={() => switchTo(m.mode)}
-              className={`relative z-10 rounded-lg py-1 text-xs font-semibold transition-colors ${mode === m.mode ? 'text-white' : 'text-muted hover:text-ink'}`}
+              className={`relative z-10 rounded-md py-1 text-xs font-semibold tracking-wide transition-colors ${mode === m.mode ? 'text-accent' : 'text-muted hover:text-ink'}`}
             >
               {m.label}
             </button>
@@ -189,42 +190,38 @@ export function Sidebar(): React.JSX.Element {
 
       <button
         onClick={() => openSearch()}
-        className="mx-3 mb-3 flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-left text-sm text-muted transition-colors hover:border-accent/40 hover:text-ink"
-        style={{ background: 'color-mix(in srgb, var(--color-panel) 70%, transparent)' }}
+        className="mx-3 mb-4 flex items-center gap-2 rounded-md border border-line bg-panel px-3 py-1.5 text-left text-sm text-muted transition-colors hover:text-ink"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-          <circle cx="11" cy="11" r="7" />
-          <path d="m20 20-3.5-3.5" />
-        </svg>
+        <Icon name="search" size={15} />
         <span className="flex-1">Search</span>
-        <kbd className="rounded border border-line px-1 text-[10px]">Ctrl K</kbd>
+        <kbd className="rounded-sm border border-line px-1 font-sans text-[10px]">Ctrl K</kbd>
       </button>
 
-      <nav className="flex min-h-0 flex-col gap-2.5 overflow-auto px-3 pb-2">
+      <nav className="flex min-h-0 flex-col gap-4 overflow-auto px-3 pb-2">
         {groups.map((group, gi) => {
           const items = group.items.filter((item) => item.modes.includes(mode))
           if (!items.length) return null
           const title = group.title === 'category' ? MODES.find((m) => m.mode === mode)?.label : group.title
           return (
             <div key={gi} className="flex flex-col gap-0.5">
-              {title && <div className="px-2.5 pb-1 text-[10px] font-semibold tracking-[0.08em] text-muted/80 uppercase">{title}</div>}
+              {title && <div className="label-caps px-2.5 pb-1.5 !text-brass">{title}</div>}
               {items.map((item) => {
                 const active = item.match.includes(route.name)
                 return (
                   <button
                     key={item.label}
                     onClick={() => navigate(item.route)}
-                    className={`group relative flex h-[30px] shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] transition-colors ${
-                      active ? 'bg-accent-soft font-semibold text-ink' : 'text-muted hover:bg-line/50 hover:text-ink'
+                    className={`group relative flex h-[30px] shrink-0 items-center gap-2.5 rounded-md px-2.5 text-left text-[13.5px] transition-colors ${
+                      active ? 'bg-panel font-semibold text-ink shadow-sm ring-1 ring-line' : 'text-muted hover:bg-line/45 hover:text-ink'
                     }`}
                   >
                     {active && (
-                      <span className="absolute top-1.5 bottom-1.5 left-0 w-[3px] rounded-full" style={{ background: 'linear-gradient(var(--color-accent), var(--color-accent-2))' }} />
+                      <span className="absolute top-2 bottom-2 left-0 w-[2px] rounded-full bg-brass" />
                     )}
-                    <Icon name={item.icon} className={active ? 'text-accent' : 'opacity-80 group-hover:opacity-100'} />
+                    <Icon name={item.icon} size={17} weight={active ? 'regular' : 'light'} className={active ? 'text-accent' : 'opacity-90 group-hover:opacity-100'} />
                     <span className="flex-1">{item.label}</span>
                     {badge(item.label) > 0 && (
-                      <span className="rounded-full px-1.5 text-[10px] font-bold text-white" style={{ background: 'linear-gradient(135deg, var(--color-accent), var(--color-accent-2))' }}>
+                      <span className="rounded-full bg-accent px-1.5 text-[10px] font-bold text-on-accent">
                         {badge(item.label)}
                       </span>
                     )}

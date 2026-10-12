@@ -1,7 +1,7 @@
 {
   "name": "studyhall",
   "productName": "Studyhall",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Local-first study and work planner",
   "author": "Studyhall",
   "private": true,
@@ -16,8 +16,6 @@
     "release": "node scripts/release.cjs"
   },
   "devDependencies": {
-    "@fontsource-variable/inter": "^5.3.0",
-    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "@fontsource/press-start-2p": "^5.3.0",
     "@fullcalendar/core": "^6.1.21",
     "@fullcalendar/daygrid": "^6.1.21",
@@ -55,6 +53,9 @@
     "vite": "^7.3.7"
   },
   "dependencies": {
+    "@fontsource-variable/eb-garamond": "^5.3.0",
+    "@fontsource-variable/instrument-sans": "^5.3.0",
+    "@phosphor-icons/react": "^2.1.10",
     "electron-updater": "^6.8.9"
   }
 }

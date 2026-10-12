@@ -4,59 +4,79 @@
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 /* ---------- Design tokens ----------
+   "Ivory & ink": paper-toned surfaces, heritage colours (racing green, navy, oxblood,
+   petrol) as accents, brass as the second accent, Garamond for titles.
    Use them as bg-canvas, text-ink, border-line, bg-accent, etc.
    Light/dark follows Windows unless chosen in Settings → Appearance (data-theme).
    Each category has its own accent (data-mode), unless one is chosen (data-accent). */
 @theme {
-  --color-canvas: #f5f6fb;
-  --color-panel: #ffffff;
-  --color-sidebar: #eef0f8;
-  --color-line: #e3e6ef;
-  --color-ink: #10131c;
-  --color-muted: #646b7d;
-  --color-accent: #7357ff;
-  --color-accent-2: #3d8bff;
-  --color-accent-soft: #eeeaff;
-  --color-danger: #e5484d;
-  --color-ok: #20a464;
-  --font-sans: 'Inter Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --font-display: 'Plus Jakarta Sans Variable', 'Inter Variable', 'Segoe UI', system-ui, sans-serif;
+  --color-canvas: #f3f0e8;
+  --color-panel: #fcfbf7;
+  --color-sidebar: #ebe6d9;
+  --color-line: #ddd6c5;
+  --color-ink: #1b211e;
+  --color-muted: #6c6a60;
+  --color-accent: #1f4d3a;
+  --color-accent-2: #9c7a3c;
+  --color-accent-soft: #e4e9e2;
+  --color-on-accent: #fbf8f1;
+  --color-brass: #9c7a3c;
+  --color-danger: #8e2a2a;
+  --color-ok: #2e6a48;
+  --font-sans: 'Instrument Sans Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'EB Garamond Variable', Garamond, 'Times New Roman', serif;
+  /* Tighter, more tailored corners everywhere */
+  --radius-md: 0.3rem;
+  --radius-lg: 0.4rem;
+  --radius-xl: 0.55rem;
+  --radius-2xl: 0.7rem;
 }
 
-/* Dark palette: deep navy rather than flat grey */
+/* Dark palette: a panelled library at night (deep green-black, ivory text, brass) */
 :root[data-theme='dark'] {
-  --color-canvas: #090b12;
-  --color-panel: #121624;
-  --color-sidebar: #0d1019;
-  --color-line: #222838;
-  --color-ink: #eef1f8;
-  --color-muted: #8e96ab;
-  --color-accent-soft: #211d3f;
-  --color-danger: #ff6b70;
-  --color-ok: #4fd18b;
+  --color-canvas: #0f1311;
+  --color-panel: #161b18;
+  --color-sidebar: #0b0e0c;
+  --color-line: #29302b;
+  --color-ink: #ece6d7;
+  --color-muted: #9c9889;
+  --color-on-accent: #0f1311;
+  --color-brass: #c8a765;
+  --color-accent-2: #c8a765;
+  --color-danger: #d47a70;
+  --color-ok: #84b897;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --color-canvas: #090b12;
-    --color-panel: #121624;
-    --color-sidebar: #0d1019;
-    --color-line: #222838;
-    --color-ink: #eef1f8;
-    --color-muted: #8e96ab;
-    --color-accent-soft: #211d3f;
-    --color-danger: #ff6b70;
-    --color-ok: #4fd18b;
+    --color-canvas: #0f1311;
+    --color-panel: #161b18;
+    --color-sidebar: #0b0e0c;
+    --color-line: #29302b;
+    --color-ink: #ece6d7;
+    --color-muted: #9c9889;
+    --color-on-accent: #0f1311;
+    --color-brass: #c8a765;
+    --color-accent-2: #c8a765;
+    --color-danger: #d47a70;
+    --color-ok: #84b897;
   }
 }
 
-/* Accents: by category, or a fixed one chosen in Settings */
-:root[data-mode='study'], :root[data-accent='violet'] { --color-accent: #7357ff; --color-accent-2: #3d8bff; }
-:root[data-mode='work'], :root[data-accent='blue'] { --color-accent: #2f7bff; --color-accent-2: #06b6d4; }
-:root[data-mode='life'], :root[data-accent='emerald'] { --color-accent: #0fa97a; --color-accent-2: #14b8c4; }
-:root[data-mode='dev'], :root[data-accent='cyan'] { --color-accent: #0aa5c8; --color-accent-2: #7cc62a; }
-:root[data-accent='rose'] { --color-accent: #e8457a; --color-accent-2: #ff8a3d; }
-:root[data-accent='amber'] { --color-accent: #e98a0b; --color-accent-2: #f43f5e; }
-:root { --color-accent-soft: color-mix(in srgb, var(--color-accent) 12%, var(--color-panel)); }
+/* Accents: by category, or a fixed one chosen in Settings. Heritage colours, deep in light
+   mode and lifted in dark mode so they stay readable. */
+:root[data-mode='study'], :root[data-accent='emerald'] { --color-accent: #1f4d3a; }
+:root[data-mode='work'], :root[data-accent='blue'] { --color-accent: #1e3a5f; }
+:root[data-mode='life'], :root[data-accent='rose'] { --color-accent: #6b2234; }
+:root[data-mode='dev'], :root[data-accent='cyan'] { --color-accent: #12505e; }
+:root[data-accent='violet'] { --color-accent: #533a63; }
+:root[data-accent='amber'] { --color-accent: #7d5f27; }
+:root[data-theme='dark'][data-mode='study'], :root[data-theme='dark'][data-accent='emerald'] { --color-accent: #8bbb9f; }
+:root[data-theme='dark'][data-mode='work'], :root[data-theme='dark'][data-accent='blue'] { --color-accent: #93afd4; }
+:root[data-theme='dark'][data-mode='life'], :root[data-theme='dark'][data-accent='rose'] { --color-accent: #bb7682; }
+:root[data-theme='dark'][data-mode='dev'], :root[data-theme='dark'][data-accent='cyan'] { --color-accent: #7fb8c5; }
+:root[data-theme='dark'][data-accent='violet'] { --color-accent: #a68bb5; }
+:root[data-theme='dark'][data-accent='amber'] { --color-accent: #d3b47a; }
+:root { --color-accent-soft: color-mix(in srgb, var(--color-accent) 11%, var(--color-panel)); }
 
 :root {
   color-scheme: light dark;
@@ -76,11 +96,13 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: 14px;
-  font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
 }
+::selection {
+  background: color-mix(in srgb, var(--color-brass) 32%, transparent);
+}
 
-/* Soft colour glow behind everything (tinted by the current accent) */
+/* Paper: a faint grain and a warm light from the top of the page */
 body::before {
   content: '';
   position: fixed;
@@ -88,10 +110,8 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(45% 40% at 12% -5%, color-mix(in srgb, var(--color-accent) 16%, transparent), transparent 70%),
-    radial-gradient(40% 35% at 95% 0%, color-mix(in srgb, var(--color-accent-2) 13%, transparent), transparent 70%),
-    radial-gradient(35% 35% at 75% 105%, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 70%);
-  transition: background 0.4s;
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.38 0 0 0 0 0.25 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(60% 45% at 50% -10%, color-mix(in srgb, var(--color-brass) 9%, transparent), transparent 70%);
 }
 :root[data-glow='off'] body::before {
   display: none;
@@ -101,15 +121,28 @@ body::before {
   z-index: 1;
 }
 
-/* Page titles everywhere use the display face */
-main h1 {
+/* Titles use Garamond; font-size-adjust keeps it as large as the surrounding sans text. */
+main h1,
+main h2,
+.font-display {
   font-family: var(--font-display);
-  font-weight: 750;
-  letter-spacing: -0.025em;
+  font-size-adjust: ex-height 0.5;
+}
+main h1 {
+  font-weight: 560;
+  letter-spacing: -0.012em;
 }
 main h2 {
-  font-family: var(--font-display);
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  letter-spacing: -0.004em;
+}
+/* Small tracked capitals for section labels */
+.label-caps {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-muted);
 }
 
 /* Reusable component classes. Inside @layer components so utility classes
@@ -117,51 +150,54 @@ main h2 {
 @layer components {
 /* Inputs that look like plain text until you hover/focus them (inline editing). */
 .field {
-  @apply w-full rounded-lg border border-transparent bg-transparent px-2 py-1 outline-none transition-colors;
+  @apply w-full rounded-md border border-transparent bg-transparent px-2 py-1 outline-none transition-colors;
   @apply hover:border-line focus:border-accent focus:bg-panel;
 }
 .field-boxed {
-  @apply w-full rounded-lg border border-line px-2.5 py-1.5 outline-none transition-shadow;
-  background: color-mix(in srgb, var(--color-panel) 70%, transparent);
+  @apply w-full rounded-md border border-line px-2.5 py-1.5 outline-none transition-shadow;
+  background: var(--color-panel);
 }
 .field-boxed:focus {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent);
 }
 .btn {
-  @apply inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-all;
+  @apply inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors;
   @apply disabled:opacity-50;
-  background: color-mix(in srgb, var(--color-panel) 75%, transparent);
-}
-.btn:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-line));
   background: var(--color-panel);
 }
+.btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-ink) 28%, var(--color-line));
+}
 .btn-primary {
-  @apply inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-semibold text-white transition-all;
+  @apply inline-flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition-all;
   @apply disabled:cursor-not-allowed disabled:opacity-40;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  letter-spacing: 0.01em;
   box-shadow:
-    0 1px 0 rgb(255 255 255 / 0.25) inset,
-    0 6px 16px -6px color-mix(in srgb, var(--color-accent) 70%, transparent);
+    0 1px 0 rgb(255 255 255 / 0.14) inset,
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 70%, black),
+    0 4px 12px -6px color-mix(in srgb, var(--color-accent) 60%, transparent);
 }
 .btn-primary:hover:not(:disabled) {
-  filter: brightness(1.08);
-  transform: translateY(-1px);
-  box-shadow:
-    0 1px 0 rgb(255 255 255 / 0.25) inset,
-    0 10px 22px -8px color-mix(in srgb, var(--color-accent) 75%, transparent);
+  filter: brightness(1.12);
 }
 .btn-ghost {
-  @apply inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-muted transition-colors hover:bg-line/60 hover:text-ink;
+  @apply inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted transition-colors hover:bg-line/60 hover:text-ink;
 }
 .card {
-  @apply rounded-2xl border border-line;
-  background: color-mix(in srgb, var(--color-panel) 86%, transparent);
-  backdrop-filter: blur(14px) saturate(1.15);
+  @apply rounded-xl border border-line;
+  background: var(--color-panel);
   box-shadow:
-    0 1px 2px rgb(16 24 40 / 0.04),
-    0 12px 32px -18px rgb(16 24 40 / 0.18);
+    0 1px 0 rgb(255 255 255 / 0.5) inset,
+    0 1px 2px rgb(27 33 30 / 0.04),
+    0 10px 28px -20px rgb(27 33 30 / 0.22);
+}
+:root[data-theme='dark'] .card {
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.03) inset,
+    0 12px 28px -20px rgb(0 0 0 / 0.6);
 }
 button.card {
   transition:
@@ -170,11 +206,8 @@ button.card {
     border-color 0.15s;
 }
 button.card:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-line));
-  box-shadow:
-    0 1px 2px rgb(16 24 40 / 0.05),
-    0 18px 36px -18px color-mix(in srgb, var(--color-accent) 45%, transparent);
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--color-brass) 55%, var(--color-line));
 }
 /* A small coloured label */
 .chip {
@@ -182,9 +215,9 @@ button.card:hover {
   background: var(--color-accent-soft);
   color: var(--color-accent);
 }
-/* Gradient text for a highlight */
+/* A highlighted word: the accent fading into brass */
 .text-gradient {
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+  background: linear-gradient(120deg, var(--color-accent) 30%, var(--color-brass));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -527,4 +560,12 @@ button.card:hover {
 .reader hr {
   border-color: var(--color-line);
   margin: 1.5em 0;
+}
+
+/* Native checkboxes, radios and sliders in the accent colour */
+input[type='checkbox'],
+input[type='radio'],
+input[type='range'],
+progress {
+  accent-color: var(--color-accent);
 }

@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import type { MediaItem, MediaKind, MediaStatus } from '@shared/types'
 import { AutoText } from '@/components/AutoField'
-import { Icon } from '@/components/ui'
+import { Icon, PALETTE } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { localDate } from '@/lib/dates'
 
@@ -22,7 +22,7 @@ const STATUS: { id: MediaStatus; label: string }[] = [
   { id: 'done', label: 'Finished' },
   { id: 'dropped', label: 'Dropped' }
 ]
-const COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#64748b']
+const COLORS = PALETTE
 
 export function useMedia(): MediaItem[] | undefined {
   return useLive(['media_items'], () => api.list('media_items', {}, 'sort'), []).data

@@ -50,7 +50,7 @@ export function MindmapsPage(): React.JSX.Element {
   const [gen, setGen] = useState(false)
   const add = async (): Promise<void> => {
     const map = await db.create('mindmaps', { title: 'New mindmap', mode })
-    await db.create('mindmap_nodes', { mindmap_id: map.id, label: 'Central idea', x: 0, y: 0, color: '#5b5bd6' })
+    await db.create('mindmap_nodes', { mindmap_id: map.id, label: 'Central idea', x: 0, y: 0, color: '#2f6b52' })
     navigate({ name: 'mindmap', id: map.id })
   }
 
@@ -236,8 +236,8 @@ function IdeaNodeView({ data, selected }: NodeProps<IdeaNode>): React.JSX.Elemen
   if (data.kind === 'center') {
     return (
       <div
-        className={`relative max-w-72 rounded-2xl px-5 py-3 text-center text-base font-bold text-white shadow-lg ${ring}`}
-        style={{ background: 'linear-gradient(135deg, var(--color-accent), var(--color-accent-2))', fontFamily: 'var(--font-display)' }}
+        className={`relative max-w-72 rounded-2xl px-5 py-3 text-center text-base font-semibold text-on-accent shadow-lg ${ring}`}
+        style={{ background: 'var(--color-accent)', fontFamily: 'var(--font-display)', fontSize: 19, boxShadow: '0 0 0 3px var(--color-panel), 0 0 0 4px var(--color-brass)' }}
       >
         <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-0 !bg-white/70" />
         <div className="break-words whitespace-pre-wrap">{data.label || '…'}</div>

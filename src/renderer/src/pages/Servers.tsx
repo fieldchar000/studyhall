@@ -66,7 +66,7 @@ function ServerList({ servers, current }: { servers: { id: string; name: string;
         >
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-line/70 text-xs font-bold">{s.name.slice(0, 2).toUpperCase()}</span>
           <span className="flex-1 truncate">{s.name}</span>
-          {s.unread > 0 && <span className="rounded-full bg-accent px-1.5 text-[10px] font-semibold text-white">{s.unread}</span>}
+          {s.unread > 0 && <span className="rounded-full bg-accent px-1.5 text-[10px] font-semibold text-on-accent">{s.unread}</span>}
         </button>
       ))}
       <div className="mt-auto flex flex-col gap-2 border-t border-line pt-3">
@@ -147,7 +147,7 @@ function ChannelList({ server, current, canManage }: { server: ServerDetail; cur
           >
             <span className="w-4 text-center opacity-60">{c.kind === 'text' ? '#' : '🎥'}</span>
             <span className={`flex-1 truncate ${c.muted ? 'opacity-50' : ''}`}>{c.name}</span>
-            {c.unread > 0 && !c.muted && <span className="rounded-full bg-accent px-1.5 text-[10px] font-semibold text-white">{c.unread}</span>}
+            {c.unread > 0 && !c.muted && <span className="rounded-full bg-accent px-1.5 text-[10px] font-semibold text-on-accent">{c.unread}</span>}
           </button>
         ))}
       {adding === kind && (

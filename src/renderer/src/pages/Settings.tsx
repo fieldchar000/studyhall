@@ -88,28 +88,28 @@ export function SettingsPage(): React.JSX.Element {
             <div className="flex flex-wrap gap-2">
               {(
                 [
-                  ['mode', 'By category', 'conic-gradient(#7357ff, #0fa97a, #0aa5c8, #2f7bff, #7357ff)'],
-                  ['violet', 'Violet', 'linear-gradient(135deg,#7357ff,#3d8bff)'],
-                  ['blue', 'Blue', 'linear-gradient(135deg,#2f7bff,#06b6d4)'],
-                  ['emerald', 'Emerald', 'linear-gradient(135deg,#0fa97a,#14b8c4)'],
-                  ['cyan', 'Cyan', 'linear-gradient(135deg,#0aa5c8,#7cc62a)'],
-                  ['rose', 'Rose', 'linear-gradient(135deg,#e8457a,#ff8a3d)'],
-                  ['amber', 'Amber', 'linear-gradient(135deg,#e98a0b,#f43f5e)']
+                  ['mode', 'By category: green for Study, navy for Work, oxblood for Life, petrol for DevKit', 'conic-gradient(#1f4d3a 0 25%, #1e3a5f 0 50%, #6b2234 0 75%, #12505e 0)'],
+                  ['emerald', 'Racing green', '#1f4d3a'],
+                  ['blue', 'Navy', '#1e3a5f'],
+                  ['rose', 'Oxblood', '#6b2234'],
+                  ['cyan', 'Petrol', '#12505e'],
+                  ['violet', 'Plum', '#533a63'],
+                  ['amber', 'Camel', '#7d5f27']
                 ] as [Accent, string, string][]
               ).map(([a, label, bg]) => (
                 <button
                   key={a}
                   title={label}
                   onClick={() => setAppearance({ accent: a })}
-                  className={`h-8 w-8 rounded-full ring-offset-2 ring-offset-panel transition-transform hover:scale-110 ${look.accent === a ? 'ring-2 ring-ink' : ''}`}
-                  style={{ background: bg }}
+                  className={`h-8 w-8 rounded-full ring-offset-2 ring-offset-panel transition-transform hover:scale-110 ${look.accent === a ? 'ring-2 ring-brass' : ''}`}
+                  style={{ background: bg, boxShadow: 'inset 0 0 0 1px rgb(255 255 255 / 0.18)' }}
                 />
               ))}
             </div>
           </div>
           <label className="flex items-center gap-3 text-sm">
             <input type="checkbox" checked={look.glow} onChange={(e) => setAppearance({ glow: e.target.checked })} />
-            Soft colour glow in the background
+            Paper texture and warm light in the background
           </label>
         </div>
       </section>

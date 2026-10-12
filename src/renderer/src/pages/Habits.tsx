@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react'
 import type { Habit, HabitCheck } from '@shared/types'
 import { AutoText } from '@/components/AutoField'
-import { Icon } from '@/components/ui'
+import { Icon, PALETTE } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { addDays, localDate } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
@@ -14,16 +14,16 @@ import { useMedia, KINDS } from './Library'
 import { money, useCurrency } from './Money'
 
 const SUGGESTIONS: Pick<Habit, 'name' | 'emoji' | 'color' | 'days_per_week'>[] = [
-  { name: 'Read 20 minutes', emoji: '📚', color: '#6366f1', days_per_week: 7 },
-  { name: 'Exercise', emoji: '🏃', color: '#ef4444', days_per_week: 3 },
-  { name: 'Meditate', emoji: '🧘', color: '#14b8a6', days_per_week: 7 },
-  { name: 'Drink 2L of water', emoji: '💧', color: '#0ea5e9', days_per_week: 7 },
-  { name: 'Asleep by 11pm', emoji: '😴', color: '#8b5cf6', days_per_week: 5 },
-  { name: 'Practice a language', emoji: '🗣️', color: '#f59e0b', days_per_week: 7 },
-  { name: 'No phone in bed', emoji: '📵', color: '#64748b', days_per_week: 7 },
-  { name: 'Cook a meal', emoji: '🍳', color: '#f97316', days_per_week: 3 },
-  { name: 'Journal', emoji: '✍️', color: '#ec4899', days_per_week: 5 },
-  { name: 'Call family or a friend', emoji: '📞', color: '#10b981', days_per_week: 2 }
+  { name: 'Read 20 minutes', emoji: '📚', color: '#2f6b52', days_per_week: 7 },
+  { name: 'Exercise', emoji: '🏃', color: '#8c2f45', days_per_week: 3 },
+  { name: 'Meditate', emoji: '🧘', color: '#1b6b7d', days_per_week: 7 },
+  { name: 'Drink 2L of water', emoji: '💧', color: '#2c5282', days_per_week: 7 },
+  { name: 'Asleep by 11pm', emoji: '😴', color: '#6c4f80', days_per_week: 5 },
+  { name: 'Practice a language', emoji: '🗣️', color: '#9c7a3c', days_per_week: 7 },
+  { name: 'No phone in bed', emoji: '📵', color: '#707b7d', days_per_week: 7 },
+  { name: 'Cook a meal', emoji: '🍳', color: '#a65f36', days_per_week: 3 },
+  { name: 'Journal', emoji: '✍️', color: '#46587a', days_per_week: 5 },
+  { name: 'Call family or a friend', emoji: '📞', color: '#61733a', days_per_week: 2 }
 ]
 
 const EMOJIS = ['✅', '📚', '🏃', '🧘', '💧', '😴', '🗣️', '📵', '🍳', '✍️', '📞', '🎸', '🧹', '💪', '🚶', '🥗', '🌱', '🎨', '💊', '🙏']
@@ -243,7 +243,7 @@ function HabitRow({ h, days, checks }: { h: Habit; days: string[]; checks: Habit
         {menu && (
           <div className="card absolute right-2 z-20 mt-1 flex w-44 flex-col p-1 text-sm shadow-xl" onMouseLeave={() => setMenu(false)}>
             <div className="flex flex-wrap gap-1 p-1">
-              {['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#64748b'].map((c) => (
+              {PALETTE.map((c) => (
                 <button key={c} className="h-5 w-5 rounded-full" style={{ background: c }} onClick={() => void save({ color: c })} />
               ))}
             </div>

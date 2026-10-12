@@ -17,7 +17,7 @@ export function UpdateBanner(): React.JSX.Element | null {
   const s = useUpdateState()
   if (s?.status !== 'ready') return null
   return (
-    <button onClick={() => void api.app.installUpdate()} className="rounded-lg bg-accent px-2.5 py-2 text-left text-xs text-white hover:opacity-90" title="Saves everything, installs, and reopens Studyhall">
+    <button onClick={() => void api.app.installUpdate()} className="rounded-lg bg-accent px-2.5 py-2 text-left text-xs text-on-accent hover:opacity-90" title="Saves everything, installs, and reopens Studyhall">
       <div className="font-semibold">Update {s.version} ready</div>
       <div className="opacity-90">Click to restart &amp; install</div>
     </button>

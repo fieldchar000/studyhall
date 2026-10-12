@@ -341,7 +341,7 @@ function Section({
         <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={onFold}>
           <Icon name="chevron" className={`shrink-0 text-muted transition-transform ${folded ? '' : 'rotate-90'}`} />
           <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: mod?.color ?? '#94a3b8' }} />
-          <span className="truncate font-semibold">{mod ? (mod.code ? `${mod.code} · ${mod.name}` : mod.name) : 'Other'}</span>
+          <span className="font-display truncate text-[17px] font-semibold">{mod ? (mod.code ? `${mod.code} · ${mod.name}` : mod.name) : 'Other'}</span>
           <span className="shrink-0 text-xs text-muted">
             {[fileCount && `${fileCount} file${fileCount === 1 ? '' : 's'}`, noteCount && `${noteCount} note${noteCount === 1 ? '' : 's'}`]
               .filter(Boolean)

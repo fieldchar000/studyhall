@@ -2,8 +2,9 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { QuickCapture } from './pages/QuickCapture'
-import '@fontsource-variable/inter'
-import '@fontsource-variable/plus-jakarta-sans'
+import '@fontsource-variable/instrument-sans'
+import '@fontsource-variable/eb-garamond'
+import '@fontsource-variable/eb-garamond/wght-italic.css'
 import './index.css'
 import './lib/appearance' // theme + accent before the first paint
 

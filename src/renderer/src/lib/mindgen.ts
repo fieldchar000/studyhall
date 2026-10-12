@@ -52,7 +52,7 @@ export interface GenMap {
   edges: GenEdge[]
 }
 
-const PALETTE = ['#7357ff', '#0aa5c8', '#f59e0b', '#e8457a', '#10b981', '#3d8bff', '#f97316', '#8b5cf6', '#14b8a6', '#ef4444']
+const PALETTE = ['#2f6b52', '#2c5282', '#8c2f45', '#1b6b7d', '#9c7a3c', '#6c4f80', '#61733a', '#a65f36', '#46587a', '#707b7d'] // heritage colours (same as the colour picker)
 const STOP = new Set(
   `a about above after again against all also am an and any are as at be because been before being below between both but by can cannot could did do does doing down during each even ever every few for from further get gets got had has have having he her here hers him his how however i if in into is it its just like made make makes many may me might more most much must my new no nor not now of off often on once one only or other our out over own per rather really said same say says see shall she should since so some still such than that the their them then there these they this those though through thus to too two under until up upon us use used using very via was way we well were what when where whether which while who whom whose why will with within without would yet you your therefore although whereas first second third last next back today yesterday tomorrow year years time times week weeks day days people thing things lot lots ways part parts number old good great big small high low long short several various including include includes according mr mrs ms dr told tell asked`.split(
     /\s+/
