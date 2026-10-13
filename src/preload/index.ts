@@ -28,6 +28,9 @@ const api: Api = {
     showInFolder: (id) => ipcRenderer.invoke('materials:reveal', id),
     pathForFile: (file) => webUtils.getPathForFile(file)
   },
+  photos: {
+    save: (data) => ipcRenderer.invoke('photos:save', data)
+  },
   calendar: {
     range: (start, end, mode) => ipcRenderer.invoke('calendar:range', start, end, mode),
     refreshSubscriptions: (id) => ipcRenderer.invoke('calendar:refresh', id),

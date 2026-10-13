@@ -7,6 +7,7 @@ import { HomePage } from './pages/Home'
 import { ModuleDetailPage } from './pages/ModuleDetail'
 import { ModulesPage } from './pages/Modules'
 import { MaterialsPage } from './pages/Materials'
+import { RecallPage } from './pages/Recall'
 import { ProjectDetailPage } from './pages/ProjectDetail'
 import { ProjectsPage } from './pages/Projects'
 import { SettingsPage } from './pages/Settings'
@@ -24,6 +25,8 @@ import { LanguageDetailPage, LanguagesPage } from './pages/Languages'
 import { HabitsPage } from './pages/Habits'
 import { ExamsPage, PaperPage, QuizPage } from './pages/Exams'
 import { JournalPage } from './pages/Journal'
+import { PeoplePage } from './pages/People'
+import { PartnerPage } from './pages/Partner'
 import { LibraryPage } from './pages/Library'
 import { MoneyPage } from './pages/Money'
 import { BriefingPage } from './pages/dev/Briefing'
@@ -49,6 +52,7 @@ export function App(): React.JSX.Element {
         {route.name === 'project' && <ProjectDetailPage key={route.id} id={route.id} />}
         {route.name === 'modules' && <ModulesPage />}
         {route.name === 'materials' && <MaterialsPage />}
+        {route.name === 'recall' && <RecallPage />}
         {route.name === 'module' && <ModuleDetailPage key={route.id} id={route.id} tab={route.tab} />}
         {route.name === 'clients' && <ClientsPage />}
         {route.name === 'client' && <ClientDetailPage key={route.id} id={route.id} />}
@@ -69,6 +73,8 @@ export function App(): React.JSX.Element {
         {route.name === 'habits' && <HabitsPage />}
         {route.name === 'exams' && <ExamsPage />}
         {route.name === 'journal' && <JournalPage />}
+        {route.name === 'people' && <PeoplePage key={route.id ?? 'list'} id={route.id} />}
+        {route.name === 'partner' && <PartnerPage />}
         {route.name === 'library' && <LibraryPage />}
         {route.name === 'money' && <MoneyPage />}
         {route.name === 'briefing' && <BriefingPage />}

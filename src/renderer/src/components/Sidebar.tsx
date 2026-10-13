@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import type { Mode } from '@shared/types'
 import { api, useLive } from '@/lib/data'
 import { navigate, useRoute, type Route } from '@/lib/nav'
-import { setMode, useEnabledModes, useMode } from '@/lib/profile'
+import { setMode, useEnabledModes, useMode, useProfile } from '@/lib/profile'
 import { fmtClock, PHASE_LABEL, useRemaining, useTimerState } from '@/lib/timer'
 import { setModeAccent } from '@/lib/appearance'
 import { openSearch } from './SearchPalette'
@@ -44,6 +44,7 @@ const groups: { title?: string; items: NavItem[] }[] = [
       // Study
       { label: 'Modules', icon: 'modules', route: { name: 'modules' }, match: ['modules', 'module'], modes: ['study'] },
       { label: 'Materials', icon: 'materials', route: { name: 'materials' }, match: ['materials'], modes: ['study'] },
+      { label: 'Active recall', icon: 'recall', route: { name: 'recall' }, match: ['recall'], modes: ['study'] },
       projects('Projects', ['study']),
       { label: 'Exam Prep', icon: 'exam', route: { name: 'exams' }, match: ['exams', 'paper', 'quiz'], modes: ['study'] },
       { label: 'Timetable', icon: 'calendar', route: { name: 'timetable' }, match: ['timetable'], modes: ['study'] },
@@ -54,7 +55,9 @@ const groups: { title?: string; items: NavItem[] }[] = [
       // Life
       { label: 'Languages', icon: 'globe', route: { name: 'languages' }, match: ['languages', 'language'], modes: ['life'] },
       { label: 'Habits', icon: 'flame', route: { name: 'habits' }, match: ['habits'], modes: ['life'] },
-      { label: 'Journal', icon: 'quill', route: { name: 'journal' }, match: ['journal'], modes: ['life'] },
+      { label: 'Daily journal', icon: 'quill', route: { name: 'journal' }, match: ['journal'], modes: ['life'] },
+      { label: 'People', icon: 'users', route: { name: 'people' }, match: ['people'], modes: ['life'] },
+      { label: 'Partner', icon: 'heart', route: { name: 'partner' }, match: ['partner'], modes: ['life'] },
       { label: 'Library', icon: 'book', route: { name: 'library' }, match: ['library'], modes: ['life'] },
       { label: 'Money', icon: 'wallet', route: { name: 'money' }, match: ['money'], modes: ['life'] },
       projects('Goals', ['life']),
@@ -94,6 +97,9 @@ const MODE_PAGES: Partial<Record<Route['name'], Mode[]>> = {
   modules: ['study'],
   module: ['study'],
   materials: ['study'],
+  recall: ['study'],
+  people: ['life'],
+  partner: ['life'],
   timetable: ['study'],
   grades: ['study'],
   exams: ['study'],
@@ -125,6 +131,7 @@ export function Sidebar(): React.JSX.Element {
     useLive(['cloud:messages', 'cloud:server_members'], async () => (cloud?.signedIn ? (await api.cloud.servers().catch(() => [])).reduce((n, s) => n + s.unread, 0) : 0), [cloud?.signedIn]).data ?? 0
   const badge = (label: string): number => (label === 'Inbox' ? inboxCount : label === 'Servers' ? serverUnread : 0)
   const shown = MODES.filter((m) => enabled.includes(m.mode))
+  const partnerLabel = useProfile()?.partner_label || 'Partner'
   const index = Math.max(0, shown.findIndex((m) => m.mode === mode))
 
   // Each category tints the whole app with its own accent.
@@ -219,7 +226,7 @@ export function Sidebar(): React.JSX.Element {
                       <span className="absolute top-2 bottom-2 left-0 w-[2px] rounded-full bg-brass" />
                     )}
                     <Icon name={item.icon} size={17} weight={active ? 'regular' : 'light'} className={active ? 'text-accent' : 'opacity-90 group-hover:opacity-100'} />
-                    <span className="flex-1">{item.label}</span>
+                    <span className="flex-1">{item.label === 'Partner' ? partnerLabel : item.label}</span>
                     {badge(item.label) > 0 && (
                       <span className="rounded-full bg-accent px-1.5 text-[10px] font-bold text-on-accent">
                         {badge(item.label)}

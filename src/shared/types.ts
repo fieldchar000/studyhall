@@ -52,7 +52,11 @@ export interface Material extends BaseRow {
   sync_file: number // 0 | 1 — opt-in cloud upload (Phase 5)
   storage_path: string | null // cloud storage key (Phase 5)
   sort: number
+  category: MaterialCategory
 }
+
+/** How a file or note is filed inside a week. */
+export type MaterialCategory = 'notes' | 'worksheet'
 
 export type AssessmentKind = 'exam' | 'assignment' | 'quiz' | 'presentation' | 'lab' | 'other'
 
@@ -112,6 +116,8 @@ export interface Profile extends BaseRow {
   grade_scale: string | null
   target_gpa: number | null
   leaderboard_opt_in: number
+  partner_id: string | null // a person (people table) shown on the Partner page
+  partner_label: string // what to call them: Partner, Girlfriend, Boyfriend…
 }
 
 export interface Client extends BaseRow {
@@ -258,6 +264,7 @@ export interface Note extends BaseRow {
   client_id: string | null
   meeting_at: string | null // ISO, meeting notes only
   pinned: number
+  category: MaterialCategory
 }
 
 export interface Mindmap extends BaseRow {
@@ -357,6 +364,7 @@ export interface GameResult {
 export interface MaterialPlace {
   moduleId: string | null
   weekId: string | null
+  category?: MaterialCategory // Notes (default) or Worksheet
 }
 
 export interface PickedDoc {
@@ -435,6 +443,12 @@ export interface TableMap {
   predictions: Prediction
   devlogs: Devlog
   experiments: Experiment
+  photos: Photo
+  recall_cards: RecallCard
+  people: Person
+  person_facts: PersonFact
+  moments: Moment
+  plans: Plan
 }
 
 export type FeedTopic = 'ai' | 'geo' | 'politics' | 'philosophy' | 'tech' | 'games' | 'science' | 'other'
@@ -583,6 +597,98 @@ export interface JournalEntry extends BaseRow {
   gratitude: string // newline-separated
   content: string
   tags: string // JSON string[]
+  title: string // the day's headline
+  details: string // JSON JournalDetails
+}
+
+/** The small details of a day in the journal. */
+export interface JournalDetails {
+  weather?: string
+  place?: string
+  with?: string
+  song?: string
+  highlight?: string
+  food?: string
+}
+
+/** A picture attached to a journal day or a shared moment. The file lives in the app data folder. */
+export interface Photo extends BaseRow {
+  parent_table: 'journal_entries' | 'moments'
+  parent_id: string
+  local_path: string | null
+  width: number
+  height: number
+  size_bytes: number
+  caption: string
+  sync_file: number
+  storage_path: string | null
+  sort: number
+}
+
+/** One "page" of a module (a PDF page or a chunk of a note/document) in the active recall rotation. */
+export interface RecallCard extends BaseRow {
+  module_id: string
+  source_table: 'notes' | 'materials'
+  source_id: string
+  locator: number // page (PDF) or chunk number, from 0
+  label: string
+  box: number // Leitner box: 0 new … 5 well known
+  due_on: string | null // YYYY-MM-DD
+  last_result: 'got' | 'partly' | 'missed' | null
+  reviews: number
+  last_reviewed_at: string | null
+}
+
+export type PersonKind = 'partner' | 'friend' | 'family' | 'other'
+
+export interface Person extends BaseRow {
+  name: string
+  kind: PersonKind
+  relation: string // "best friend", "sister", "uni"…
+  emoji: string
+  color: string
+  birthday: string | null // YYYY-MM-DD (year may be 0000 when unknown)
+  anniversary: string | null // YYYY-MM-DD
+  how_met: string
+  love_language: string
+  contact_every_days: number | null
+  last_contact_on: string | null
+  notes: string
+  pinned: number
+  archived: number
+  sort: number
+}
+
+/** A small detail worth remembering about someone (likes, sizes, gift ideas…). */
+export interface PersonFact extends BaseRow {
+  person_id: string
+  category: string
+  text: string
+  sort: number
+}
+
+/** Something you did together, a check-in, or a note of appreciation. */
+export interface Moment extends BaseRow {
+  person_id: string | null
+  kind: 'memory' | 'checkin' | 'appreciation'
+  date: string
+  title: string
+  story: string
+  place: string
+  rating: number | null
+}
+
+/** A date or hangout: an idea, something planned, or something done. */
+export interface Plan extends BaseRow {
+  person_id: string | null
+  idea_id: string
+  title: string
+  category: string
+  date: string | null
+  status: 'idea' | 'planned' | 'done'
+  place: string
+  cost: string
+  notes: string
 }
 
 export type MediaKind = 'book' | 'film' | 'show' | 'anime' | 'game' | 'podcast'
@@ -735,6 +841,10 @@ export interface Api {
     showInFolder(id: string): Promise<void>
     /** Real file path of a file dropped onto the window. */
     pathForFile(file: File): string
+  }
+  photos: {
+    /** Store an already-resized picture; returns where it was saved. */
+    save(data: Uint8Array): Promise<{ local_path: string; size_bytes: number }>
   }
   calendar: {
     range(startIso: string, endIso: string, mode: Mode): Promise<CalendarRange>

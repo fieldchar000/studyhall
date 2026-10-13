@@ -32,6 +32,8 @@ alter table public.profiles add column if not exists leaderboard_opt_in bigint;
 alter table public.profiles add column if not exists enabled_modes text;
 alter table public.profiles add column if not exists currency text;
 alter table public.profiles add column if not exists devkit bigint;
+alter table public.profiles add column if not exists partner_id text;
+alter table public.profiles add column if not exists partner_label text;
 alter table public.profiles add column if not exists server_updated_at timestamptz not null default now();
 create index if not exists profiles_sync_idx on public.profiles (server_updated_at);
 create index if not exists profiles_owner_idx on public.profiles (owner_id);
@@ -107,6 +109,7 @@ alter table public.materials add column if not exists sha256 text;
 alter table public.materials add column if not exists sync_file bigint;
 alter table public.materials add column if not exists storage_path text;
 alter table public.materials add column if not exists sort double precision;
+alter table public.materials add column if not exists category text;
 alter table public.materials add column if not exists server_updated_at timestamptz not null default now();
 create index if not exists materials_sync_idx on public.materials (server_updated_at);
 create index if not exists materials_owner_idx on public.materials (owner_id);
@@ -371,6 +374,7 @@ alter table public.notes add column if not exists project_id text;
 alter table public.notes add column if not exists client_id text;
 alter table public.notes add column if not exists meeting_at text;
 alter table public.notes add column if not exists pinned bigint;
+alter table public.notes add column if not exists category text;
 alter table public.notes add column if not exists server_updated_at timestamptz not null default now();
 create index if not exists notes_sync_idx on public.notes (server_updated_at);
 create index if not exists notes_owner_idx on public.notes (owner_id);
@@ -763,6 +767,8 @@ alter table public.journal_entries add column if not exists sleep_hours double p
 alter table public.journal_entries add column if not exists gratitude text;
 alter table public.journal_entries add column if not exists content text;
 alter table public.journal_entries add column if not exists tags text;
+alter table public.journal_entries add column if not exists title text;
+alter table public.journal_entries add column if not exists details text;
 alter table public.journal_entries add column if not exists server_updated_at timestamptz not null default now();
 create index if not exists journal_entries_sync_idx on public.journal_entries (server_updated_at);
 create index if not exists journal_entries_owner_idx on public.journal_entries (owner_id);
@@ -1010,3 +1016,160 @@ revoke all on public.experiments from anon;
 revoke delete on public.experiments from authenticated; -- deletes are soft (deleted_at)
 drop trigger if exists experiments_sync_guard on public.experiments;
 create trigger experiments_sync_guard before insert or update on public.experiments for each row execute function public.sync_guard();
+
+-- photos
+create table if not exists public.photos (id text primary key);
+alter table public.photos add column if not exists created_at text;
+alter table public.photos add column if not exists updated_at text;
+alter table public.photos add column if not exists deleted_at text;
+alter table public.photos add column if not exists owner_id text;
+alter table public.photos add column if not exists parent_table text;
+alter table public.photos add column if not exists parent_id text;
+alter table public.photos add column if not exists local_path text;
+alter table public.photos add column if not exists width bigint;
+alter table public.photos add column if not exists height bigint;
+alter table public.photos add column if not exists size_bytes bigint;
+alter table public.photos add column if not exists caption text;
+alter table public.photos add column if not exists sync_file bigint;
+alter table public.photos add column if not exists storage_path text;
+alter table public.photos add column if not exists sort double precision;
+alter table public.photos add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists photos_sync_idx on public.photos (server_updated_at);
+create index if not exists photos_owner_idx on public.photos (owner_id);
+alter table public.photos enable row level security;
+drop policy if exists "own rows" on public.photos;
+create policy "own rows" on public.photos for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.photos from anon;
+revoke delete on public.photos from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists photos_sync_guard on public.photos;
+create trigger photos_sync_guard before insert or update on public.photos for each row execute function public.sync_guard();
+
+-- recall_cards
+create table if not exists public.recall_cards (id text primary key);
+alter table public.recall_cards add column if not exists created_at text;
+alter table public.recall_cards add column if not exists updated_at text;
+alter table public.recall_cards add column if not exists deleted_at text;
+alter table public.recall_cards add column if not exists owner_id text;
+alter table public.recall_cards add column if not exists module_id text;
+alter table public.recall_cards add column if not exists source_table text;
+alter table public.recall_cards add column if not exists source_id text;
+alter table public.recall_cards add column if not exists locator bigint;
+alter table public.recall_cards add column if not exists label text;
+alter table public.recall_cards add column if not exists box bigint;
+alter table public.recall_cards add column if not exists due_on text;
+alter table public.recall_cards add column if not exists last_result text;
+alter table public.recall_cards add column if not exists reviews bigint;
+alter table public.recall_cards add column if not exists last_reviewed_at text;
+alter table public.recall_cards add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists recall_cards_sync_idx on public.recall_cards (server_updated_at);
+create index if not exists recall_cards_owner_idx on public.recall_cards (owner_id);
+alter table public.recall_cards enable row level security;
+drop policy if exists "own rows" on public.recall_cards;
+create policy "own rows" on public.recall_cards for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.recall_cards from anon;
+revoke delete on public.recall_cards from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists recall_cards_sync_guard on public.recall_cards;
+create trigger recall_cards_sync_guard before insert or update on public.recall_cards for each row execute function public.sync_guard();
+
+-- people
+create table if not exists public.people (id text primary key);
+alter table public.people add column if not exists created_at text;
+alter table public.people add column if not exists updated_at text;
+alter table public.people add column if not exists deleted_at text;
+alter table public.people add column if not exists owner_id text;
+alter table public.people add column if not exists name text;
+alter table public.people add column if not exists kind text;
+alter table public.people add column if not exists relation text;
+alter table public.people add column if not exists emoji text;
+alter table public.people add column if not exists color text;
+alter table public.people add column if not exists birthday text;
+alter table public.people add column if not exists anniversary text;
+alter table public.people add column if not exists how_met text;
+alter table public.people add column if not exists love_language text;
+alter table public.people add column if not exists contact_every_days bigint;
+alter table public.people add column if not exists last_contact_on text;
+alter table public.people add column if not exists notes text;
+alter table public.people add column if not exists pinned bigint;
+alter table public.people add column if not exists archived bigint;
+alter table public.people add column if not exists sort double precision;
+alter table public.people add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists people_sync_idx on public.people (server_updated_at);
+create index if not exists people_owner_idx on public.people (owner_id);
+alter table public.people enable row level security;
+drop policy if exists "own rows" on public.people;
+create policy "own rows" on public.people for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.people from anon;
+revoke delete on public.people from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists people_sync_guard on public.people;
+create trigger people_sync_guard before insert or update on public.people for each row execute function public.sync_guard();
+
+-- person_facts
+create table if not exists public.person_facts (id text primary key);
+alter table public.person_facts add column if not exists created_at text;
+alter table public.person_facts add column if not exists updated_at text;
+alter table public.person_facts add column if not exists deleted_at text;
+alter table public.person_facts add column if not exists owner_id text;
+alter table public.person_facts add column if not exists person_id text;
+alter table public.person_facts add column if not exists category text;
+alter table public.person_facts add column if not exists text text;
+alter table public.person_facts add column if not exists sort double precision;
+alter table public.person_facts add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists person_facts_sync_idx on public.person_facts (server_updated_at);
+create index if not exists person_facts_owner_idx on public.person_facts (owner_id);
+alter table public.person_facts enable row level security;
+drop policy if exists "own rows" on public.person_facts;
+create policy "own rows" on public.person_facts for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.person_facts from anon;
+revoke delete on public.person_facts from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists person_facts_sync_guard on public.person_facts;
+create trigger person_facts_sync_guard before insert or update on public.person_facts for each row execute function public.sync_guard();
+
+-- moments
+create table if not exists public.moments (id text primary key);
+alter table public.moments add column if not exists created_at text;
+alter table public.moments add column if not exists updated_at text;
+alter table public.moments add column if not exists deleted_at text;
+alter table public.moments add column if not exists owner_id text;
+alter table public.moments add column if not exists person_id text;
+alter table public.moments add column if not exists kind text;
+alter table public.moments add column if not exists date text;
+alter table public.moments add column if not exists title text;
+alter table public.moments add column if not exists story text;
+alter table public.moments add column if not exists place text;
+alter table public.moments add column if not exists rating bigint;
+alter table public.moments add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists moments_sync_idx on public.moments (server_updated_at);
+create index if not exists moments_owner_idx on public.moments (owner_id);
+alter table public.moments enable row level security;
+drop policy if exists "own rows" on public.moments;
+create policy "own rows" on public.moments for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.moments from anon;
+revoke delete on public.moments from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists moments_sync_guard on public.moments;
+create trigger moments_sync_guard before insert or update on public.moments for each row execute function public.sync_guard();
+
+-- plans
+create table if not exists public.plans (id text primary key);
+alter table public.plans add column if not exists created_at text;
+alter table public.plans add column if not exists updated_at text;
+alter table public.plans add column if not exists deleted_at text;
+alter table public.plans add column if not exists owner_id text;
+alter table public.plans add column if not exists person_id text;
+alter table public.plans add column if not exists idea_id text;
+alter table public.plans add column if not exists title text;
+alter table public.plans add column if not exists category text;
+alter table public.plans add column if not exists date text;
+alter table public.plans add column if not exists status text;
+alter table public.plans add column if not exists place text;
+alter table public.plans add column if not exists cost text;
+alter table public.plans add column if not exists notes text;
+alter table public.plans add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists plans_sync_idx on public.plans (server_updated_at);
+create index if not exists plans_owner_idx on public.plans (owner_id);
+alter table public.plans enable row level security;
+drop policy if exists "own rows" on public.plans;
+create policy "own rows" on public.plans for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.plans from anon;
+revoke delete on public.plans from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists plans_sync_guard on public.plans;
+create trigger plans_sync_guard before insert or update on public.plans for each row execute function public.sync_guard();

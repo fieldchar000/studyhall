@@ -8,21 +8,23 @@ import type { CalEvent, Task } from '@shared/types'
 import { AutoText } from '@/components/AutoField'
 import { ColorPicker, Icon, Modal, PALETTE } from '@/components/ui'
 import { api, db, useLive, useRows } from '@/lib/data'
-import { addDays, formatDateTime, isoToLocalInput, localInputToIso, relativeDue } from '@/lib/dates'
+import { addDays, formatDateTime, isoToLocalInput, localDate, localInputToIso, relativeDue } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
-import { useMode } from '@/lib/profile'
+import { useMode, useProfile } from '@/lib/profile'
 import { addToTop3, isOverdue, openTask, removeFromTop3, setDone, todayStr } from '@/lib/tasks'
 import { ExamCountdownPanel } from '@/components/RevisionPlanner'
 import { SpotifyPanel } from '@/components/SpotifyPanel'
 import { LifeTodayCard } from './Habits'
+import { useRecallToday } from './Recall'
+import { doneToday } from '@/lib/recall'
 
 export function HomePage(): React.JSX.Element {
   const mode = useMode()
-  // Task rows in the side panels can be dragged onto the calendar to block out time.
-  const sideRef = useRef<HTMLDivElement>(null)
+  // Task rows can be dragged onto the calendar to block out time.
+  const pageRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!sideRef.current) return
-    const d = new Draggable(sideRef.current, {
+    if (!pageRef.current) return
+    const d = new Draggable(pageRef.current, {
       itemSelector: '[data-task-drag]',
       eventData: (el) => ({
         title: el.getAttribute('data-title') ?? 'Task',
@@ -35,20 +37,122 @@ export function HomePage(): React.JSX.Element {
   }, [])
 
   return (
-    <div className="flex h-full gap-5 p-5">
-      <div className="card min-w-0 flex-1 p-4">
-        <CalendarView />
-      </div>
-      <div ref={sideRef} className="flex w-80 shrink-0 flex-col gap-5 overflow-auto">
-        {mode === 'life' && <LifeTodayCard />}
-        <Top3Panel />
-        <ExamCountdownPanel />
-        <PlanPanel />
-        <DeadlinesPanel />
-        <SpotifyPanel />
-        <SubscriptionsPanel />
+    <div ref={pageRef} className="h-full overflow-auto">
+      <div className="mx-auto flex max-w-6xl flex-col gap-5 px-8 py-7">
+        <Greeting />
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="flex min-w-0 flex-col gap-5">
+            {mode === 'study' && <RecallHomeCard />}
+            {mode === 'life' && <LifeTodayCard />}
+            <div className="grid gap-5 md:grid-cols-2">
+              <Top3Panel />
+              <PlanPanel />
+            </div>
+            <section className="card p-4">
+              <CalendarView />
+            </section>
+          </div>
+          <div className="flex flex-col gap-5">
+            <ExamCountdownPanel />
+            <DeadlinesPanel />
+            <SpotifyPanel />
+            <SubscriptionsPanel />
+          </div>
+        </div>
       </div>
     </div>
+  )
+}
+
+/** "Good evening" and a one-line summary of the day. */
+function Greeting(): React.JSX.Element {
+  const mode = useMode()
+  const profile = useProfile()
+  const { data } = useLive(
+    ['tasks', 'focus_sessions'],
+    async () => {
+      const [tasks, sessions] = await Promise.all([api.list('tasks', { mode }), api.list('focus_sessions')])
+      const today = todayStr()
+      const open = tasks.filter((t) => t.status !== 'done' && !t.parent_task_id)
+      const dueToday = open.filter((t) => t.due_at && localDate(new Date(t.due_at)) === today).length
+      const overdue = open.filter((t) => isOverdue(t) && localDate(new Date(t.due_at!)) !== today).length
+      const focused = Math.round(sessions.filter((s) => localDate(new Date(s.started_at)) === today).reduce((n, s) => n + s.focused_seconds, 0) / 60)
+      return { dueToday, overdue, focused }
+    },
+    [mode]
+  )
+  const h = new Date().getHours()
+  const hello = h < 5 ? 'Burning the midnight oil' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
+  const name = profile?.display_name?.split(' ')[0]
+  const bits = data
+    ? [
+        data.dueToday ? `${data.dueToday} due today` : 'nothing due today',
+        data.overdue ? `${data.overdue} overdue` : '',
+        data.focused ? `${data.focused >= 60 ? `${Math.floor(data.focused / 60)}h ${data.focused % 60}m` : `${data.focused}m`} focused` : ''
+      ].filter(Boolean)
+    : []
+  return (
+    <header className="flex flex-wrap items-end gap-3">
+      <div className="mr-auto">
+        <div className="label-caps">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+        <h1 className="text-3xl">
+          {hello}
+          {name ? `, ${name}` : ''}.
+        </h1>
+        <p className="mt-0.5 text-sm text-muted">{bits.length ? `${bits.join(' · ')}.` : ' '}</p>
+      </div>
+      <button className="btn" onClick={() => navigate({ name: 'focus' })}>
+        <Icon name="focus" /> Focus
+      </button>
+      <button className="btn" onClick={() => navigate({ name: 'tasks' })}>
+        <Icon name="tasks" /> Tasks
+      </button>
+    </header>
+  )
+}
+
+/** Today's active recall, module by module. */
+function RecallHomeCard(): React.JSX.Element | null {
+  const modules = useRows('modules', { archived: 0 }, 'sort')
+  const { byModule, loading } = useRecallToday(modules)
+  if (!modules?.length) return null
+  const rows = modules.map((m) => ({ m, cards: byModule.get(m.id) ?? [] })).filter((r) => r.cards.length || loading)
+  const all = rows.flatMap((r) => r.cards)
+  const done = all.filter(doneToday).length
+  return (
+    <section className="card overflow-hidden">
+      <div className="flex items-center gap-3 px-5 pt-4 pb-3">
+        <Icon name="recall" size={22} className="text-brass" />
+        <div className="flex-1">
+          <h2 className="text-xl">Active recall</h2>
+          <p className="text-xs text-muted">
+            {loading && !all.length ? 'Picking today’s pages…' : all.length ? `${done} of ${all.length} pages recalled today` : 'Add notes or files to your modules to get daily pages.'}
+          </p>
+        </div>
+        <button className="btn-primary" onClick={() => navigate({ name: 'recall' })}>
+          {done && done === all.length ? 'Review' : done ? 'Continue' : 'Start'}
+        </button>
+      </div>
+      {rows.length > 0 && (
+        <div className="grid gap-x-6 gap-y-2 border-t border-line/70 px-5 py-3 sm:grid-cols-2">
+          {rows.map(({ m, cards }) => {
+            const d = cards.filter(doneToday).length
+            return (
+              <button key={m.id} className="flex items-center gap-2.5 rounded-md py-1 text-left text-sm hover:text-accent" onClick={() => navigate({ name: 'recall' })}>
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: m.color }} />
+                <span className="min-w-0 flex-1 truncate">{m.code || m.name}</span>
+                <span className="h-1 w-16 overflow-hidden rounded-full bg-line">
+                  <span className="block h-full rounded-full bg-accent" style={{ width: cards.length ? `${(d / cards.length) * 100}%` : 0 }} />
+                </span>
+                <span className="w-9 text-right text-xs text-muted tabular-nums">
+                  {d}/{cards.length}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -308,14 +412,16 @@ function CalendarView(): React.JSX.Element {
   }
 
   return (
-    <div className="h-full">
+    <div className="home-cal">
       <FullCalendar
         ref={ref}
         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-        initialView="timeGridWeek"
-        headerToolbar={{ left: 'prev,next today', center: 'title', right: 'timeGridDay,timeGridWeek,dayGridMonth' }}
+        initialView="dayGridWeek"
+        headerToolbar={{ left: 'title', center: '', right: 'prev,today,next dayGridWeek,dayGridMonth,timeGridDay' }}
         buttonText={{ today: 'Today', day: 'Day', week: 'Week', month: 'Month' }}
-        height="100%"
+        titleFormat={{ month: 'long', day: 'numeric' }}
+        height="auto"
+        dayHeaderFormat={{ weekday: 'short', day: 'numeric' }}
         firstDay={1}
         nowIndicator
         selectable

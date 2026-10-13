@@ -2,7 +2,7 @@
 
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { create, get, getDb, getProfileId, list, softDelete, update } from './db'
-import { importMaterials, importPapers, importPaths, openExternal, openPaperExternal, paperDoc, pickAndImport, pickMaterials, pickPapers, readMaterial, showInFolder } from './files'
+import { importMaterials, importPapers, importPaths, openExternal, openPaperExternal, paperDoc, pickAndImport, pickMaterials, pickPapers, readMaterial, savePhoto, showInFolder } from './files'
 import { refreshSubscriptions } from './ics'
 import { getPrefs, setPrefs, SHORTCUTS } from './prefs'
 import { lookup, openSpotify } from './embeds'
@@ -22,6 +22,7 @@ import type {
   TimetableSlot,
   Deadline,
   GameAction,
+  MaterialPlace,
   Mode,
   Prefs,
   Profile,
@@ -138,10 +139,11 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     return pickAndImport(win, weekId)
   })
   handle('materials:import', (_e, weekId: string, paths: string[]) => importPaths(weekId, paths))
-  type Place = { moduleId: string | null; weekId: string | null } | null
+  type Place = MaterialPlace | null
   handle('materials:pickTo', (e, place: Place) => pickMaterials(BrowserWindow.fromWebContents(e.sender)!, place))
   handle('materials:importTo', (_e, place: Place, paths: string[]) => importMaterials(place, paths))
   handle('materials:read', (_e, id: string) => readMaterial(id))
+  handle('photos:save', (_e, data: Uint8Array) => savePhoto(data))
   handle('materials:open', (_e, id: string) => openExternal(id))
   handle('materials:reveal', (_e, id: string) => showInFolder(id))
 
@@ -244,6 +246,8 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
       }
     }
     if (patch.devkit === 0 || patch.devkit === 1) safe.devkit = patch.devkit
+    if ('partner_id' in patch) safe.partner_id = typeof patch.partner_id === 'string' && patch.partner_id ? patch.partner_id : null
+    if (typeof patch.partner_label === 'string') safe.partner_label = patch.partner_label.slice(0, 30) || 'Partner'
     if (typeof patch.currency === 'string' && /^[A-Z]{3}$|^$/.test(patch.currency)) safe.currency = patch.currency
     if (typeof patch.display_name === 'string') safe.display_name = patch.display_name
     if ('leaderboard_opt_in' in patch) safe.leaderboard_opt_in = patch.leaderboard_opt_in ? 1 : 0

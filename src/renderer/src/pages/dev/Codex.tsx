@@ -5,14 +5,25 @@ import { useState } from 'react'
 import { Icon } from '@/components/ui'
 import { db } from '@/lib/data'
 import { navigate } from '@/lib/nav'
-import { AI_CONCEPTS, BUILDER, GEO_CONCEPTS, INSTITUTIONS, MENTAL_MODELS, NEWS_HABITS, PAPERS, PHILOSOPHY, type Card } from '@/lib/devContent'
+import { AI_CONCEPTS as AI_BASE, BUILDER as BUILDER_BASE, GEO_CONCEPTS as GEO_BASE, INSTITUTIONS as INST_BASE, MENTAL_MODELS as MODELS_BASE, NEWS_HABITS, PAPERS as PAPERS_BASE, PHILOSOPHY as PHIL_BASE, type Card } from '@/lib/devContent'
+import { ECONOMICS, MORE_AI, MORE_BUILDER, MORE_GEO, MORE_INSTITUTIONS, MORE_MODELS, MORE_PAPERS, MORE_PHILOSOPHY, POLITICS } from '@/lib/codexMore'
 
-type Tab = 'papers' | 'ai' | 'geo' | 'philosophy' | 'models' | 'builder'
+const PAPERS = [...PAPERS_BASE, ...MORE_PAPERS].sort((a, b) => a.year - b.year)
+const AI_CONCEPTS = [...AI_BASE, ...MORE_AI]
+const GEO_CONCEPTS = [...GEO_BASE, ...MORE_GEO]
+const INSTITUTIONS = [...INST_BASE, ...MORE_INSTITUTIONS]
+const PHILOSOPHY = [...PHIL_BASE, ...MORE_PHILOSOPHY]
+const MENTAL_MODELS = [...MODELS_BASE, ...MORE_MODELS]
+const BUILDER = [...BUILDER_BASE, ...MORE_BUILDER]
+
+type Tab = 'papers' | 'ai' | 'geo' | 'politics' | 'economics' | 'philosophy' | 'models' | 'builder'
 
 const TABS: { id: Tab; label: string; icon: string; blurb: string }[] = [
   { id: 'papers', label: 'AI papers', icon: '📄', blurb: 'The papers that built modern AI — each with why it matters.' },
   { id: 'ai', label: 'AI concepts', icon: '🤖', blurb: 'The vocabulary you need to follow AI news without hand-waving.' },
   { id: 'geo', label: 'Geopolitics', icon: '🌍', blurb: 'Frameworks for making sense of world events, the institutions that matter, and good news habits.' },
+  { id: 'politics', label: 'Politics', icon: '🏛️', blurb: 'How political systems work, the big ideologies, and the ideas behind them.' },
+  { id: 'economics', label: 'Economics', icon: '💹', blurb: 'The economic ideas behind the headlines — prices, rates, trade and incentives.' },
   { id: 'philosophy', label: 'Philosophy', icon: '🦉', blurb: 'Big ideas and thought experiments, each with a question to sit with.' },
   { id: 'models', label: 'Mental models', icon: '🧠', blurb: 'Thinking tools that transfer to almost any problem.' },
   { id: 'builder', label: 'Builder', icon: '🛠️', blurb: 'Hard-won principles for making games and AI projects.' }
@@ -51,7 +62,14 @@ export function CodexPage(): React.JSX.Element {
         ))}
       </div>
 
-      {tab === 'papers' && (
+      {q.trim() && (
+        <Section title={'Everywhere in the codex'}>
+          <CardGrid
+            cards={cards([...AI_CONCEPTS, ...GEO_CONCEPTS, ...INSTITUTIONS, ...NEWS_HABITS, ...POLITICS, ...ECONOMICS, ...PHILOSOPHY, ...MENTAL_MODELS, ...BUILDER]).slice(0, 30)}
+          />
+        </Section>
+      )}
+      {!q.trim() && tab === 'papers' && (
         <div className="grid gap-3 md:grid-cols-2">
           {PAPERS.filter((p) => match(p.title + p.why + p.authors)).map((p) => (
             <button key={p.url} className="card flex flex-col gap-1 p-4 text-left" onClick={() => window.open(p.url)}>
@@ -59,14 +77,14 @@ export function CodexPage(): React.JSX.Element {
                 <span className="chip">{p.year}</span>
                 {p.authors}
               </div>
-              <div className="font-semibold">{p.title} ↗</div>
+              <div className="font-display text-[18px] font-semibold leading-snug">{p.title} ↗</div>
               <div className="text-sm text-muted">{p.why}</div>
             </button>
           ))}
         </div>
       )}
-      {tab === 'ai' && <CardGrid cards={cards(AI_CONCEPTS)} onDeck={() => void toDeck('AI concepts', AI_CONCEPTS)} />}
-      {tab === 'geo' && (
+      {!q.trim() && tab === 'ai' && <CardGrid cards={cards(AI_CONCEPTS)} onDeck={() => void toDeck('AI concepts', AI_CONCEPTS)} />}
+      {!q.trim() && tab === 'geo' && (
         <>
           <Section title="Frameworks">
             <CardGrid cards={cards(GEO_CONCEPTS)} onDeck={() => void toDeck('Geopolitics', GEO_CONCEPTS)} />
@@ -79,9 +97,11 @@ export function CodexPage(): React.JSX.Element {
           </Section>
         </>
       )}
-      {tab === 'philosophy' && <CardGrid cards={cards(PHILOSOPHY)} onDeck={() => void toDeck('Philosophy', PHILOSOPHY)} />}
-      {tab === 'models' && <CardGrid cards={cards(MENTAL_MODELS)} onDeck={() => void toDeck('Mental models', MENTAL_MODELS)} />}
-      {tab === 'builder' && <CardGrid cards={cards(BUILDER)} />}
+      {!q.trim() && tab === 'politics' && <CardGrid cards={cards(POLITICS)} onDeck={() => void toDeck('Politics', POLITICS)} />}
+      {!q.trim() && tab === 'economics' && <CardGrid cards={cards(ECONOMICS)} onDeck={() => void toDeck('Economics', ECONOMICS)} />}
+      {!q.trim() && tab === 'philosophy' && <CardGrid cards={cards(PHILOSOPHY)} onDeck={() => void toDeck('Philosophy', PHILOSOPHY)} />}
+      {!q.trim() && tab === 'models' && <CardGrid cards={cards(MENTAL_MODELS)} onDeck={() => void toDeck('Mental models', MENTAL_MODELS)} />}
+      {!q.trim() && tab === 'builder' && <CardGrid cards={cards(BUILDER)} onDeck={() => void toDeck('Builder', BUILDER)} />}
     </div>
   )
 }
@@ -106,7 +126,7 @@ function CardGrid({ cards, onDeck }: { cards: Card[]; onDeck?: () => void }): Re
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => (
           <div key={c.title} className="card flex flex-col gap-1.5 p-4">
-            <div className="font-semibold">{c.title}</div>
+            <div className="font-display text-[18px] font-semibold leading-snug">{c.title}</div>
             {c.who && <div className="-mt-1 text-xs text-muted">{c.who}</div>}
             <p className="text-sm leading-relaxed text-muted">{c.body}</p>
             {c.ask && <p className="mt-auto pt-1 text-sm text-accent italic">{c.ask}</p>}

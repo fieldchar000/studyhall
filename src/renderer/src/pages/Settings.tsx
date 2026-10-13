@@ -5,6 +5,7 @@ import { setEnabledModes, setMode, useEnabledModes, useMode, useProfile } from '
 import { setAppearance, useAppearance, type Accent, type Theme } from '@/lib/appearance'
 import { shortcutLabel } from './Inbox'
 import { AccountCard } from '@/components/AccountCard'
+import { RelationshipsCard } from '@/components/RelationshipsSettings'
 import { UpdatesCard } from '@/components/UpdateBanner'
 
 export function SettingsPage(): React.JSX.Element {
@@ -32,6 +33,8 @@ export function SettingsPage(): React.JSX.Element {
       <h1 className="mb-6 text-2xl font-semibold tracking-tight">Settings</h1>
 
       <AccountCard />
+
+      <RelationshipsCard />
 
       <section className="card mb-4 p-5">
         <h2 className="mb-1 font-semibold">Categories</h2>

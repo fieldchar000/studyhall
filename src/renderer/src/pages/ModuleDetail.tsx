@@ -104,13 +104,13 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
                 value={module.code}
                 onSave={(v) => save({ code: v })}
                 placeholder="Module code (e.g. CS101)"
-                className="field text-xs font-medium tracking-wide text-muted uppercase"
+                className="field text-[11px] font-semibold tracking-[0.14em] text-brass uppercase"
               />
               <AutoText
                 value={module.name}
                 onSave={(v) => save({ name: v || 'Untitled module' })}
                 placeholder="Module name"
-                className="field text-2xl font-semibold tracking-tight"
+                className="field font-display text-3xl font-semibold"
               />
             </div>
             <ShareButton type="module" id={module.id} ownerId={module.owner_id} />

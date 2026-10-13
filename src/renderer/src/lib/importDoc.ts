@@ -112,7 +112,7 @@ async function odf(data: Uint8Array): Promise<{ html: string; text: string }> {
 
 // ---------- PDF ----------
 
-async function pdfText(data: Uint8Array): Promise<{ pages: string[] }> {
+export async function pdfText(data: Uint8Array): Promise<{ pages: string[] }> {
   const pdfjs = await import('pdfjs-dist')
   const worker = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
   pdfjs.GlobalWorkerOptions.workerSrc = worker

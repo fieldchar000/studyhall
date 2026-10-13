@@ -42,3 +42,9 @@ export async function setMode(mode: Mode): Promise<void> {
   await track(api.profile.update({ mode }))
   notifyChanged('*')
 }
+
+/** Choose who shows on the Partner page and what to call them. */
+export async function setPartner(patch: { partner_id?: string | null; partner_label?: string }): Promise<void> {
+  await track(api.profile.update(patch))
+  notifyChanged('profiles')
+}

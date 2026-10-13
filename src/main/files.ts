@@ -4,12 +4,12 @@
 import { app, dialog, net, shell, type BrowserWindow } from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, mkdir, stat } from 'node:fs/promises'
+import { copyFile, mkdir, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { create, get, list, update } from './db'
 import { ensureLocalFile } from './cloud/sync'
-import type { ExamPaper, Material, MaterialKind, Module, PaperKind, PickedDoc, Week } from '@shared/types'
+import type { ExamPaper, Material, MaterialCategory, MaterialKind, MaterialPlace, Module, PaperKind, Photo, PickedDoc, Week } from '@shared/types'
 import { readDocs } from './docs'
 
 const dataDir = (): string => app.getPath('userData')
@@ -63,8 +63,12 @@ function guessPlace(fileName: string): { moduleId: string | null; weekId: string
   return { moduleId: mod.id, weekId: week.id }
 }
 
+/** Worksheets are usually named as such: "Tutorial 3", "Problem set", "Week 2 exercises"… */
+const WORKSHEET = /worksheet|tutorial|problem[ _-]?set|\bpset|exercise|homework|assignment|\blab\b|practice|questions?|quiz|seminar[ _-]?task|activity/i
+const guessCategory = (name: string): MaterialCategory => (WORKSHEET.test(name) ? 'worksheet' : 'notes')
+
 /** Copy files into the library. With no target, each file is sorted by its name (or left in "Other"). */
-export async function importMaterials(target: { moduleId: string | null; weekId: string | null } | null, paths: string[]): Promise<Material[]> {
+export async function importMaterials(target: MaterialPlace | null, paths: string[]): Promise<Material[]> {
   await mkdir(join(dataDir(), 'materials'), { recursive: true })
   const imported: Material[] = []
   for (const src of paths.slice(0, 300)) {
@@ -87,14 +91,15 @@ export async function importMaterials(target: { moduleId: string | null; weekId:
         local_path: rel,
         size_bytes: info.size,
         sha256: await hashFile(dest),
-        sort: siblings
+        sort: siblings,
+        category: target?.category ?? guessCategory(name)
       })
     )
   }
   return imported
 }
 
-export async function pickMaterials(win: BrowserWindow, target: { moduleId: string | null; weekId: string | null } | null): Promise<Material[]> {
+export async function pickMaterials(win: BrowserWindow, target: MaterialPlace | null): Promise<Material[]> {
   const result = await dialog.showOpenDialog(win, {
     title: 'Add materials',
     properties: ['openFile', 'multiSelections'],
@@ -251,8 +256,32 @@ export async function openPaperExternal(id: string): Promise<void> {
 
 /** Handler for material://local/<id>/<file name> — streams a material (or exam paper) file to the UI.
  *  (The file name is only there so the PDF viewer shows it.) */
+// ---------- Photos (journal + memories) ----------
+
+/** Save a photo the app has already resized (JPEG bytes) into the data folder. */
+export async function savePhoto(data: Uint8Array): Promise<{ local_path: string; size_bytes: number }> {
+  if (!(data instanceof Uint8Array) || data.length > 15_000_000) throw new Error('That picture is too large.')
+  // Only JPEG/PNG/WebP bytes are accepted (checked by their magic numbers).
+  const jpeg = data[0] === 0xff && data[1] === 0xd8
+  const png = data[0] === 0x89 && data[1] === 0x50
+  const webp = data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50
+  if (!jpeg && !png && !webp) throw new Error('Not a picture.')
+  await mkdir(join(dataDir(), 'photos'), { recursive: true })
+  const rel = `photos/${randomUUID()}.${jpeg ? 'jpg' : png ? 'png' : 'webp'}`
+  await writeFile(join(dataDir(), rel), data)
+  return { local_path: rel, size_bytes: data.length }
+}
+
+const IMAGE_TYPES: Record<string, string> = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' }
+
 export async function serveMaterial(request: Request): Promise<Response> {
   const id = new URL(request.url).pathname.split('/')[1] ?? ''
+  const photo = get<Photo>('photos', id)
+  if (photo?.local_path) {
+    const file = await net.fetch(pathToFileURL(join(dataDir(), photo.local_path)).toString()).catch(() => null)
+    if (!file?.ok) return new Response('This photo is on another PC.', { status: 404 })
+    return new Response(file.body, { headers: { 'content-type': IMAGE_TYPES[extname(photo.local_path)] ?? 'image/jpeg', 'x-content-type-options': 'nosniff' } })
+  }
   const paper = get<ExamPaper>('exam_papers', id)
   const m: Material | null =
     get<Material>('materials', id) ??

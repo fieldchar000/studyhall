@@ -1,23 +1,28 @@
-// Life → Journal: one entry per day — mood, energy, sleep, three good things and a
-// free write. The calendar colours days by mood; insights show what goes with good days.
+// Life → Daily journal: a scrapbook. Each day can have photos (with captions), the story of
+// the day, and the little details — weather, where, who with, a song, mood, sleep and three
+// good things. Any past day can be filled in later. Insights show what goes with good days.
 
 import { useMemo, useState } from 'react'
-import type { JournalEntry } from '@shared/types'
+import type { JournalDetails, JournalEntry, Photo } from '@shared/types'
 import { AutoNumber, AutoText } from '@/components/AutoField'
 import { Icon } from '@/components/ui'
-import { api, db, useLive } from '@/lib/data'
+import { PhotoTray, Polaroids } from '@/components/Scrapbook'
+import { api, db, useLive, useRows } from '@/lib/data'
 import { addDays, localDate } from '@/lib/dates'
 
 export const MOODS = [
-  { v: 1, emoji: '😞', label: 'Awful', color: '#ef4444' },
-  { v: 2, emoji: '😕', label: 'Meh', color: '#f97316' },
-  { v: 3, emoji: '😐', label: 'Okay', color: '#eab308' },
-  { v: 4, emoji: '🙂', label: 'Good', color: '#84cc16' },
-  { v: 5, emoji: '😄', label: 'Great', color: '#22c55e' }
+  { v: 1, emoji: '😞', label: 'Awful', color: '#a14a4a' },
+  { v: 2, emoji: '😕', label: 'Meh', color: '#b5774a' },
+  { v: 3, emoji: '😐', label: 'Okay', color: '#b49a52' },
+  { v: 4, emoji: '🙂', label: 'Good', color: '#6f9a5f' },
+  { v: 5, emoji: '😄', label: 'Great', color: '#2f6b52' }
 ]
+
+const WEATHER = ['☀️ Sunny', '⛅ Cloudy', '🌦️ Showers', '🌧️ Rainy', '⛈️ Stormy', '🌫️ Hazy', '🌙 Clear night']
 
 const PROMPTS = [
   'What made today good — or hard?',
+  'What’s the story behind today’s photos?',
   'What is one thing you learned today?',
   'What are you looking forward to?',
   'What drained your energy, and what gave you energy?',
@@ -25,7 +30,6 @@ const PROMPTS = [
   'What would you tell yourself from this morning?',
   'Who did you enjoy spending time with?',
   'What is one small win from today?',
-  'What is on your mind that you want to put down?',
   'What would make tomorrow great?'
 ]
 
@@ -33,18 +37,34 @@ export function useJournal(): JournalEntry[] | undefined {
   return useLive(['journal_entries'], () => api.list('journal_entries', {}, 'date'), []).data
 }
 
-const queue = new Map<string, Promise<void>>()
+const queue = new Map<string, Promise<unknown>>()
 
 /** The entry for a day, created the first time you write in it (never empty rows).
  *  Saves for the same day run one after another so quick edits can't create two entries. */
-export function saveDay(_entries: JournalEntry[], date: string, patch: Partial<JournalEntry>): Promise<void> {
+function withDay(date: string, patch: Partial<JournalEntry>): Promise<JournalEntry> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return Promise.reject(new Error('No day chosen'))
   const run = (queue.get(date) ?? Promise.resolve()).then(async () => {
     const existing = (await api.list('journal_entries', { date }))[0]
-    if (existing) await db.update('journal_entries', existing.id, patch)
-    else await db.create('journal_entries', { date, ...patch })
+    if (existing) return Object.keys(patch).length ? db.update('journal_entries', existing.id, patch) : existing
+    return db.create('journal_entries', { date, ...patch })
   })
-  queue.set(date, run.catch(() => {}))
+  queue.set(
+    date,
+    run.catch(() => {})
+  )
   return run
+}
+
+export function saveDay(_entries: JournalEntry[], date: string, patch: Partial<JournalEntry>): Promise<void> {
+  return withDay(date, patch).then(() => undefined)
+}
+
+const parseDetails = (e?: JournalEntry): JournalDetails => {
+  try {
+    return JSON.parse(e?.details || '{}') as JournalDetails
+  } catch {
+    return {}
+  }
 }
 
 export function MoodPicker({ value, onPick, size = 'text-2xl' }: { value: number | null; onPick: (v: number) => void; size?: string }): React.JSX.Element {
@@ -64,102 +84,228 @@ export function MoodPicker({ value, onPick, size = 'text-2xl' }: { value: number
   )
 }
 
+const longDate = (d: string): string => new Date(d + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
+const weekday = (d: string): string => new Date(d + 'T00:00').toLocaleDateString(undefined, { weekday: 'long' })
+
 export function JournalPage(): React.JSX.Element {
   const entries = useJournal()
+  const photos = useRows('photos', { parent_table: 'journal_entries' }, 'sort')
   const today = localDate(new Date())
-  const [date, setDate] = useState(today)
+  const [editing, setEditing] = useState<string>(today)
   const [month, setMonth] = useState(today.slice(0, 7))
+  const [shown, setShown] = useState(12)
   if (!entries) return <div />
-  const e = entries.find((x) => x.date === date)
-  const save = (patch: Partial<JournalEntry>): Promise<void> => saveDay(entries, date, patch)
-  const prompt = PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length]
-  const gratitude = (e?.gratitude ?? '').split('\n')
-  const past = entries.filter((x) => x.date !== date && x.date.slice(5) === date.slice(5) && (x.content || x.gratitude))
+
+  const photosOf = (e?: JournalEntry): Photo[] => (e ? (photos ?? []).filter((p) => p.parent_id === e.id) : [])
+  const hasPhotos = new Set((photos ?? []).map((p) => p.parent_id))
+  const written = [...entries]
+    .filter((e) => e.content || e.title || e.gratitude || hasPhotos.has(e.id) || e.mood)
+    .sort((a, b) => b.date.localeCompare(a.date))
+  const pages = [...(editing ? [editing] : []), ...written.map((e) => e.date).filter((d) => d !== editing)].slice(0, shown + 1)
+  const onThisDay = entries.filter((x) => x.date !== today && x.date.slice(5) === today.slice(5) && (x.content || hasPhotos.has(x.id)))
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-5 p-8 lg:grid-cols-[1fr_320px]">
-      <div className="flex flex-col gap-5">
-        <div className="flex items-center gap-2">
-          <button className="btn-ghost" onClick={() => setDate(addDays(date, -1))} title="Previous day">
-            <Icon name="back" />
-          </button>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {date === today ? 'Today' : new Date(date + 'T00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-          </h1>
-          <button className="btn-ghost" disabled={date >= today} onClick={() => setDate(addDays(date, 1))} title="Next day">
-            <Icon name="chevron" />
-          </button>
-          {date !== today && (
-            <button className="btn" onClick={() => setDate(today)}>
-              Today
+    <div className="h-full overflow-auto">
+      <div className="mx-auto grid max-w-6xl gap-6 px-8 py-7 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="flex min-w-0 flex-col gap-6">
+          <header className="flex flex-wrap items-end gap-3">
+            <div className="mr-auto">
+              <div className="label-caps">Life · scrapbook</div>
+              <h1 className="text-3xl">Daily journal</h1>
+              <p className="mt-0.5 text-sm text-muted">Photos, the story behind them, and the little details of each day.</p>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-muted">
+              Write about
+              <input type="date" className="field-boxed w-auto py-1" max={today} value={editing} onChange={(e) => e.target.value && setEditing(e.target.value)} />
+            </label>
+          </header>
+
+          {editing !== today && !written.some((x) => x.date === today) && (
+            <button className="card flex items-center gap-3 border-dashed px-6 py-4 text-left hover:border-brass/60" onClick={() => setEditing(today)}>
+              <Icon name="camera" size={22} className="text-brass" />
+              <span>
+                <span className="font-display block text-xl font-semibold">How was today?</span>
+                <span className="text-sm text-muted">Add a few photos and write the story behind them.</span>
+              </span>
+            </button>
+          )}
+          {pages.map((d) => {
+            const e = entries.find((x) => x.date === d)
+            return d === editing ? (
+              <DayEditor key={d} date={d} entry={e} photos={photosOf(e)} onDone={() => setEditing('')} />
+            ) : (
+              <DayPage key={d} date={d} entry={e!} photos={photosOf(e)} onEdit={() => setEditing(d)} />
+            )
+          })}
+          {written.length > shown && (
+            <button className="btn self-center" onClick={() => setShown((n) => n + 12)}>
+              Older pages
             </button>
           )}
         </div>
 
-        <section className="card grid gap-4 p-5 md:grid-cols-[auto_1fr_auto]">
+        <aside className="flex flex-col gap-5">
+          <MonthCalendar entries={entries} month={month} setMonth={setMonth} selected={editing} onPick={(d) => d <= today && setEditing(d)} photoDays={new Set(entries.filter((x) => hasPhotos.has(x.id)).map((x) => x.date))} />
+          {onThisDay.length > 0 && (
+            <section className="card p-4">
+              <h2 className="mb-2 text-lg">On this day</h2>
+              {onThisDay.slice(-3).map((x) => (
+                <button key={x.id} className="block w-full rounded-md p-2 text-left text-sm hover:bg-line/40" onClick={() => setEditing(x.date)}>
+                  <span className="text-muted">{x.date.slice(0, 4)}</span> · {x.title || (x.content || '').slice(0, 90) || 'Photos'}
+                </button>
+              ))}
+            </section>
+          )}
+          <Insights entries={entries} />
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+/** A finished day, laid out like a scrapbook page. */
+function DayPage({ date, entry: e, photos, onEdit }: { date: string; entry: JournalEntry; photos: Photo[]; onEdit: () => void }): React.JSX.Element {
+  const d = parseDetails(e)
+  const mood = MOODS.find((m) => m.v === e.mood)
+  const good = (e.gratitude ?? '').split('\n').filter(Boolean)
+  const chips: [string, string | undefined][] = [
+    ['', d.weather],
+    ['📍', d.place],
+    ['👥', d.with],
+    ['🎵', d.song],
+    ['🍽️', d.food],
+    ['✨', d.highlight]
+  ]
+  return (
+    <article className="card relative overflow-hidden px-7 py-6">
+      <div className="flex items-start gap-3">
+        <div className="flex-1">
+          <div className="label-caps">{weekday(date)}</div>
+          <div className="font-display text-[15px] text-muted">{longDate(date)}</div>
+          {e.title && <h2 className="mt-1 text-2xl italic">{e.title}</h2>}
+        </div>
+        {mood && (
+          <span className="text-2xl" title={mood.label}>
+            {mood.emoji}
+          </span>
+        )}
+        <button className="btn-ghost" onClick={onEdit}>
+          <Icon name="pencil" /> Edit
+        </button>
+      </div>
+      <Polaroids photos={photos} />
+      {e.content && <p className="dropcap mt-3 text-[15px] leading-relaxed whitespace-pre-wrap">{e.content}</p>}
+      {(chips.some(([, v]) => v) || e.sleep_hours != null || good.length > 0) && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line/70 pt-3 text-xs text-muted">
+          {chips
+            .filter(([, v]) => v)
+            .map(([icon, v]) => (
+              <span key={v} className="rounded-full border border-line px-2 py-0.5">
+                {icon} {v}
+              </span>
+            ))}
+          {e.sleep_hours != null && <span className="rounded-full border border-line px-2 py-0.5">😴 {e.sleep_hours}h sleep</span>}
+          {good.length > 0 && <span className="w-full pt-1">Grateful for: {good.join(' · ')}</span>}
+        </div>
+      )}
+    </article>
+  )
+}
+
+/** Writing a day: photos, a title, the story, and the details. Saves as you type. */
+function DayEditor({ date, entry: e, photos, onDone }: { date: string; entry?: JournalEntry; photos: Photo[]; onDone: () => void }): React.JSX.Element {
+  const today = localDate(new Date())
+  const save = (patch: Partial<JournalEntry>): Promise<void> => withDay(date, patch).then(() => undefined)
+  const d = parseDetails(e)
+  const setDetail = (k: keyof JournalDetails, v: string): Promise<void> => save({ details: JSON.stringify({ ...parseDetails(e), [k]: v || undefined }) })
+  const gratitude = (e?.gratitude ?? '').split('\n')
+  const prompt = PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length]
+  return (
+    <article className="card flex flex-col gap-5 border-brass/50 px-7 py-6">
+      <div className="flex items-start gap-2">
+        <div className="flex-1">
+          <div className="label-caps">{date === today ? 'Today' : weekday(date)}</div>
+          <div className="font-display text-[15px] text-muted">{longDate(date)}</div>
+        </div>
+        <button className="btn-ghost" onClick={() => onDone()} title="Done">
+          <Icon name="check" /> Done
+        </button>
+      </div>
+      <AutoText
+        key={`${date}-title`}
+        value={e?.title ?? ''}
+        onSave={(v) => save({ title: v })}
+        placeholder="Give the day a title…"
+        className="field font-display text-2xl italic"
+      />
+      <PhotoTray photos={photos} parentTable="journal_entries" onNeedParent={() => withDay(date, {}).then((x) => x.id)} />
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm text-muted">{prompt}</span>
+        <AutoText key={`${date}-story`} multiline rows={8} value={e?.content ?? ''} onSave={(v) => save({ content: v })} className="field-boxed text-[15px] leading-relaxed" placeholder="Write it like you’ll read it in ten years." />
+      </label>
+
+      <div className="flex flex-col gap-3 rounded-lg bg-canvas/60 p-4">
+        <div className="label-caps">The little details</div>
+        <div className="flex flex-wrap gap-1.5">
+          {WEATHER.map((w) => (
+            <button key={w} className={`rounded-full border px-2.5 py-0.5 text-xs ${d.weather === w ? 'border-accent bg-accent-soft text-ink' : 'border-line text-muted hover:text-ink'}`} onClick={() => void setDetail('weather', d.weather === w ? '' : w)}>
+              {w}
+            </button>
+          ))}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(
+            [
+              ['place', '📍 Where', 'Home, campus, Tiong Bahru…'],
+              ['with', '👥 With', 'Who you spent it with'],
+              ['song', '🎵 Song of the day', 'What was playing'],
+              ['food', '🍽️ Best thing you ate', 'Chicken rice, obviously'],
+              ['highlight', '✨ Highlight', 'The moment you’ll remember']
+            ] as [keyof JournalDetails, string, string][]
+          ).map(([k, label, ph]) => (
+            <label key={k} className="flex flex-col gap-0.5 text-xs text-muted">
+              {label}
+              <AutoText key={`${date}-${k}`} value={d[k] ?? ''} onSave={(v) => setDetail(k, v)} placeholder={ph} className="field-boxed text-sm text-ink" />
+            </label>
+          ))}
+          <label className="flex flex-col gap-0.5 text-xs text-muted">
+            😴 Sleep (hours)
+            <AutoNumber value={e?.sleep_hours ?? null} onSave={(v) => save({ sleep_hours: v })} className="field-boxed text-sm text-ink" placeholder="7.5" min={0} max={24} step={0.5} />
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <div>
-            <div className="mb-1 text-xs text-muted">Mood</div>
-            <MoodPicker value={e?.mood ?? null} onPick={(v) => void save({ mood: v })} />
+            <div className="mb-0.5 text-xs text-muted">Mood</div>
+            <MoodPicker value={e?.mood ?? null} onPick={(v) => void save({ mood: v })} size="text-xl" />
           </div>
           <div>
-            <div className="mb-1 text-xs text-muted">Energy</div>
+            <div className="mb-0.5 text-xs text-muted">Energy</div>
             <div className="flex gap-1">
               {[1, 2, 3, 4, 5].map((v) => (
-                <button key={v} onClick={() => void save({ energy: v })} className={`h-9 w-7 rounded-md text-lg ${(e?.energy ?? 0) >= v ? 'bg-amber-400/25' : 'bg-line/60 opacity-50'}`} title={`${v} / 5`}>
+                <button key={v} onClick={() => void save({ energy: v })} className={`h-7 w-6 rounded-md text-sm ${(e?.energy ?? 0) >= v ? 'bg-brass/25' : 'bg-line/60 opacity-50'}`} title={`${v} / 5`}>
                   ⚡
                 </button>
               ))}
             </div>
           </div>
-          <label className="flex flex-col">
-            <span className="mb-1 text-xs text-muted">Sleep (hours)</span>
-            <AutoNumber value={e?.sleep_hours ?? null} onSave={(v) => save({ sleep_hours: v })} className="field-boxed w-24" placeholder="7.5" min={0} max={24} step={0.5} />
-          </label>
-        </section>
-
-        <section className="card p-5">
-          <h2 className="mb-2 text-sm font-semibold">Three good things</h2>
-          <div className="flex flex-col gap-1.5">
-            {[0, 1, 2].map((k) => (
-              <div key={`${date}-${k}`} className="flex items-center gap-2">
-                <span className="text-muted">{k + 1}.</span>
-                <AutoText
-                  value={gratitude[k] ?? ''}
-                  onSave={(v) => {
-                    const g = [0, 1, 2].map((j) => (j === k ? v.replace(/\n/g, ' ') : (gratitude[j] ?? '')))
-                    return save({ gratitude: g.join('\n').replace(/\n+$/, '') })
-                  }}
-                  className="field-boxed flex-1"
-                  placeholder={['Something that went well…', 'Someone you appreciate…', 'A small pleasure…'][k]}
-                />
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="card flex flex-col gap-2 p-5">
-          <h2 className="text-sm font-semibold">{prompt}</h2>
-          <AutoText key={date} multiline rows={12} value={e?.content ?? ''} onSave={(v) => save({ content: v })} className="field-boxed leading-relaxed" placeholder="Write freely. Only you can see this." />
-        </section>
-
-        {past.length > 0 && (
-          <section className="card p-5">
-            <h2 className="mb-2 text-sm font-semibold">On this day</h2>
-            {past.slice(-3).map((x) => (
-              <button key={x.id} className="block w-full rounded-lg p-2 text-left text-sm hover:bg-canvas" onClick={() => setDate(x.date)}>
-                <span className="text-muted">{new Date(x.date + 'T00:00').toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}</span>{' '}
-                {MOODS.find((m) => m.v === x.mood)?.emoji} {(x.content || x.gratitude).slice(0, 140)}
-              </button>
-            ))}
-          </section>
-        )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <div className="text-xs text-muted">Three good things</div>
+          {[0, 1, 2].map((k) => (
+            <AutoText
+              key={`${date}-g${k}`}
+              value={gratitude[k] ?? ''}
+              onSave={(v) => {
+                const g = [0, 1, 2].map((j) => (j === k ? v.replace(/\n/g, ' ') : (gratitude[j] ?? '')))
+                return save({ gratitude: g.join('\n').replace(/\n+$/, '') })
+              }}
+              className="field-boxed text-sm"
+              placeholder={['Something that went well…', 'Someone you appreciate…', 'A small pleasure…'][k]}
+            />
+          ))}
+        </div>
       </div>
-
-      <div className="flex flex-col gap-5">
-        <MonthCalendar entries={entries} month={month} setMonth={setMonth} selected={date} onPick={(d) => d <= today && setDate(d)} />
-        <Insights entries={entries} />
-      </div>
-    </div>
+    </article>
   )
 }
 
@@ -168,13 +314,15 @@ function MonthCalendar({
   month,
   setMonth,
   selected,
-  onPick
+  onPick,
+  photoDays
 }: {
   entries: JournalEntry[]
   month: string
   setMonth: (m: string) => void
   selected: string
   onPick: (d: string) => void
+  photoDays: Set<string>
 }): React.JSX.Element {
   const [y, m] = month.split('-').map(Number)
   const first = new Date(y, m - 1, 1)
@@ -215,11 +363,12 @@ function MonthCalendar({
               key={d}
               onClick={() => onPick(d)}
               disabled={d > today}
-              className={`aspect-square rounded-md text-xs disabled:opacity-30 ${d === selected ? 'ring-2 ring-accent' : ''} ${e && !mood ? 'bg-line' : ''}`}
+              className={`relative aspect-square rounded-md text-xs disabled:opacity-30 ${d === selected ? 'ring-2 ring-accent' : ''} ${e && !mood ? 'bg-line' : ''}`}
               style={mood ? { background: mood.color + '55' } : undefined}
               title={mood ? mood.label : e ? 'Written' : ''}
             >
               {i + 1}
+              {photoDays.has(d) && <span className="absolute right-0.5 bottom-0.5 h-1 w-1 rounded-full bg-brass" />}
             </button>
           )
         })}

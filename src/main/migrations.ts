@@ -602,5 +602,95 @@ export const migrations: Migration[] = [
     db.exec('ALTER TABLE materials__new RENAME TO materials')
     for (const i of indexes) db.exec(i.sql)
     db.exec('CREATE INDEX idx_materials_module ON materials(module_id)')
-  }
+  },
+
+  // 10 — Notes vs worksheets, scrapbook journal with photos, active recall, people & partner
+  `
+  ALTER TABLE materials ADD COLUMN category TEXT NOT NULL DEFAULT 'notes';
+  ALTER TABLE notes ADD COLUMN category TEXT NOT NULL DEFAULT 'notes';
+
+  ALTER TABLE journal_entries ADD COLUMN title TEXT NOT NULL DEFAULT '';
+  ALTER TABLE journal_entries ADD COLUMN details TEXT NOT NULL DEFAULT '{}';
+
+  ALTER TABLE profiles ADD COLUMN partner_id TEXT;
+  ALTER TABLE profiles ADD COLUMN partner_label TEXT NOT NULL DEFAULT 'Partner';
+
+  CREATE TABLE photos (${base},
+    parent_table TEXT NOT NULL,
+    parent_id TEXT NOT NULL,
+    local_path TEXT,
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    caption TEXT NOT NULL DEFAULT '',
+    sync_file INTEGER NOT NULL DEFAULT 0,
+    storage_path TEXT,
+    sort REAL NOT NULL DEFAULT 0
+  );
+  CREATE INDEX idx_photos_parent ON photos(parent_table, parent_id);
+
+  CREATE TABLE recall_cards (${base},
+    module_id TEXT NOT NULL REFERENCES modules(id),
+    source_table TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    locator INTEGER NOT NULL DEFAULT 0,
+    label TEXT NOT NULL DEFAULT '',
+    box INTEGER NOT NULL DEFAULT 0,
+    due_on TEXT,
+    last_result TEXT,
+    reviews INTEGER NOT NULL DEFAULT 0,
+    last_reviewed_at TEXT
+  );
+  CREATE INDEX idx_recall_module ON recall_cards(module_id, due_on);
+
+  CREATE TABLE people (${base},
+    name TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'friend',
+    relation TEXT NOT NULL DEFAULT '',
+    emoji TEXT NOT NULL DEFAULT '',
+    color TEXT NOT NULL DEFAULT '#2f6b52',
+    birthday TEXT,
+    anniversary TEXT,
+    how_met TEXT NOT NULL DEFAULT '',
+    love_language TEXT NOT NULL DEFAULT '',
+    contact_every_days INTEGER,
+    last_contact_on TEXT,
+    notes TEXT NOT NULL DEFAULT '',
+    pinned INTEGER NOT NULL DEFAULT 0,
+    archived INTEGER NOT NULL DEFAULT 0,
+    sort REAL NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE person_facts (${base},
+    person_id TEXT NOT NULL REFERENCES people(id),
+    category TEXT NOT NULL DEFAULT 'likes',
+    text TEXT NOT NULL DEFAULT '',
+    sort REAL NOT NULL DEFAULT 0
+  );
+  CREATE INDEX idx_facts_person ON person_facts(person_id);
+
+  CREATE TABLE moments (${base},
+    person_id TEXT REFERENCES people(id),
+    kind TEXT NOT NULL DEFAULT 'memory',
+    date TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    story TEXT NOT NULL DEFAULT '',
+    place TEXT NOT NULL DEFAULT '',
+    rating INTEGER
+  );
+  CREATE INDEX idx_moments_person ON moments(person_id, date);
+
+  CREATE TABLE plans (${base},
+    person_id TEXT REFERENCES people(id),
+    idea_id TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT '',
+    date TEXT,
+    status TEXT NOT NULL DEFAULT 'idea' CHECK (status IN ('idea','planned','done')),
+    place TEXT NOT NULL DEFAULT '',
+    cost TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX idx_plans_person ON plans(person_id);
+  `
 ]
