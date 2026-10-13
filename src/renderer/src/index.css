@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* The phone build runs from src/mobile, so name the UI's own folder explicitly. */
+@source './';
 
 /* dark: utilities follow the app's theme (set from Settings → Appearance, or Windows) */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
@@ -708,4 +710,150 @@ main h1.text-2xl {
     radial-gradient(circle at calc(100% - 70px) 30%, transparent 0 40px, var(--color-canvas) 210px),
     repeating-radial-gradient(circle at calc(100% - 70px) 30%, transparent 0 9px, color-mix(in srgb, var(--color-brass) 26%, transparent) 9px 10px);
   border-radius: var(--radius-xl);
+}
+
+/* ---------- Phones (and very narrow windows) ----------
+   The sidebar becomes a slide-out menu under a top bar; pages lose their wide margins;
+   dialogs fill the screen; wide grids fold into two columns. */
+.mobile-bar,
+.drawer-backdrop {
+  display: none;
+}
+@media (max-width: 767px) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .app-shell > main {
+    min-height: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mobile-bar {
+    display: flex;
+    position: relative;
+    z-index: 40;
+    flex-shrink: 0;
+    min-height: calc(52px + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+    border-bottom: 1px solid rgb(0 0 0 / 0.3);
+  }
+  .app-shell > aside.spine {
+    position: fixed;
+    z-index: 70;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(86vw, 300px);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    box-shadow: 0 0 40px rgb(0 0 0 / 0.35);
+  }
+  .drawer-open .app-shell > aside.spine {
+    transform: none;
+  }
+  .drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 65;
+    background: rgb(0 0 0 / 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+  }
+  .drawer-open .drawer-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .app-shell > aside nav button {
+    height: 42px !important;
+    font-size: 15px;
+  }
+
+  /* Pages: phone-sized margins, one column */
+  .app-shell > main > div {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+  .app-shell > main :is(.p-8, .px-8, .p-10, .px-10, .mx-auto.p-6, .mx-auto.px-6) {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+  .app-shell > main > div[class*='p-8'],
+  .app-shell > main > div[class*='py-7'],
+  .app-shell > main > div > div.mx-auto[class*='py-7'],
+  .app-shell > main > div > div.mx-auto[class*='p-8'] {
+    padding-top: 16px !important;
+    padding-bottom: 24px !important;
+  }
+  .app-shell > main > div.grid,
+  .app-shell > main [class*='grid-cols-[1fr_3'],
+  .app-shell > main [class*='grid-cols-[1fr_2'],
+  .app-shell > main [class*='grid-cols-[2'],
+  .app-shell > main [class*='grid-cols-[3'] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .app-shell > main .grid-cols-3,
+  .app-shell > main .grid-cols-4,
+  .app-shell > main .grid-cols-5,
+  .app-shell > main .grid-cols-6 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .app-shell > main h1 {
+    font-size: 1.75rem;
+    line-height: 1.15;
+  }
+  .masthead {
+    padding-top: 4px;
+  }
+
+  /* Dialogs fill the screen */
+  [data-modal] {
+    padding: 0 !important;
+  }
+  [data-modal] > .card {
+    width: 100% !important;
+    max-width: none !important;
+    height: 100% !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Comfortable touch targets */
+  .btn,
+  .btn-primary,
+  .btn-ghost {
+    min-height: 38px;
+  }
+  input,
+  textarea,
+  select {
+    font-size: 16px; /* stops the phone zooming in on focus */
+  }
+}
+@media (max-width: 767px) {
+  .app-shell > main .task-board {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .fc .fc-header-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .fc .fc-toolbar-title {
+    font-size: 1.3rem !important;
+  }
+}
+@media (max-width: 767px) {
+  /* Tab rows scroll sideways instead of spilling off the screen */
+  .app-shell > main div.flex.gap-1.border-b {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .app-shell > main div.flex.gap-1.border-b > button {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
 }

@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from 'react'
 import { api } from './data'
+import { setDrawer } from './platform'
 
 export type Route =
   | { name: 'home' }
@@ -50,10 +51,26 @@ export type Route =
 
 let current: Route = { name: 'home' }
 const listeners = new Set<() => void>()
+const history: Route[] = [] // for the phone's back button
 
 export function navigate(route: Route): void {
+  if (JSON.stringify(route) !== JSON.stringify(current)) {
+    history.push(current)
+    if (history.length > 50) history.shift()
+  }
   current = route
+  setDrawer(false)
   listeners.forEach((l) => l())
+}
+
+/** Back to the previous page; false when there's nowhere to go back to. */
+export function goBack(): boolean {
+  const prev = history.pop()
+  if (!prev) return false
+  current = prev
+  setDrawer(false)
+  listeners.forEach((l) => l())
+  return true
 }
 
 export function useRoute(): Route {

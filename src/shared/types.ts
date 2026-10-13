@@ -819,6 +819,7 @@ export interface Prefs {
   notifyMessages: boolean
   quickCaptureShortcut: string // Electron accelerator, '' = off
   spotifyLinks: SpotifyLink[]
+  syncAllFiles?: boolean // upload every course file (so they open on your phone too)
 }
 
 /** The API the preload script exposes to the UI as window.api. */

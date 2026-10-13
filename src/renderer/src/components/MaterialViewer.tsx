@@ -9,6 +9,8 @@ import { api } from '@/lib/data'
 import { docToHtml, docToNote } from '@/lib/importDoc'
 import { NOTE_EXTENSIONS } from '@/lib/noteSchema'
 import { navigate } from '@/lib/nav'
+import { fileSrc, isPhoneApp } from '@/lib/platform'
+import { PdfPages } from './PdfPages'
 
 export const extOf = (fileName: string): string => /\.([a-z0-9]+)$/i.exec(fileName)?.[1]?.toLowerCase() ?? ''
 
@@ -80,7 +82,7 @@ export function openMaterial(m: Material, show: (m: Material) => void): void {
 
 export function MaterialViewer({ material: m, onClose }: { material: Material; onClose: () => void }): React.JSX.Element {
   const type = fileType(m)
-  const src = `material://local/${m.id}/${encodeURIComponent(m.file_name)}`
+  const src = fileSrc(m.id, m.file_name)
   const [doc, setDoc] = useState<{ html: string } | { error: string } | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -138,9 +140,11 @@ export function MaterialViewer({ material: m, onClose }: { material: Material; o
               <Icon name="note" /> {saving ? 'Saving…' : 'Save as note'}
             </button>
           )}
-          <button className="btn-ghost" onClick={() => void api.materials.openExternal(m.id)}>
-            <Icon name="external" /> Open in its app
-          </button>
+          {!isPhoneApp() && (
+            <button className="btn-ghost" onClick={() => void api.materials.openExternal(m.id)}>
+              <Icon name="external" /> Open in its app
+            </button>
+          )}
         </>
       }
     >
@@ -158,6 +162,8 @@ export function MaterialViewer({ material: m, onClose }: { material: Material; o
         // allow-scripts only: no same-origin, no popups, no top navigation, no forms.
         // The file is also served with a CSP that blocks all network access.
         <iframe title={m.title} src={src} sandbox="allow-scripts" className="h-full w-full bg-white" />
+      ) : m.kind === 'pdf' && isPhoneApp() ? (
+        <PdfPages load={async () => (await api.materials.read(m.id))?.data ?? null} />
       ) : (
         <iframe title={m.title} src={src} className="h-full w-full" />
       )}

@@ -3,8 +3,9 @@
 
 import type { Photo } from '@shared/types'
 import { api, db } from './data'
+import { fileSrc } from './platform'
 
-export const photoSrc = (p: Pick<Photo, 'id'>): string => `material://local/${p.id}/photo`
+export const photoSrc = (p: Pick<Photo, 'id'>): string => fileSrc(p.id, 'photo')
 
 async function shrink(file: File, max = 1600): Promise<{ data: Uint8Array; width: number; height: number }> {
   const bmp = await createImageBitmap(file)

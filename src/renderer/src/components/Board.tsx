@@ -83,7 +83,7 @@ export function Board({ filter = {}, match }: { filter?: Filter; match?: (t: Tas
   }
 
   return (
-    <div className="grid min-h-0 grid-cols-3 gap-4">
+    <div className="task-board grid min-h-0 grid-cols-3 gap-4">
       {STATUSES.map((col) => {
         const cards = visible.filter((t) => t.status === col.key)
         return (

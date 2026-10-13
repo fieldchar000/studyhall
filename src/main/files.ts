@@ -11,6 +11,7 @@ import { create, get, list, update } from './db'
 import { ensureLocalFile } from './cloud/sync'
 import type { ExamPaper, Material, MaterialCategory, MaterialKind, MaterialPlace, Module, PaperKind, Photo, PickedDoc, Week } from '@shared/types'
 import { readDocs } from './docs'
+import { getPrefs } from './prefs'
 
 const dataDir = (): string => app.getPath('userData')
 
@@ -92,7 +93,8 @@ export async function importMaterials(target: MaterialPlace | null, paths: strin
         size_bytes: info.size,
         sha256: await hashFile(dest),
         sort: siblings,
-        category: target?.category ?? guessCategory(name)
+        category: target?.category ?? guessCategory(name),
+        sync_file: getPrefs().syncAllFiles ? 1 : 0
       })
     )
   }
@@ -278,8 +280,9 @@ export async function serveMaterial(request: Request): Promise<Response> {
   const id = new URL(request.url).pathname.split('/')[1] ?? ''
   const photo = get<Photo>('photos', id)
   if (photo?.local_path) {
+    await ensureLocalFile(photo, 'photos') // added on another device: fetch it from the cloud first
     const file = await net.fetch(pathToFileURL(join(dataDir(), photo.local_path)).toString()).catch(() => null)
-    if (!file?.ok) return new Response('This photo is on another PC.', { status: 404 })
+    if (!file?.ok) return new Response('This photo hasn’t reached this device yet.', { status: 404 })
     return new Response(file.body, { headers: { 'content-type': IMAGE_TYPES[extname(photo.local_path)] ?? 'image/jpeg', 'x-content-type-options': 'nosniff' } })
   }
   const paper = get<ExamPaper>('exam_papers', id)

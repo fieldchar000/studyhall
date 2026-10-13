@@ -1,0 +1,78 @@
+# Builds the Android app (Studyhall.apk) for a release and attaches it next to the Windows
+# installer. Started by scripts/release.cjs after the PC version is published (or by hand:
+# Actions → Android app → Run workflow, with the release tag).
+# Free: public repositories get unlimited GitHub Actions minutes.
+name: Android app
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and attach to (e.g. v0.18.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # --ignore-scripts: skips downloading Electron (not needed for the phone build)
+      - name: Install packages
+        run: npm ci --ignore-scripts
+
+      - name: Build the phone web bundle
+        run: npm run build:mobile
+
+      - name: Copy it into the Android project
+        run: npx cap sync android
+
+      - name: Signing key
+        run: echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/studyhall.keystore"
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+
+      - name: Build the app
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+        env:
+          STUDYHALL_KEYSTORE: ${{ runner.temp }}/studyhall.keystore
+          STUDYHALL_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          STUDYHALL_KEY_ALIAS: studyhall
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          rm -f "$RUNNER_TEMP/studyhall.keystore"
+          cp android/app/build/outputs/apk/release/app-release.apk Studyhall.apk
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            cp Studyhall.apk "Studyhall-${TAG#v}.apk"
+            gh release upload "$TAG" Studyhall.apk "Studyhall-${TAG#v}.apk" --clobber
+          else
+            echo "No release called $TAG (test build) — the app is kept as a workflow artifact only."
+          fi
+
+      - name: Keep a copy with the run (for testing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Studyhall-apk
+          path: Studyhall.apk
+          retention-days: 7

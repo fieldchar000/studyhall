@@ -50,6 +50,7 @@ import {
   Graph,
   HourglassMedium,
   House,
+  List,
   Link,
   ListBullets,
   ListChecks,
@@ -85,6 +86,7 @@ import {
 
 const ICONS: Record<string, PhosphorIcon> = {
   home: House,
+  menu: List,
   brain: ShareNetwork,
   modules: BookBookmark,
   materials: Archive,
@@ -188,7 +190,7 @@ export function Modal({
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onMouseDown={onClose}>
+    <div data-modal className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onMouseDown={onClose}>
       <div
         className={`card flex max-h-full flex-col shadow-2xl ${wide ? 'h-full w-full max-w-6xl' : 'w-full max-w-lg'}`}
         onMouseDown={(e) => e.stopPropagation()}

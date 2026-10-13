@@ -1,4 +1,7 @@
-import { Sidebar } from './components/Sidebar'
+import { MobileBar, Sidebar } from './components/Sidebar'
+import { useEffect } from 'react'
+import { goBack, navigate } from './lib/nav'
+import { setDrawer } from './lib/platform'
 import { TaskDrawer } from './components/TaskDrawer'
 import { useRoute } from './lib/nav'
 import { ClientDetailPage, ClientsPage } from './pages/Clients'
@@ -43,8 +46,23 @@ import { InviteLinkHandler } from './components/InviteLinkHandler'
 
 export function App(): React.JSX.Element {
   const route = useRoute()
+  // The phone's back button: close the menu, else go back a page, else home, else leave the app.
+  useEffect(() => {
+    const onBack = (e: Event): void => {
+      if (document.documentElement.classList.contains('drawer-open')) setDrawer(false)
+      else if (document.querySelector('[data-modal]')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      else if (!goBack()) {
+        if (route.name !== 'home') navigate({ name: 'home' })
+        else return
+      }
+      e.preventDefault()
+    }
+    window.addEventListener('studyhall:back', onBack)
+    return () => window.removeEventListener('studyhall:back', onBack)
+  }, [route.name])
   return (
-    <div className="flex h-full">
+    <div className="app-shell flex h-full">
+      <MobileBar />
       <Sidebar />
       <main className="min-w-0 flex-1 overflow-auto">
         {route.name === 'home' && <HomePage />}

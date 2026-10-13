@@ -13,6 +13,7 @@ import { formatTime, localDate } from '@/lib/dates'
 import { useMode } from '@/lib/profile'
 import { openTask, setDone } from '@/lib/tasks'
 import { fmtClock, PHASE_LABEL, useRemaining, useTimerState } from '@/lib/timer'
+import { isPhoneApp } from '@/lib/platform'
 
 const PHASE_COLOR: Record<TimerPhase, string> = {
   focus: 'var(--color-danger)',
@@ -101,7 +102,7 @@ function TimerCard(): React.JSX.Element {
           <Icon name="skip" />
         </button>
       </div>
-      <p className="text-xs text-muted">Keeps running in the tray when you close the window.</p>
+      <p className="text-xs text-muted">{isPhoneApp() ? 'You’ll get a notification when it ends.' : 'Keeps running in the tray when you close the window.'}</p>
     </div>
   )
 }

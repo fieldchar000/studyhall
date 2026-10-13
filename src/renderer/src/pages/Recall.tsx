@@ -177,7 +177,7 @@ function ModuleRecall({
     <section className="card">
       <div className="flex flex-wrap items-center gap-3 px-5 py-4">
         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: m.color }} />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 max-md:basis-[calc(100%-1.5rem)]">
           <div className="label-caps">Active recall — {m.code || 'module'}</div>
           <div className="font-display truncate text-xl font-semibold">{m.name}</div>
         </div>

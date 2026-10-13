@@ -52,3 +52,10 @@ console.log(`Released v${version}: https://github.com/fieldchar000/studyhall/rel
 require('./upload-stable.cjs')
   .uploadStable(version)
   .catch((e) => console.error('Stable download link not updated:', e.message))
+
+// 5. The Android app: GitHub builds Studyhall.apk for this release and attaches it (a few minutes).
+//    Phones then find it at https://github.com/fieldchar000/studyhall/releases/latest/download/Studyhall.apk
+require('./android-build.cjs')
+  .startAndroidBuild(`v${version}`)
+  .then((run) => console.log(`Android app build started (attaches Studyhall.apk when done): ${run.html_url}`))
+  .catch((e) => console.error('Android build not started:', e.message))

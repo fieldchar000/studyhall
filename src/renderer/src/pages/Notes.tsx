@@ -8,6 +8,7 @@ import { Icon } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { isoToLocalInput, localInputToIso } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
+import { useNarrow } from '@/lib/platform'
 import { useMode } from '@/lib/profile'
 import { SharedBanner, ShareButton } from '@/components/ShareButton'
 import { docToNote } from '@/lib/importDoc'
@@ -87,7 +88,9 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
     },
     [mode]
   )
-  const selectedId = id ?? data?.notes[0]?.id
+  // On a phone: the list, or one note full-screen (with a way back) — not both squeezed together.
+  const narrow = useNarrow()
+  const selectedId = id ?? (narrow ? undefined : data?.notes[0]?.id)
   const q = search.trim().toLowerCase()
   const groupKey = mode === 'study' ? 'module_id' : mode === 'life' || mode === 'dev' ? 'project_id' : 'client_id'
   const shown = (data?.notes ?? [])
@@ -127,7 +130,7 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
         </div>
       )}
       {auto && <MindmapGenerator purpose="notes" onClose={() => setAuto(false)} />}
-      <aside className="flex w-72 shrink-0 flex-col border-r border-line">
+      <aside className={`flex flex-col border-line ${narrow ? (selectedId ? 'hidden' : 'w-full') : 'w-72 shrink-0 border-r'}`}>
         <div className="flex items-center gap-2 px-4 pt-5 pb-3">
           <h1 className="flex-1 text-lg font-semibold">{mode === 'work' ? 'Meeting notes' : 'Notes'}</h1>
           <button
@@ -204,7 +207,12 @@ export function NotesPage({ id }: { id?: string }): React.JSX.Element {
           ))}
         </ul>
       </aside>
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className={`flex min-w-0 flex-1 flex-col ${narrow && !selectedId ? 'hidden' : ''}`}>
+        {narrow && (
+          <button className="flex items-center gap-1.5 border-b border-line px-3 py-2.5 text-left text-sm text-muted" onClick={() => navigate({ name: 'notes' })}>
+            <Icon name="chevron" size={14} className="rotate-180" /> All notes
+          </button>
+        )}
         {selectedId ? <NoteView key={selectedId} id={selectedId} /> : <EmptyState mode={mode} />}
       </section>
     </div>

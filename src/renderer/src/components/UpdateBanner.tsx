@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import type { UpdateState } from '@shared/types'
 import { api } from '@/lib/data'
+import { isPhoneApp } from '@/lib/platform'
 
 function useUpdateState(): UpdateState | null {
   const [s, setS] = useState<UpdateState | null>(null)
@@ -19,7 +20,7 @@ export function UpdateBanner(): React.JSX.Element | null {
   return (
     <button onClick={() => void api.app.installUpdate()} className="rounded-lg bg-accent px-2.5 py-2 text-left text-xs text-on-accent hover:opacity-90" title="Saves everything, installs, and reopens Studyhall">
       <div className="font-semibold">Update {s.version} ready</div>
-      <div className="opacity-90">Click to restart &amp; install</div>
+      <div className="opacity-90">{isPhoneApp() ? 'Tap to download the new app' : 'Click to restart & install'}</div>
     </button>
   )
 }
@@ -38,7 +39,7 @@ export function UpdatesCard({ version }: { version?: string }): React.JSX.Elemen
       case 'downloading':
         return `Downloading version ${s.version}… ${s.percent}%`
       case 'ready':
-        return `Version ${s.version} is ready to install.`
+        return isPhoneApp() ? `Version ${s.version} is out — download it and Android will update Studyhall (your data stays).` : `Version ${s.version} is ready to install.`
       case 'error':
         return `Couldn't check for updates (${s.message}). It will try again later.`
       default:
@@ -54,7 +55,7 @@ export function UpdatesCard({ version }: { version?: string }): React.JSX.Elemen
       <div className="flex gap-2">
         {s?.status === 'ready' ? (
           <button className="btn-primary" onClick={() => void api.app.installUpdate()}>
-            Restart &amp; install {s.version}
+            {isPhoneApp() ? `Download ${s.version}` : `Restart & install ${s.version}`}
           </button>
         ) : (
           <button

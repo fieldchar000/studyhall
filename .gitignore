@@ -6,3 +6,7 @@ dist/
 scripts/.out/
 .venv/
 castlabs-signup.cmd
+
+# Android signing key (the password lives in .env)
+*.keystore
+*.p12

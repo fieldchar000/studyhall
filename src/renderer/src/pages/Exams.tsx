@@ -12,6 +12,8 @@ import { api, db, track, useLive } from '@/lib/data'
 import { localDate } from '@/lib/dates'
 import { docToText } from '@/lib/importDoc'
 import { navigate } from '@/lib/nav'
+import { fileSrc, isPhoneApp } from '@/lib/platform'
+import { PdfPages } from '@/components/PdfPages'
 import { attachAnswers, correctOption, parseAnswers, parseQuestions, type ParsedQuestion } from '@/lib/quizParse'
 import { review, type Grade } from '@/lib/sm2'
 
@@ -32,7 +34,7 @@ const KIND_TONE: Record<PaperKind, string> = {
 
 const errText = (e: unknown): string => String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 const pct = (a: PaperAttempt): number | null => (a.score != null && a.max_score ? (a.score / a.max_score) * 100 : null)
-const viewerSrc = (p: ExamPaper): string => `material://local/${p.id}/${encodeURIComponent(p.file_name)}`
+const viewerSrc = (p: ExamPaper): string => fileSrc(p.id, p.file_name)
 const canPreview = (p: ExamPaper): boolean => /\.(pdf|html?|txt)$/i.test(p.file_name)
 const isDue = (q: QuizQuestion): boolean => q.times_seen > 0 && !!q.due_at && Date.parse(q.due_at) <= Date.now()
 
@@ -373,6 +375,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function Viewer({ p }: { p: ExamPaper }): React.JSX.Element {
+  if (canPreview(p) && isPhoneApp() && /\.pdf$/i.test(p.file_name)) return <PdfPages load={async () => (await api.papers.doc(p.id))?.data ?? null} />
   if (canPreview(p)) return <iframe title={p.title} src={viewerSrc(p)} className="h-full min-h-[70vh] w-full border-0 bg-white" />
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-center text-sm text-muted">

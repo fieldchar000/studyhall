@@ -9,6 +9,7 @@ import { openSearch } from './SearchPalette'
 import { useCloud } from '@/lib/cloud'
 import { UpdateBanner } from './UpdateBanner'
 import { Icon, SaveIndicator } from './ui'
+import { setDrawer, useDrawer } from '@/lib/platform'
 
 interface NavItem {
   label: string
@@ -152,7 +153,7 @@ export function Sidebar(): React.JSX.Element {
   }
 
   return (
-    <aside className="spine on-dark relative flex w-56 shrink-0 flex-col border-r">
+    <aside className="spine on-dark relative flex w-56 shrink-0 flex-col border-r" aria-label="Menu">
       <div className="flex items-center gap-3 px-4 pt-5 pb-4">
         <span
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-[20px] leading-none text-on-accent"
@@ -202,7 +203,7 @@ export function Sidebar(): React.JSX.Element {
       >
         <Icon name="search" size={15} />
         <span className="flex-1">Search</span>
-        <kbd className="rounded-sm border border-line px-1 font-sans text-[10px]">Ctrl K</kbd>
+        <kbd className="rounded-sm border border-line px-1 font-sans text-[10px] max-md:hidden">Ctrl K</kbd>
       </button>
 
       <nav className="flex min-h-0 flex-col gap-4 overflow-auto px-3 pb-2">
@@ -246,6 +247,35 @@ export function Sidebar(): React.JSX.Element {
         <SaveIndicator />
       </div>
     </aside>
+  )
+}
+
+/** The phone's top bar: menu button, the page you're on, search and the Brain. */
+export function MobileBar(): React.JSX.Element {
+  const route = useRoute()
+  const mode = useMode()
+  const open = useDrawer()
+  const partnerLabel = useProfile()?.partner_label || 'Partner'
+  const item = groups.flatMap((g) => g.items).find((i) => i.match.includes(route.name) && i.modes.includes(mode)) ?? groups.flatMap((g) => g.items).find((i) => i.match.includes(route.name))
+  const title = item ? (item.label === 'Partner' ? partnerLabel : item.label) : 'Studyhall'
+  return (
+    <>
+      <header className="mobile-bar spine on-dark flex items-center gap-1 px-2 md:hidden">
+        <button className="flex h-11 w-11 items-center justify-center rounded-lg text-ink" onClick={() => setDrawer(!open)} aria-label="Menu">
+          <Icon name="menu" size={22} />
+        </button>
+        <div className="min-w-0 flex-1 truncate text-[19px] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
+          {title}
+        </div>
+        <button className="flex h-11 w-11 items-center justify-center rounded-lg text-ink" onClick={() => openSearch()} aria-label="Search">
+          <Icon name="search" size={20} />
+        </button>
+        <button className="flex h-11 w-11 items-center justify-center rounded-lg text-ink" onClick={() => navigate({ name: 'brain' })} aria-label="Brain">
+          <Icon name="brain" size={20} />
+        </button>
+      </header>
+      <div className="drawer-backdrop md:hidden" onClick={() => setDrawer(false)} />
+    </>
   )
 }
 

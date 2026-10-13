@@ -7,8 +7,10 @@ import { shortcutLabel } from './Inbox'
 import { AccountCard } from '@/components/AccountCard'
 import { RelationshipsCard } from '@/components/RelationshipsSettings'
 import { UpdatesCard } from '@/components/UpdateBanner'
+import { isPhoneApp } from '@/lib/platform'
 
 export function SettingsPage(): React.JSX.Element {
+  const phone = isPhoneApp()
   const mode = useMode()
   const enabled = useEnabledModes()
   const profile = useProfile()
@@ -118,14 +120,15 @@ export function SettingsPage(): React.JSX.Element {
       </section>
 
       <section className="card mb-4 p-5">
-        <h2 className="mb-2 font-semibold">Tray &amp; notifications</h2>
-        {pref('closeToTray', 'Keep running in the tray when I close the window', 'The focus timer and reminders keep working. Quit from the tray icon menu.')}
-        {pref('launchAtLogin', 'Start Studyhall when I sign in to Windows', 'Starts quietly in the tray. Works in the installed app.')}
+        <h2 className="mb-2 font-semibold">{phone ? 'Notifications' : 'Tray & notifications'}</h2>
+        {!phone && pref('closeToTray', 'Keep running in the tray when I close the window', 'The focus timer and reminders keep working. Quit from the tray icon menu.')}
+        {!phone && pref('launchAtLogin', 'Start Studyhall when I sign in to Windows', 'Starts quietly in the tray. Works in the installed app.')}
         {pref('notifyDeadlines', 'Remind me about deadlines', 'About 24 hours and 1 hour before tasks and assessments are due.')}
         {pref('notifyTimer', 'Notify me when a focus session or break ends')}
         {pref('notifyMessages', 'Notify me about new server messages', 'Only while Studyhall is in the background; muted channels stay quiet.')}
       </section>
 
+      {!phone && (
       <section className="card mb-4 p-5">
         <h2 className="mb-1 font-semibold">Quick capture</h2>
         <p className="mb-3 text-sm text-muted">A keyboard shortcut that works anywhere in Windows and opens a small box; whatever you type goes to your Inbox.</p>
@@ -150,19 +153,47 @@ export function SettingsPage(): React.JSX.Element {
             ))}
         </div>
       </section>
+      )}
 
       <section className="card mb-4 p-5">
         <h2 className="mb-1 font-semibold">Your data</h2>
-        <p className="mb-3 text-sm text-muted">
-          Everything saves automatically on this PC — there is no save button. Your database and uploaded files live in this folder.
-          To back up, copy the whole folder while the app is closed.
-        </p>
-        <div className="flex items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded-md bg-canvas px-2 py-1.5 text-xs">{data?.path}</code>
-          <button className="btn" onClick={() => void api.app.openDataFolder()}>
-            <Icon name="folder" /> Open folder
-          </button>
-        </div>
+        {phone ? (
+          <p className="mb-3 text-sm text-muted">Everything saves automatically on this phone — there is no save button. Sign in above to keep it in sync with your PC.</p>
+        ) : (
+          <>
+            <p className="mb-3 text-sm text-muted">
+              Everything saves automatically on this PC — there is no save button. Your database and uploaded files live in this folder.
+              To back up, copy the whole folder while the app is closed.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded-md bg-canvas px-2 py-1.5 text-xs">{data?.path}</code>
+              <button className="btn" onClick={() => void api.app.openDataFolder()}>
+                <Icon name="folder" /> Open folder
+              </button>
+            </div>
+          </>
+        )}
+        <label className="mt-3 flex items-start gap-3 py-1.5">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={!!prefs?.syncAllFiles}
+            onChange={(e) => {
+              const on = e.target.checked
+              savePrefs({ syncAllFiles: on })
+              // Turning it on also queues every file you already have.
+              if (on) void (async () => {
+                const files = await api.list('materials', {})
+                for (const m of files) if (!m.sync_file) await api.update('materials', m.id, { sync_file: 1 })
+                notifyChanged('materials')
+              })()
+            }}
+          />
+          <span>
+            <span className="block text-sm">Upload all my course files, so they open on my phone too</span>
+            <span className="block text-xs text-muted">Uses the free 1 GB cloud space (shared with friends on this server). Journal and memory photos always sync. Each file can still be switched off in its week.</span>
+          </span>
+        </label>
       </section>
 
       <UpdatesCard version={data?.version} />

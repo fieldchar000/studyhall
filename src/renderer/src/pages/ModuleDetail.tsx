@@ -80,7 +80,7 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
       <div className="card mb-6 overflow-hidden">
         <div className="h-2" style={{ background: module.color }} />
         <div className="flex flex-col gap-3 p-5">
-          <div className="flex items-start gap-3">
+          <div className="flex max-md:flex-wrap items-start gap-3">
             <div className="relative">
               <button
                 className="mt-2 h-6 w-6 rounded-full border border-line"
@@ -100,7 +100,7 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
                 </div>
               )}
             </div>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 max-md:basis-[calc(100%-3rem)]">
               <AutoText
                 value={module.code}
                 onSave={(v) => save({ code: v })}
@@ -111,7 +111,7 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
                 value={module.name}
                 onSave={(v) => save({ name: v || 'Untitled module' })}
                 placeholder="Module name"
-                className="field font-display text-3xl font-semibold"
+                className="field font-display text-3xl font-semibold max-md:text-2xl"
               />
             </div>
             <ShareButton type="module" id={module.id} ownerId={module.owner_id} />

@@ -270,17 +270,18 @@ export function pruneUnshared(moduleIds: Set<string>, noteIds: Set<string>): voi
   }
 }
 
-// ---------- files (opt-in per material) ----------
+// ---------- files (opt-in per material; journal and memory photos always) ----------
 
 const dataDir = (): string => app.getPath('userData')
 
 async function uploadFiles(): Promise<void> {
   const db = getDb()
-  const todo = (['materials', 'exam_papers'] as const).flatMap((table) =>
+  // Photos are small (resized to 1600px) and the journal should look the same on every device.
+  const todo = (['materials', 'exam_papers', 'photos'] as const).flatMap((table) =>
     db
-      .prepare(`SELECT * FROM ${table} WHERE owner_id = ? AND deleted_at IS NULL AND sync_file = 1 AND storage_path IS NULL`)
+      .prepare(`SELECT * FROM ${table} WHERE owner_id = ? AND deleted_at IS NULL AND ${table === 'photos' ? '1' : 'sync_file = 1'} AND storage_path IS NULL`)
       .all(uid)
-      .map((r) => ({ ...(r as object), table }) as Material & { table: 'materials' | 'exam_papers' })
+      .map((r) => ({ ...(r as object), table }) as Material & { table: 'materials' | 'exam_papers' | 'photos' })
   )
   if (!todo.length) return
   const { data: used, error } = await supabase().rpc('storage_used')
@@ -305,7 +306,7 @@ async function uploadFiles(): Promise<void> {
 }
 
 /** Make sure a material's (or exam paper's) file is on this PC, downloading it if it was synced from elsewhere. */
-export async function ensureLocalFile(m: Pick<Material, 'local_path' | 'storage_path'>, _table: 'materials' | 'exam_papers' = 'materials'): Promise<boolean> {
+export async function ensureLocalFile(m: Pick<Material, 'local_path' | 'storage_path'>, _table: 'materials' | 'exam_papers' | 'photos' = 'materials'): Promise<boolean> {
   const abs = join(dataDir(), m.local_path ?? '')
   if (m.local_path && existsSync(abs)) return true
   if (!uid || !m.storage_path || !m.local_path) return false
