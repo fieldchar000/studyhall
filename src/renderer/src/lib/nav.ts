@@ -5,6 +5,7 @@ import { api } from './data'
 
 export type Route =
   | { name: 'home' }
+  | { name: 'brain'; q?: string }
   | { name: 'tasks' }
   | { name: 'projects' }
   | { name: 'project'; id: string }
@@ -37,7 +38,7 @@ export type Route =
   | { name: 'reading' }
   | { name: 'codex' }
   | { name: 'forecasts' }
-  | { name: 'journal' }
+  | { name: 'journal'; date?: string }
   | { name: 'library' }
   | { name: 'money' }
   | { name: 'paper'; id: string; timed?: boolean; tab?: 'paper' | 'questions' | 'attempts' }

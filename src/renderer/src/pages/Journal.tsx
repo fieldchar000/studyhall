@@ -88,12 +88,12 @@ export function MoodPicker({ value, onPick, size = 'text-2xl' }: { value: number
 const longDate = (d: string): string => new Date(d + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
 const weekday = (d: string): string => new Date(d + 'T00:00').toLocaleDateString(undefined, { weekday: 'long' })
 
-export function JournalPage(): React.JSX.Element {
+export function JournalPage({ date }: { date?: string } = {}): React.JSX.Element {
   const entries = useJournal()
   const photos = useRows('photos', { parent_table: 'journal_entries' }, 'sort')
   const today = localDate(new Date())
-  const [editing, setEditing] = useState<string>(today)
-  const [month, setMonth] = useState(today.slice(0, 7))
+  const [editing, setEditing] = useState<string>(date ?? today)
+  const [month, setMonth] = useState((date ?? today).slice(0, 7))
   const [shown, setShown] = useState(12)
   if (!entries) return <div />
 

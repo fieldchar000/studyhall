@@ -136,7 +136,13 @@ function Palette(): React.JSX.Element {
     tag: 'Page',
     go: () => navigate(p.route)
   }))
+  // Questions go to the Brain first ("what does Alex like?", "when is my exam?").
+  const brainItem: Item[] = lq
+    ? [{ key: 'brain', icon: 'brain', title: `Ask your Brain: “${q.trim()}”`, sub: 'Answers from everything you’ve saved', tag: 'Brain', go: () => navigate({ name: 'brain', q: q.trim() }) }]
+    : []
+  const question = /^(?:what|whats|when|who|where|why|how|which|does|do|is|are)\b|\?$/.test(lq)
   const items: Item[] = [
+    ...(question ? brainItem : []),
     ...pages,
     ...results.map((r) => ({
       key: `${r.type}:${r.id}:${r.snippet}`,
@@ -145,7 +151,8 @@ function Palette(): React.JSX.Element {
       sub: r.snippet,
       tag: TYPE_META[r.type].label,
       go: () => openResult(r)
-    }))
+    })),
+    ...(question ? [] : brainItem)
   ]
 
   const choose = (item: Item | undefined): void => {

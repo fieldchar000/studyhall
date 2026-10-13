@@ -4,6 +4,7 @@ import { useRoute } from './lib/nav'
 import { ClientDetailPage, ClientsPage } from './pages/Clients'
 import { FocusPage } from './pages/Focus'
 import { HomePage } from './pages/Home'
+import { BrainPage } from './pages/Brain'
 import { ModuleDetailPage } from './pages/ModuleDetail'
 import { ModulesPage } from './pages/Modules'
 import { MaterialsPage } from './pages/Materials'
@@ -47,6 +48,7 @@ export function App(): React.JSX.Element {
       <Sidebar />
       <main className="min-w-0 flex-1 overflow-auto">
         {route.name === 'home' && <HomePage />}
+        {route.name === 'brain' && <BrainPage key={route.q ?? ''} q={route.q} />}
         {route.name === 'tasks' && <TasksPage />}
         {route.name === 'projects' && <ProjectsPage />}
         {route.name === 'project' && <ProjectDetailPage key={route.id} id={route.id} />}
@@ -72,7 +74,7 @@ export function App(): React.JSX.Element {
         {route.name === 'language' && <LanguageDetailPage key={route.id} id={route.id} />}
         {route.name === 'habits' && <HabitsPage />}
         {route.name === 'exams' && <ExamsPage />}
-        {route.name === 'journal' && <JournalPage />}
+        {route.name === 'journal' && <JournalPage key={route.date ?? 'today'} date={route.date} />}
         {route.name === 'people' && <PeoplePage key={route.id ?? 'list'} id={route.id} />}
         {route.name === 'partner' && <PartnerPage />}
         {route.name === 'library' && <LibraryPage />}

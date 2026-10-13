@@ -31,6 +31,7 @@ const projects = (label: string, modes: Mode[]): NavItem => ({ label, icon: 'pro
 const groups: { title?: string; items: NavItem[] }[] = [
   {
     items: [
+      { label: 'Brain', icon: 'brain', route: { name: 'brain' }, match: ['brain'], modes: ALL },
       { label: 'Briefing', icon: 'news', route: { name: 'briefing' }, match: ['briefing'], modes: ['dev'] },
       { label: 'Home', icon: 'home', route: { name: 'home' }, match: ['home'], modes: ['study', 'work', 'life'] },
       { label: 'Inbox', icon: 'inbox', route: { name: 'inbox' }, match: ['inbox'], modes: ALL },

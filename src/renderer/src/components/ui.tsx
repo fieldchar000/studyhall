@@ -9,6 +9,7 @@ import {
   ArrowClockwise,
   ArrowCounterClockwise,
   ArrowSquareOut,
+  ShareNetwork,
   BookBookmark,
   Brain,
   Cake,
@@ -84,6 +85,7 @@ import {
 
 const ICONS: Record<string, PhosphorIcon> = {
   home: House,
+  brain: ShareNetwork,
   modules: BookBookmark,
   materials: Archive,
   settings: GearSix,
