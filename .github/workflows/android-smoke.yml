@@ -1,0 +1,63 @@
+# Tries the Android app on an emulator: builds a debug copy of the given branch or tag, then
+# scripts/android-smoke.mjs installs it, drives it and takes screenshots (uploaded as "smoke").
+# Run by hand (Actions → Android smoke test → Run workflow) or: node scripts/android-build.cjs … (see there).
+name: Android smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or tag to test'
+        required: true
+        default: main
+
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - run: npm ci --ignore-scripts
+      - run: npm run build:mobile
+      - run: npx cap sync android
+
+      - name: Build a debug copy (its web view can be inspected)
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Allow the emulator to use hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run the app on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          script: node scripts/android-smoke.mjs
+
+      - name: Screenshots and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke
+          path: smoke/
+          retention-days: 7
