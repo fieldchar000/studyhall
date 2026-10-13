@@ -8,6 +8,7 @@ import { buildBrain, KIND_LABEL, readNewFiles, type BNode, type Brain, type Kind
 import { ask, EXAMPLES, type Answer } from '@/lib/brainAsk'
 import { navigate } from '@/lib/nav'
 import { setMode, useMode } from '@/lib/profile'
+import { isNarrow } from '@/lib/platform'
 import { openTask } from '@/lib/tasks'
 import { MaterialViewer, openMaterial } from '@/components/MaterialViewer'
 import { Icon } from '@/components/ui'
@@ -136,7 +137,7 @@ export function BrainPage({ q: initialQ }: { q?: string }): React.JSX.Element {
         <label className="relative min-w-72 flex-1">
           <Icon name="search" size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
           <input
-            autoFocus
+            autoFocus={!isNarrow()}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {

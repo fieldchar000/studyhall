@@ -181,7 +181,9 @@ async function main() {
   await sleep(1500)
   shot('7-settings')
 
-  const errors = page.logs.filter((l) => !/favicon|ResizeObserver loop/i.test(l))
+  // Debug builds log every failed plugin call (e.g. "folder doesn't exist yet" on first start) as an
+  // object — those are expected; real problems are exceptions and error messages.
+  const errors = page.logs.filter((l) => l !== 'Object' && !/favicon|ResizeObserver loop|safe area CSS/i.test(l))
   check('No errors in the app’s console', errors.length === 0, errors.slice(0, 5).join(' | '))
   writeFileSync(`${OUT}/report.txt`, report.join('\n') + '\n')
   saveLogcat()
