@@ -13,7 +13,7 @@ export type Route =
   | { name: 'recall' }
   | { name: 'people'; id?: string }
   | { name: 'partner' }
-  | { name: 'module'; id: string; tab?: 'weeks' | 'assessments' | 'tasks' | 'notes' }
+  | { name: 'module'; id: string; tab?: 'weeks' | 'assessments' | 'tasks' | 'notes' | 'stats' }
   | { name: 'clients' }
   | { name: 'client'; id: string }
   | { name: 'timetable' }

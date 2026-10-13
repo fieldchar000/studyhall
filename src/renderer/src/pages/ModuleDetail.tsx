@@ -9,6 +9,7 @@ import { api, db, useLive } from '@/lib/data'
 import { navigate } from '@/lib/nav'
 import { AssessmentsTab } from './module/AssessmentsTab'
 import { WeeksTab } from './module/WeeksTab'
+import { ModuleStatStrip, StatsTab } from './module/StatsTab'
 
 /** Notes linked to this module, newest first. */
 function ModuleNotes({ moduleId }: { moduleId: string }): React.JSX.Element {
@@ -41,8 +42,8 @@ function ModuleNotes({ moduleId }: { moduleId: string }): React.JSX.Element {
   )
 }
 
-export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'weeks' | 'assessments' | 'tasks' | 'notes' }): React.JSX.Element {
-  const [tab, setTab] = useState(initialTab ?? 'weeks')
+export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'weeks' | 'assessments' | 'tasks' | 'notes' | 'stats' }): React.JSX.Element {
+  const [tab, setTab] = useState<'weeks' | 'assessments' | 'tasks' | 'notes' | 'stats'>(initialTab ?? 'weeks')
   const [showColors, setShowColors] = useState(false)
   const { data: module } = useLive(['modules'], () => api.get('modules', id), [id])
 
@@ -145,13 +146,16 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
         </div>
       </div>
 
+      <ModuleStatStrip moduleId={id} onMore={() => setTab('stats')} />
+
       <div className="mb-4 flex gap-1 border-b border-line">
         {(
           [
             ['weeks', 'Weeks & materials'],
             ['assessments', 'Assessments'],
             ['tasks', 'Tasks'],
-            ['notes', 'Notes']
+            ['notes', 'Notes'],
+            ['stats', 'Stats']
           ] as const
         ).map(([key, label]) => (
           <button
@@ -170,6 +174,7 @@ export function ModuleDetailPage({ id, tab: initialTab }: { id: string; tab?: 'w
       {tab === 'assessments' && <AssessmentsTab module={module} />}
       {tab === 'tasks' && <Board filter={{ module_id: id }} />}
       {tab === 'notes' && <ModuleNotes moduleId={id} />}
+      {tab === 'stats' && <StatsTab moduleId={id} />}
     </div>
   )
 }

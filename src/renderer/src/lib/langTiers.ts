@@ -3,7 +3,7 @@
 
 import type { Group, Lesson } from './langContent'
 
-export type TierId = 'A1' | 'A2' | 'B1' | 'B2' | 'C1'
+export type TierId = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'
 
 export interface Tier {
   id: TierId
@@ -18,11 +18,13 @@ export const TIER_LABELS: Record<TierId, string> = {
   A2: 'Elementary',
   B1: 'Intermediate',
   B2: 'Upper-intermediate',
-  C1: 'Advanced'
+  C1: 'Advanced',
+  C2: 'Mastery'
 }
 
 /** Which tier a CEFR level belongs to. */
 export function tierFor(level: string): TierId {
+  if (level === 'C2') return 'C2'
   if (/^C/.test(level)) return 'C1'
   if (level === 'B2') return 'B2'
   if (level === 'B1') return 'B1'

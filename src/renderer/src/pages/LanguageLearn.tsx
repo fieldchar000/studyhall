@@ -7,8 +7,9 @@ import { Icon } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { COURSES, type Course, type Entry } from '@/lib/langContent'
 import { TIERS, TIER_LABELS, tierFor, type Tier, type TierId } from '@/lib/langTiers'
+import { C2_TIERS, enrich } from '@/lib/langExtra'
 
-const TIER_ORDER: TierId[] = ['A1', 'A2', 'B1', 'B2', 'C1']
+const TIER_ORDER: TierId[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 
 // ---------- Speech ----------
 
@@ -87,7 +88,9 @@ export function LanguageLearn({ l, ensureDeck }: { l: Language; ensureDeck: (l: 
   const deck = useLive(['flashcards'], async () => (l.deck_id ? api.list('flashcards', { deck_id: l.deck_id }) : []), [l.deck_id]).data ?? []
 
   // Content by level: the beginner course plus the A2–C1 packs. Practice covers everything up to your level.
-  const tiers: Tier[] = course ? [{ id: 'A1', label: TIER_LABELS.A1, phrases: course.phrases, vocab: course.vocab, lessons: course.lessons }, ...(TIERS[l.code] ?? [])] : []
+  const tiers: Tier[] = course
+    ? [{ id: 'A1' as TierId, label: TIER_LABELS.A1, phrases: course.phrases, vocab: course.vocab, lessons: course.lessons }, ...(TIERS[l.code] ?? []), ...(C2_TIERS[l.code] ? [C2_TIERS[l.code]] : [])].map((t) => enrich(l.code, t))
+    : []
   const mine = tierFor(l.level)
   const [tierId, setTierId] = useState<TierId>(mine)
   const tier = tiers.find((t) => t.id === tierId) ?? tiers[0]

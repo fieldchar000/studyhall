@@ -186,11 +186,31 @@ async function usablePages(src: Source): Promise<number[]> {
   return usable
 }
 
+// ---------- Which weeks to test ----------
+
+/** The weeks a module's recall draws from: week ids, plus 'none' for things not in a week. null = everything. */
+export function getScope(moduleId: string): string[] | null {
+  return store.get<string[]>(`recall.scope.${moduleId}`)
+}
+export function setScope(moduleId: string, weeks: string[] | null): void {
+  try {
+    if (weeks && weeks.length) localStorage.setItem(`recall.scope.${moduleId}`, JSON.stringify(weeks))
+    else localStorage.removeItem(`recall.scope.${moduleId}`)
+  } catch {
+    /* optional */
+  }
+}
+const scopeSig = (moduleId: string): string => (getScope(moduleId) ?? ['all']).slice().sort().join('+')
+const inScope = (scope: string[] | null, weekId: string | null, weekIds: Set<string>): boolean =>
+  !scope || scope.includes(weekId && weekIds.has(weekId) ? weekId : 'none')
+
 async function sourcesOf(moduleId: string): Promise<Source[]> {
-  const [notes, files] = await Promise.all([api.list('notes', { module_id: moduleId }), api.list('materials', { module_id: moduleId })])
+  const [notes, files, weeks] = await Promise.all([api.list('notes', { module_id: moduleId }), api.list('materials', { module_id: moduleId }), api.list('weeks', { module_id: moduleId })])
+  const scope = getScope(moduleId)
+  const weekIds = new Set(weeks.map((w) => w.id))
   return [
-    ...notes.filter((n) => n.plain_text.trim().length > 80).map((row) => ({ table: 'notes' as const, row })),
-    ...files.filter((f) => RECALLABLE.test(f.file_name)).map((row) => ({ table: 'materials' as const, row }))
+    ...notes.filter((n) => n.plain_text.trim().length > 80 && inScope(scope, n.week_id, weekIds)).map((row) => ({ table: 'notes' as const, row })),
+    ...files.filter((f) => RECALLABLE.test(f.file_name) && inScope(scope, f.week_id, weekIds)).map((row) => ({ table: 'materials' as const, row }))
   ]
 }
 
@@ -230,11 +250,14 @@ const building = new Map<string, Promise<RecallCard[]>>()
 /** Today's cards for a module: what's due first, then new pages spread across its notes and files. */
 export function todaysCards(moduleId: string): Promise<RecallCard[]> {
   const day = today()
-  const key = `recall.day.${day}.${moduleId}`
+  const key = `recall.day.${day}.${moduleId}.${scopeSig(moduleId)}`
   let job = building.get(key)
   if (!job) {
     job = (async (): Promise<RecallCard[]> => {
-      const cards = await api.list('recall_cards', { module_id: moduleId })
+      const sources = await sourcesOf(moduleId)
+      const allowed = new Set(sources.map((x) => x.row.id))
+      // Only pages from the chosen weeks (cards from other weeks keep their schedule for later).
+      const cards = (await api.list('recall_cards', { module_id: moduleId })).filter((c) => allowed.has(c.source_id))
       const byId = new Map(cards.map((c) => [c.id, c]))
       const saved = store.get<string[]>(key)
       if (saved) {
@@ -251,7 +274,7 @@ export function todaysCards(moduleId: string): Promise<RecallCard[]> {
         // New pages, taken in turn from each source so one long PDF doesn't fill the day.
         const used = new Set(cards.map((c) => `${c.source_id}:${c.locator}`))
         const queues: { src: Source; pages: number[] }[] = []
-        for (const src of shuffle(await sourcesOf(moduleId), day + moduleId)) {
+        for (const src of shuffle(sources, day + moduleId)) {
           const usable = await usablePages(src)
           const free = shuffle(
             usable.filter((i) => !used.has(`${src.row.id}:${i}`)),
@@ -302,9 +325,10 @@ export function todaysCards(moduleId: string): Promise<RecallCard[]> {
 
 /** Forget today's set for a module (e.g. after changing how many pages a day). */
 export function resetToday(moduleId: string): void {
-  building.delete(`recall.day.${today()}.${moduleId}`)
+  const key = `recall.day.${today()}.${moduleId}.${scopeSig(moduleId)}`
+  building.delete(key)
   try {
-    localStorage.removeItem(`recall.day.${today()}.${moduleId}`)
+    localStorage.removeItem(key)
   } catch {
     /* nothing to forget */
   }

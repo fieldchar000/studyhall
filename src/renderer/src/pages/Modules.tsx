@@ -13,6 +13,8 @@ interface ModuleCardData {
   worksheets: number
   average: number | null
   next: Assessment | null
+  focus: number // seconds
+  recall: number | null // share remembered
 }
 
 const daysTo = (iso: string): number => Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000)
@@ -23,14 +25,16 @@ export function ModulesPage(): React.JSX.Element {
 
   // Load modules plus a few counts for each card.
   const { data } = useLive(
-    ['modules', 'weeks', 'materials', 'assessments', 'notes'],
+    ['modules', 'weeks', 'materials', 'assessments', 'notes', 'focus_sessions', 'recall_cards'],
     async (): Promise<ModuleCardData[]> => {
-      const [modules, weeks, materials, assessments, notes] = await Promise.all([
+      const [modules, weeks, materials, assessments, notes, sessions, cards] = await Promise.all([
         api.list('modules', {}, 'sort'),
         api.list('weeks'),
         api.list('materials'),
         api.list('assessments'),
-        api.list('notes', { mode: 'study' })
+        api.list('notes', { mode: 'study' }),
+        api.list('focus_sessions'),
+        api.list('recall_cards')
       ])
       const now = new Date().toISOString()
       return modules.map((m) => {
@@ -42,7 +46,12 @@ export function ModulesPage(): React.JSX.Element {
           notes: files.filter((f) => f.category !== 'worksheet').length,
           worksheets: files.filter((f) => f.category === 'worksheet').length,
           average: summarize(mine, m.target_grade).average,
-          next: mine.filter((a) => a.due_at && a.due_at > now).sort((a, b) => a.due_at!.localeCompare(b.due_at!))[0] ?? null
+          next: mine.filter((a) => a.due_at && a.due_at > now).sort((a, b) => a.due_at!.localeCompare(b.due_at!))[0] ?? null,
+          focus: sessions.filter((x) => x.module_id === m.id).reduce((n, x) => n + x.focused_seconds, 0),
+          recall: (() => {
+            const graded = cards.filter((c) => c.module_id === m.id && c.last_result)
+            return graded.length ? graded.filter((c) => c.last_result === 'got').length / graded.length : null
+          })()
         }
       })
     },
@@ -96,7 +105,7 @@ export function ModulesPage(): React.JSX.Element {
       )}
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
-        {visible.map(({ module: m, weeks, notes, worksheets, average, next }) => (
+        {visible.map(({ module: m, weeks, notes, worksheets, average, next, focus, recall }) => (
           <button key={m.id} onClick={() => navigate({ name: 'module', id: m.id })} className={`card flex flex-col overflow-hidden text-left ${m.archived ? 'opacity-60' : ''}`}>
             <div className="h-1" style={{ background: m.color }} />
             <div className="flex flex-1 flex-col p-5">
@@ -119,6 +128,14 @@ export function ModulesPage(): React.JSX.Element {
                     <div className="mt-0.5 text-[10px] tracking-wide text-muted uppercase">{l}</div>
                   </div>
                 ))}
+              </div>
+              <div className="mt-3 flex items-center gap-3 text-[11px] text-muted">
+                <span className="flex items-center gap-1">
+                  <Icon name="focus" size={12} /> {Math.round(focus / 360) / 10}h focus
+                </span>
+                <span className="flex items-center gap-1">
+                  <Icon name="recall" size={12} /> {recall == null ? 'no recall yet' : `${Math.round(recall * 100)}% recalled`}
+                </span>
               </div>
               {next && (
                 <div className="mt-3 flex items-center gap-1.5 rounded-md bg-canvas/70 px-2 py-1.5 text-xs">

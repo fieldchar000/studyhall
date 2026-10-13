@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Module, RecallCard } from '@shared/types'
 import { Icon, Modal } from '@/components/ui'
-import { useLive, useRows } from '@/lib/data'
+import { notifyChanged, useLive, useRows } from '@/lib/data'
 import { navigate } from '@/lib/nav'
 import {
+  getScope,
+  setScope,
   doneToday,
   drawPdfPage,
   grade,
@@ -172,7 +174,7 @@ function ModuleRecall({
   const done = list.filter(doneToday).length
   const next = Math.max(0, list.findIndex((c) => !doneToday(c)))
   return (
-    <section className="card overflow-hidden">
+    <section className="card">
       <div className="flex flex-wrap items-center gap-3 px-5 py-4">
         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: m.color }} />
         <div className="min-w-0 flex-1">
@@ -192,6 +194,7 @@ function ModuleRecall({
             {done === 0 ? 'Start' : done === list.length ? 'Go again' : 'Continue'}
           </button>
         )}
+        <ScopePicker moduleId={m.id} />
         <button className="btn-ghost px-1.5 text-xs" onClick={onHide} title="Skip this module today (and until you show it again)">
           Skip
         </button>
@@ -479,6 +482,72 @@ function PdfPage({ data, page }: { data: Uint8Array; page: number }): React.JSX.
   return (
     <div ref={wrap} className="flex justify-center">
       {failed ? <p className="text-sm text-muted">Couldn’t draw this page.</p> : <canvas ref={ref} className="rounded-sm shadow-sm" />}
+    </div>
+  )
+}
+
+/** Choose which weeks a module's active recall tests: everything, one week, or several. */
+function ScopePicker({ moduleId }: { moduleId: string }): React.JSX.Element {
+  const weeks = (useRows('weeks', { module_id: moduleId }, 'number') ?? []).slice().sort((a, b) => a.number - b.number)
+  const [scope, setLocal] = useState<string[] | null>(() => getScope(moduleId))
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [open])
+  const apply = (next: string[] | null): void => {
+    setScope(moduleId, next)
+    setLocal(next && next.length ? next : null)
+    resetToday(moduleId)
+    notifyChanged('recall_cards') // rebuild today's pages for the new selection
+  }
+  const toggle = (id: string): void => {
+    const cur = new Set(scope ?? [])
+    if (cur.has(id)) cur.delete(id)
+    else cur.add(id)
+    apply([...cur])
+  }
+  const label = !scope
+    ? 'All materials'
+    : scope.length === 1
+      ? scope[0] === 'none'
+        ? 'Not in a week'
+        : `Week ${weeks.find((w) => w.id === scope[0])?.number ?? '?'}`
+      : `${scope.length} weeks`
+  return (
+    <div className="relative" ref={ref}>
+      <button className="btn px-2.5 py-1 text-xs" onClick={() => setOpen((o) => !o)} title="Choose which weeks to test">
+        <Icon name="calendar" size={13} /> Testing: <span className="font-semibold">{label}</span>
+        <Icon name="chevron" size={11} className={`transition-transform ${open ? '-rotate-90' : 'rotate-90'}`} />
+      </button>
+      {open && (
+        <div className="card absolute right-0 z-30 mt-1 flex max-h-80 w-60 flex-col overflow-auto p-1.5 shadow-xl">
+          <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-line/40">
+            <input type="radio" checked={!scope} onChange={() => apply(null)} />
+            <span className="font-medium">All materials</span>
+          </label>
+          <div className="my-1 border-t border-line/70" />
+          {weeks.map((w) => (
+            <label key={w.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-line/40">
+              <input type="checkbox" checked={!!scope?.includes(w.id)} onChange={() => toggle(w.id)} />
+              <span className="truncate">
+                Week {w.number}
+                {w.title ? ` · ${w.title}` : ''}
+              </span>
+            </label>
+          ))}
+          <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-line/40">
+            <input type="checkbox" checked={!!scope?.includes('none')} onChange={() => toggle('none')} />
+            <span className="text-muted">Not in a week</span>
+          </label>
+          <p className="px-2 pt-1 pb-0.5 text-[11px] text-muted">Pick one week before a quiz, several before a test, or all of them for revision.</p>
+        </div>
+      )}
     </div>
   )
 }

@@ -6,8 +6,8 @@ import type { Moment, Person, Plan } from '@shared/types'
 import { AutoText } from './AutoField'
 import { Icon } from './ui'
 import { PhotoTray, Polaroids } from './Scrapbook'
-import { photoSrc } from '@/lib/photos'
-import { db, useRows } from '@/lib/data'
+import { addPhotos, pastedImages, photoSrc } from '@/lib/photos'
+import { db, track, useRows } from '@/lib/data'
 import { localDate } from '@/lib/dates'
 import { DECKS, FACT_CATEGORIES, IDEAS, IDEA_CATEGORIES, QUESTIONS, type Idea, type IdeaCategory, type QuestionDeck } from '@/lib/peopleContent'
 
@@ -143,13 +143,24 @@ export function MomentsPanel({ person, kind = 'memory', title = 'Memories' }: { 
       {moments.map((m) => {
         const pics = photos.filter((p) => p.parent_id === m.id)
         return editing === m.id ? (
-          <div key={m.id} className="flex flex-col gap-3 rounded-lg border border-brass/50 bg-panel p-4">
+          <div
+            key={m.id}
+            className="flex flex-col gap-3 rounded-lg border border-brass/50 bg-panel p-4"
+            onPaste={(e) => {
+              // Paste a copied picture or screenshot anywhere while writing this page.
+              const files = kind === 'memory' ? pastedImages(e) : []
+              if (!files.length) return
+              e.preventDefault()
+              void track(addPhotos(files, 'moments', m.id, pics.length))
+            }}
+          >
             <div className="flex flex-wrap items-center gap-2">
               <input type="date" className="field-boxed w-auto py-1 text-sm" value={m.date} onChange={(e) => e.target.value && void db.update('moments', m.id, { date: e.target.value })} />
               <AutoText value={m.title} onSave={(v) => db.update('moments', m.id, { title: v })} placeholder="What did you do?" className="field-boxed font-display min-w-0 flex-1 text-lg" autoFocus />
             </div>
             <AutoText value={m.place} onSave={(v) => db.update('moments', m.id, { place: v })} placeholder="📍 Where" className="field-boxed text-sm" />
             {kind === 'memory' && <PhotoTray photos={pics} parentTable="moments" onNeedParent={async () => m.id} />}
+            {kind === 'memory' && <p className="-mt-1 text-[11px] text-muted">Tip: copy a photo anywhere and press Ctrl+V here to add it.</p>}
             <AutoText multiline rows={4} value={m.story} onSave={(v) => db.update('moments', m.id, { story: v })} placeholder="The story — what happened, what was funny, what you want to remember." className="field-boxed text-sm leading-relaxed" />
             <div className="flex items-center gap-2">
               {kind === 'memory' && (

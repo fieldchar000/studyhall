@@ -7,7 +7,8 @@ import type { JournalDetails, JournalEntry, Photo } from '@shared/types'
 import { AutoNumber, AutoText } from '@/components/AutoField'
 import { Icon } from '@/components/ui'
 import { PhotoTray, Polaroids } from '@/components/Scrapbook'
-import { api, db, useLive, useRows } from '@/lib/data'
+import { api, db, track, useLive, useRows } from '@/lib/data'
+import { addPhotos, pastedImages } from '@/lib/photos'
 import { addDays, localDate } from '@/lib/dates'
 
 export const MOODS = [
@@ -221,7 +222,16 @@ function DayEditor({ date, entry: e, photos, onDone }: { date: string; entry?: J
   const gratitude = (e?.gratitude ?? '').split('\n')
   const prompt = PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length]
   return (
-    <article className="card flex flex-col gap-5 border-brass/50 px-7 py-6">
+    <article
+      className="card flex flex-col gap-5 border-brass/50 px-7 py-6"
+      onPaste={(e) => {
+        // Paste a copied picture or screenshot anywhere on the page.
+        const files = pastedImages(e)
+        if (!files.length) return
+        e.preventDefault()
+        void withDay(date, {}).then((x) => track(addPhotos(files, 'journal_entries', x.id, photos.length)))
+      }}
+    >
       <div className="flex items-start gap-2">
         <div className="flex-1">
           <div className="label-caps">{date === today ? 'Today' : weekday(date)}</div>

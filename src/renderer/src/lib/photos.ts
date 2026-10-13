@@ -32,3 +32,13 @@ export async function addPhotos(files: File[], parent_table: Photo['parent_table
   }
   return n
 }
+
+/** Pictures in a paste (Ctrl+V of a copied image or screenshot). */
+export function pastedImages(e: React.ClipboardEvent | ClipboardEvent): File[] {
+  const items = [...(e.clipboardData?.items ?? [])]
+  return items
+    .filter((i) => i.kind === 'file' && i.type.startsWith('image/'))
+    .map((i) => i.getAsFile())
+    .filter((f): f is File => !!f)
+    .map((f) => (f.name && f.name !== 'image.png' ? f : new File([f], `pasted-${Date.now()}.${f.type.split('/')[1] || 'png'}`, { type: f.type })))
+}
