@@ -1,11 +1,12 @@
 // Shared pieces for People and Partner: avatars, countdowns, the "little details" lists,
 // memories with photos, plans, the Singapore ideas browser and conversation questions.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Moment, Person, Plan } from '@shared/types'
 import { AutoText } from './AutoField'
 import { Icon } from './ui'
 import { PhotoTray, Polaroids } from './Scrapbook'
+import { photoSrc } from '@/lib/photos'
 import { db, useRows } from '@/lib/data'
 import { localDate } from '@/lib/dates'
 import { DECKS, FACT_CATEGORIES, IDEAS, IDEA_CATEGORIES, QUESTIONS, type Idea, type IdeaCategory, type QuestionDeck } from '@/lib/peopleContent'
@@ -116,19 +117,29 @@ export function MomentsPanel({ person, kind = 'memory', title = 'Memories' }: { 
   const moments = (useRows('moments', where, 'date') ?? []).slice().reverse()
   const photos = useRows('photos', { parent_table: 'moments' }, 'sort') ?? []
   const [editing, setEditing] = useState<string | null>(null)
+  const today = localDate(new Date())
   const add = async (): Promise<void> => {
-    const m = await db.create('moments', { person_id: person?.id ?? null, kind, date: localDate(new Date()), title: '' })
+    const existing = kind === 'memory' ? moments.find((m) => m.date === today) : undefined
+    const m = existing ?? (await db.create('moments', { person_id: person?.id ?? null, kind, date: today, title: '' }))
     setEditing(m.id)
   }
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center">
-        <h3 className="flex-1 text-lg">{title}</h3>
-        <button className="btn" onClick={() => void add()}>
-          <Icon name="plus" /> Add {kind === 'memory' ? 'a memory' : 'one'}
+    <div className="flex flex-col gap-5">
+      <div className="flex items-end gap-3">
+        <div className="flex-1">
+          <h3 className="text-2xl">{title}</h3>
+          {kind === 'memory' && <p className="text-sm text-muted">What you did together — photos and the story behind them. Any day can be filled in later.</p>}
+        </div>
+        <button className="btn-primary" onClick={() => void add()}>
+          <Icon name={kind === 'memory' ? 'camera' : 'plus'} /> {kind === 'memory' ? 'Write today’s page' : 'Add one'}
         </button>
       </div>
-      {!moments.length && <p className="text-sm text-muted">{kind === 'memory' ? 'Things you did together — with photos and the story — collect here.' : 'Nothing yet.'}</p>}
+      {!moments.length && (
+        <div className="card flex flex-col items-center gap-2 border-dashed px-6 py-10 text-center">
+          <Icon name="photos" size={30} className="text-brass" />
+          <p className="max-w-sm text-sm text-muted">{kind === 'memory' ? 'Your scrapbook starts here: add a photo from today and a few lines about what you did.' : 'Nothing yet.'}</p>
+        </div>
+      )}
       {moments.map((m) => {
         const pics = photos.filter((p) => p.parent_id === m.id)
         return editing === m.id ? (
@@ -159,18 +170,19 @@ export function MomentsPanel({ person, kind = 'memory', title = 'Memories' }: { 
             </div>
           </div>
         ) : (
-          <article key={m.id} className="group relative rounded-lg border border-line bg-panel px-5 py-4">
+          <article key={m.id} className="scrap-page group relative px-7 py-6">
             <div className="flex items-baseline gap-2">
-              <span className="label-caps">{new Date(m.date + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-              {m.place && <span className="text-xs text-muted">· {m.place}</span>}
+              <span className="label-caps">{new Date(m.date + 'T00:00').toLocaleDateString(undefined, { weekday: 'long' })}</span>
+              <span className="font-display text-[15px] text-muted">{new Date(m.date + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</span>
               {m.rating ? <span className="text-xs text-brass">{'★'.repeat(m.rating)}</span> : null}
               <button className="btn-ghost ml-auto hidden text-xs group-hover:inline-flex" onClick={() => setEditing(m.id)}>
                 <Icon name="pencil" size={13} /> Edit
               </button>
             </div>
-            {m.title && <h4 className="font-display mt-0.5 text-xl font-semibold">{m.title}</h4>}
-            <Polaroids photos={pics} size={150} />
-            {m.story && <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap text-ink/90">{m.story}</p>}
+            {m.title && <h4 className="font-display mt-1 text-2xl italic">{m.title}</h4>}
+            {m.place && <div className="mt-0.5 text-xs text-muted">📍 {m.place}</div>}
+            <Polaroids photos={pics} size={170} />
+            {m.story && <p className={`mt-2 text-[15px] leading-relaxed whitespace-pre-wrap ${kind === 'memory' ? 'dropcap' : ''}`}>{m.story}</p>}
           </article>
         )
       })}
@@ -407,5 +419,70 @@ export function QuestionsCard({ decks, title = 'Something to ask' }: { decks: Qu
         </button>
       </div>
     </div>
+  )
+}
+
+// ---------- Scrapbook slideshow ----------
+
+/** The couple's journal as a slowly turning scrapbook: a new page every 5 seconds (pauses on hover). */
+export function ScrapbookCarousel({ person, onOpen }: { person: Person; onOpen: () => void }): React.JSX.Element {
+  const moments = (useRows('moments', { person_id: person.id, kind: 'memory' }, 'date') ?? []).slice().reverse()
+  const photos = useRows('photos', { parent_table: 'moments' }, 'sort') ?? []
+  const pages = moments.filter((m) => m.story || m.title || photos.some((p) => p.parent_id === m.id)).slice(0, 30)
+  const [i, setI] = useState(0)
+  const [paused, setPaused] = useState(false)
+  useEffect(() => {
+    if (paused || pages.length < 2) return
+    const t = setInterval(() => setI((x) => (x + 1) % pages.length), 5000)
+    return () => clearInterval(t)
+  }, [paused, pages.length])
+  if (!pages.length) {
+    return (
+      <button className="scrap-page flex w-full items-center gap-4 px-7 py-6 text-left" onClick={onOpen}>
+        <Icon name="photos" size={30} className="text-brass" />
+        <span>
+          <span className="font-display block text-2xl">Start your scrapbook</span>
+          <span className="text-sm text-muted">Add a photo and a few lines about what you did together — it will play here.</span>
+        </span>
+      </button>
+    )
+  }
+  const m = pages[i % pages.length]
+  const pics = photos.filter((p) => p.parent_id === m.id).slice(0, 2)
+  return (
+    <section className="scrap-page relative overflow-hidden px-7 py-6" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+      <div key={m.id} className="scrap-turn grid items-center gap-6 md:grid-cols-[auto_minmax(0,1fr)]">
+        {pics.length > 0 && (
+          <button className="relative h-56 w-56 shrink-0" onClick={onOpen} title="Open our journal">
+            {pics.map((p, k) => (
+              <span
+                key={p.id}
+                className="polaroid absolute block w-44"
+                style={{ left: k * 34, top: k * 18, transform: `rotate(${k ? 4 : -3}deg)` }}
+              >
+                <span className="polaroid-tape" aria-hidden />
+                <img src={photoSrc(p)} alt={p.caption} className="aspect-[4/5] w-full object-cover" />
+                <span className="font-display block truncate px-1 pt-1 text-center text-sm italic">{p.caption || ' '}</span>
+              </span>
+            ))}
+          </button>
+        )}
+        <button className="min-w-0 text-left" onClick={onOpen}>
+          <div className="label-caps">
+            {new Date(m.date + 'T00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </div>
+          {m.title && <div className="font-display mt-1 text-3xl leading-tight italic">{m.title}</div>}
+          {m.place && <div className="mt-1 text-xs text-muted">📍 {m.place}</div>}
+          {m.story && <p className="mt-3 line-clamp-5 text-[15px] leading-relaxed">{m.story}</p>}
+        </button>
+      </div>
+      {pages.length > 1 && (
+        <div className="mt-4 flex items-center justify-center gap-1.5">
+          {pages.map((p, k) => (
+            <button key={p.id} className={`h-1.5 rounded-full transition-all ${k === i % pages.length ? 'w-6 bg-brass' : 'w-1.5 bg-line hover:bg-muted'}`} onClick={() => setI(k)} title={p.title || p.date} />
+          ))}
+        </div>
+      )}
+    </section>
   )
 }

@@ -56,6 +56,57 @@ const words = (s: string, n: number): string => {
 }
 const sanitize = (html: string): string => generateHTML(generateJSON(html, NOTE_EXTENSIONS), NOTE_EXTENSIONS)
 
+// ---------- Cleaning: classification banners, headers/footers, page numbers ----------
+
+/** Lines that are document furniture, not content ("Official (Closed) – Non-Sensitive", "Page 3 of 20", "© 2025 …"). */
+const MARKING_WORDS = new Set(['official', 'restricted', 'confidential', 'unclassified', 'secret', 'open', 'closed', 'non', 'sensitive', 'nonsensitive', 'normal', 'high', 'internal', 'use', 'only', 'for', 'cloud', 'eligible', 'limited', 'distribution'])
+const MARKING_KEYS = /official|restricted|confidential|unclassified|secret|sensitive/i
+
+export function isBoilerplate(line: string): boolean {
+  const s = line.replace(/\s+/g, ' ').trim()
+  if (!s) return true
+  // A security classification banner: made up only of marking words, e.g. "Official (Closed) \ Non-Sensitive".
+  const wordsIn = s.toLowerCase().match(/\p{L}+/gu) ?? []
+  if (s.length <= 70 && wordsIn.length > 0 && MARKING_KEYS.test(s) && wordsIn.every((w) => MARKING_WORDS.has(w))) return true
+  if (s.length <= 80 && /(for internal use|internal use only|all rights reserved|do not (distribute|circulate)|^©|^copyright\b)/i.test(s)) return true
+  if (/^(page|slide|p\.)?\s*\d{1,4}(\s*(of|\/)\s*\d{1,4})?$/i.test(s)) return true
+  return false
+}
+
+/** Lines that repeat at the top or bottom of most pages (running headers and footers). */
+function repeatedLines(pages: string[][]): Set<string> {
+  const out = new Set<string>()
+  if (pages.length < 4) return out
+  const norm = (l: string): string => l.toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ').trim()
+  const counts = new Map<string, number>()
+  for (const lines of pages) {
+    const edge = new Set([...lines.slice(0, 3), ...lines.slice(-3)].map(norm))
+    for (const l of edge) if (l) counts.set(l, (counts.get(l) ?? 0) + 1)
+  }
+  for (const [l, n] of counts) if (n >= Math.max(3, pages.length * 0.4)) out.add(l)
+  return out
+}
+
+/** The best short title for a page: its first real heading-like line. */
+function cueFrom(lines: string[], fallback: string): string {
+  const heading = lines.find((l) => l.length >= 3 && l.length <= 90 && !/[.;:,]$/.test(l) && /\p{L}/u.test(l))
+  return heading ?? (lines[0] ? words(lines[0], 12) : fallback)
+}
+
+/** PDF page texts with banners, running headers/footers and page numbers removed. */
+export function cleanPdfPages(pages: string[]): { cue: string; text: string }[] {
+  const split = pages.map((p) => p.split('\n').map((l) => l.trim()).filter(Boolean))
+  const repeated = repeatedLines(split)
+  const norm = (l: string): string => l.toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ').trim()
+  return split.map((lines, i) => {
+    const kept = lines.filter((l) => !isBoilerplate(l) && !repeated.has(norm(l)))
+    return { cue: cueFrom(kept, `Page ${i + 1}`), text: kept.join('\n') }
+  })
+}
+
+/** A page worth recalling: some real content left after cleaning. */
+const MIN_CONTENT = 40
+
 /** Split HTML into sections at headings; long sections are cut into readable pieces. */
 export function splitHtml(html: string): RecallPage[] {
   const body = new DOMParser().parseFromString(html, 'text/html').body
@@ -70,6 +121,8 @@ export function splitHtml(html: string): RecallPage[] {
     parts = []
   }
   for (const el of Array.from(body.children)) {
+    // Skip classification banners, page numbers and similar furniture.
+    if (!el.querySelector('img') && el.tagName !== 'IMG' && isBoilerplate(el.textContent ?? '')) continue
     if (/^H[1-3]$/.test(el.tagName)) {
       flush()
       cue = (el.textContent ?? '').trim().slice(0, 140)
@@ -106,7 +159,7 @@ export function sourcePages(src: Source): Promise<RecallPage[]> {
       if (!doc) return []
       if (doc.ext === 'pdf') {
         const { pages } = await pdfText(doc.data)
-        return pages.map((text, i) => ({ cue: words(text.split('\n')[0] ?? '', 12) || `Page ${i + 1}`, html: '', text, pdf: { data: doc.data, page: i + 1 } }))
+        return cleanPdfPages(pages).map((p, i) => ({ cue: p.cue, html: '', text: p.text, pdf: { data: doc.data, page: i + 1 } }))
       }
       const { html } = await docToHtml(doc, true)
       return splitHtml(sanitize(html))
@@ -118,18 +171,19 @@ export function sourcePages(src: Source): Promise<RecallPage[]> {
 }
 
 /** How many pages a source has (remembered between days so it is only worked out once). */
-async function pageCount(src: Source): Promise<number> {
-  const key = `recall.count.${src.row.id}.${src.row.updated_at}`
-  const known = store.get<number>(key)
-  if (known != null) return known
-  const n = (
-    await sourcePages(src).catch((e) => {
-      console.warn('Active recall could not read', src.row.id, e)
-      return []
-    })
-  ).length
-  if (n > 0) store.set(key, n)
-  return n
+/** Which pages of a source are worth recalling (title slides and blank pages are skipped).
+ *  Remembered between days so each file is only read once. */
+async function usablePages(src: Source): Promise<number[]> {
+  const key = `recall.usable.${src.row.id}.${src.row.updated_at}`
+  const known = store.get<number[]>(key)
+  if (known) return known
+  const pages = await sourcePages(src).catch((e) => {
+    console.warn('Active recall could not read', src.row.id, e)
+    return [] as RecallPage[]
+  })
+  const usable = pages.map((p, i) => (p.text.replace(/\s+/g, ' ').trim().length >= MIN_CONTENT || /<img/i.test(p.html) ? i : -1)).filter((i) => i >= 0)
+  if (pages.length) store.set(key, usable)
+  return usable
 }
 
 async function sourcesOf(moduleId: string): Promise<Source[]> {
@@ -198,9 +252,9 @@ export function todaysCards(moduleId: string): Promise<RecallCard[]> {
         const used = new Set(cards.map((c) => `${c.source_id}:${c.locator}`))
         const queues: { src: Source; pages: number[] }[] = []
         for (const src of shuffle(await sourcesOf(moduleId), day + moduleId)) {
-          const n = await pageCount(src)
+          const usable = await usablePages(src)
           const free = shuffle(
-            Array.from({ length: n }, (_, i) => i).filter((i) => !used.has(`${src.row.id}:${i}`)),
+            usable.filter((i) => !used.has(`${src.row.id}:${i}`)),
             day + src.row.id
           )
           if (free.length) queues.push({ src, pages: free })
@@ -211,13 +265,14 @@ export function todaysCards(moduleId: string): Promise<RecallCard[]> {
             if (locator == null || picked.length >= want) continue
             const isPdf = q.src.table === 'materials' && /\.pdf$/i.test(q.src.row.file_name)
             const title = q.src.table === 'notes' ? q.src.row.title || 'Untitled note' : q.src.row.title
+            const cue = (await sourcePages(q.src).catch(() => []))[locator]?.cue
             picked.push(
               await db.create('recall_cards', {
                 module_id: moduleId,
                 source_table: q.src.table,
                 source_id: q.src.row.id,
                 locator,
-                label: `${title} · ${isPdf ? 'page' : 'part'} ${locator + 1}`,
+                label: `${cue ? `${cue} — ` : ''}${title}, ${isPdf ? 'p.' : 'part'} ${locator + 1}`,
                 box: 0,
                 due_on: day
               })

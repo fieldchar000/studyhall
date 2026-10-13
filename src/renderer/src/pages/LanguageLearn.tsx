@@ -6,6 +6,9 @@ import type { Flashcard, Language, LangItem } from '@shared/types'
 import { Icon } from '@/components/ui'
 import { api, db, useLive } from '@/lib/data'
 import { COURSES, type Course, type Entry } from '@/lib/langContent'
+import { TIERS, TIER_LABELS, tierFor, type Tier, type TierId } from '@/lib/langTiers'
+
+const TIER_ORDER: TierId[] = ['A1', 'A2', 'B1', 'B2', 'C1']
 
 // ---------- Speech ----------
 
@@ -83,12 +86,21 @@ export function LanguageLearn({ l, ensureDeck }: { l: Language; ensureDeck: (l: 
   const progress = useProgress(l.id)
   const deck = useLive(['flashcards'], async () => (l.deck_id ? api.list('flashcards', { deck_id: l.deck_id }) : []), [l.deck_id]).data ?? []
 
+  // Content by level: the beginner course plus the A2–C1 packs. Practice covers everything up to your level.
+  const tiers: Tier[] = course ? [{ id: 'A1', label: TIER_LABELS.A1, phrases: course.phrases, vocab: course.vocab, lessons: course.lessons }, ...(TIERS[l.code] ?? [])] : []
+  const mine = tierFor(l.level)
+  const [tierId, setTierId] = useState<TierId>(mine)
+  const tier = tiers.find((t) => t.id === tierId) ?? tiers[0]
+  const shown: Course | undefined = course && tier ? { ...course, phrases: tier.phrases, vocab: tier.vocab, lessons: tier.lessons } : course
+  const upTo = tiers.filter((t) => TIER_ORDER.indexOf(t.id) <= TIER_ORDER.indexOf(mine))
+  const practiceCourse: Course | undefined = course ? { ...course, phrases: upTo.flatMap((t) => t.phrases), vocab: upTo.flatMap((t) => t.vocab), lessons: upTo.flatMap((t) => t.lessons) } : course
+
   const tabs: [Tab, string][] = course
     ? [
         ['practice', '🎯 Practice'],
         ['script', l.code === 'ja' ? 'あ Kana' : l.code === 'zh' ? '声 Tones & radicals' : '🔤 Sounds'],
         ['phrases', '💬 Phrasebook'],
-        ['words', '🧠 Starter words'],
+        ['words', '🧠 Words'],
         ['grammar', '🧩 Grammar']
       ]
     : [['practice', '🎯 Practice']]
@@ -103,11 +115,27 @@ export function LanguageLearn({ l, ensureDeck }: { l: Language; ensureDeck: (l: 
         ))}
       </div>
       {!voice && course && <NoVoiceHint name={l.name} />}
-      {tab === 'practice' && <Practice l={l} course={course} voice={voice} progress={progress} deck={deck} />}
+      {course && tiers.length > 1 && ['phrases', 'words', 'grammar'].includes(tab) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs text-muted">Level</span>
+          {tiers.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTierId(t.id)}
+              className={`rounded-full border px-3 py-1 text-xs transition-colors ${tierId === t.id ? 'border-accent bg-accent text-on-accent' : 'border-line text-muted hover:text-ink'}`}
+              title={t.id === mine ? 'Your level' : undefined}
+            >
+              <span className="font-semibold">{t.id}</span> {t.label}
+              {t.id === mine && <span className="ml-1 opacity-70">· you</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {tab === 'practice' && <Practice l={l} course={practiceCourse} voice={voice} progress={progress} deck={deck} />}
       {course && tab === 'script' && <Scripts course={course} voice={voice} progress={progress.items} />}
-      {course && tab === 'phrases' && <Phrases course={course} voice={voice} />}
-      {course && tab === 'words' && <Words l={l} course={course} voice={voice} deck={deck} ensureDeck={ensureDeck} />}
-      {course && tab === 'grammar' && <Grammar course={course} voice={voice} />}
+      {shown && tab === 'phrases' && <Phrases key={tierId} course={shown} voice={voice} />}
+      {shown && tab === 'words' && <Words key={tierId} l={l} course={shown} voice={voice} deck={deck} ensureDeck={ensureDeck} />}
+      {shown && tab === 'grammar' && <Grammar key={tierId} course={shown} voice={voice} />}
     </section>
   )
 }

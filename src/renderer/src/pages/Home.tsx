@@ -48,9 +48,7 @@ export function HomePage(): React.JSX.Element {
               <Top3Panel />
               <PlanPanel />
             </div>
-            <section className="card p-4">
-              <CalendarView />
-            </section>
+            <ResizableCalendar />
           </div>
           <div className="flex flex-col gap-5">
             <ExamCountdownPanel />
@@ -92,14 +90,14 @@ function Greeting(): React.JSX.Element {
       ].filter(Boolean)
     : []
   return (
-    <header className="flex flex-wrap items-end gap-3">
+    <header className="masthead flex flex-wrap items-end gap-3">
       <div className="mr-auto">
         <div className="label-caps">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
         <h1 className="text-3xl">
           {hello}
           {name ? `, ${name}` : ''}.
         </h1>
-        <p className="mt-0.5 text-sm text-muted">{bits.length ? `${bits.join(' · ')}.` : ' '}</p>
+        <p className="mt-0.5 text-sm text-muted">{bits.length ? `${bits.join(' · ').replace(/^./, (c) => c.toUpperCase())}.` : ' '}</p>
       </div>
       <button className="btn" onClick={() => navigate({ name: 'focus' })}>
         <Icon name="focus" /> Focus
@@ -120,7 +118,7 @@ function RecallHomeCard(): React.JSX.Element | null {
   const all = rows.flatMap((r) => r.cards)
   const done = all.filter(doneToday).length
   return (
-    <section className="card overflow-hidden">
+    <section className="card-feature on-dark overflow-hidden">
       <div className="flex items-center gap-3 px-5 pt-4 pb-3">
         <Icon name="recall" size={22} className="text-brass" />
         <div className="flex-1">
@@ -152,6 +150,79 @@ function RecallHomeCard(): React.JSX.Element | null {
           })}
         </div>
       )}
+    </section>
+  )
+}
+
+/** The calendar card, with a handle at the bottom to drag it taller or shorter (remembered on this PC). */
+function ResizableCalendar(): React.JSX.Element {
+  const KEY = 'home.calendarHeight'
+  const [height, setHeight] = useState(() => {
+    try {
+      return Number(localStorage.getItem(KEY)) || 340
+    } catch {
+      return 340
+    }
+  })
+  const save = (h: number): void => {
+    try {
+      localStorage.setItem(KEY, String(h))
+    } catch {
+      /* optional */
+    }
+  }
+  const startDrag = (e: React.PointerEvent): void => {
+    e.preventDefault()
+    const startY = e.clientY
+    const startH = height
+    let h = startH
+    const move = (ev: PointerEvent): void => {
+      h = Math.min(1100, Math.max(220, startH + ev.clientY - startY))
+      setHeight(h)
+    }
+    const up = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      save(h)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  const preset = (h: number): void => {
+    setHeight(h)
+    save(h)
+  }
+  return (
+    <section className="card relative p-4 pb-5">
+      <div style={{ height }}>
+        <CalendarView />
+      </div>
+      <div
+        className="group absolute inset-x-0 bottom-0 flex h-4 cursor-ns-resize items-center justify-center"
+        onPointerDown={startDrag}
+        onDoubleClick={() => preset(340)}
+        title="Drag to resize · double-click to reset"
+      >
+        <span className="h-1 w-12 rounded-full bg-line transition-colors group-hover:bg-brass" />
+      </div>
+      <div className="absolute right-3 bottom-0 flex translate-y-1/2 gap-1 rounded-full border border-line bg-panel px-1 py-0.5 text-[10px] text-muted shadow-sm">
+        {(
+          [
+            ['S', 260],
+            ['M', 420],
+            ['L', 680]
+          ] as [string, number][]
+        ).map(([l, h]) => (
+          <button
+            key={l}
+            className={`rounded-full px-1.5 ${Math.abs(height - h) < 20 ? 'bg-accent-soft text-accent' : 'hover:text-ink'}`}
+            onClick={() => preset(h)}
+            title={`Calendar size ${l}`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
     </section>
   )
 }
@@ -412,15 +483,16 @@ function CalendarView(): React.JSX.Element {
   }
 
   return (
-    <div className="home-cal">
+    <div className="home-cal h-full">
       <FullCalendar
         ref={ref}
         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
         initialView="dayGridWeek"
-        headerToolbar={{ left: 'title', center: '', right: 'prev,today,next dayGridWeek,dayGridMonth,timeGridDay' }}
-        buttonText={{ today: 'Today', day: 'Day', week: 'Week', month: 'Month' }}
+        headerToolbar={{ left: 'title', center: '', right: 'prev,today,next dayGridWeek,timeGridWeek,dayGridMonth,timeGridDay' }}
+        views={{ dayGridWeek: { buttonText: 'Week' }, timeGridWeek: { buttonText: 'Hours' } }}
+        buttonText={{ today: 'Today', day: 'Day', month: 'Month' }}
         titleFormat={{ month: 'long', day: 'numeric' }}
-        height="auto"
+        height="100%"
         dayHeaderFormat={{ weekday: 'short', day: 'numeric' }}
         firstDay={1}
         nowIndicator

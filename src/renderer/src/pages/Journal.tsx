@@ -108,7 +108,7 @@ export function JournalPage(): React.JSX.Element {
     <div className="h-full overflow-auto">
       <div className="mx-auto grid max-w-6xl gap-6 px-8 py-7 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="flex min-w-0 flex-col gap-6">
-          <header className="flex flex-wrap items-end gap-3">
+          <header className="masthead flex flex-wrap items-end gap-3">
             <div className="mr-auto">
               <div className="label-caps">Life · scrapbook</div>
               <h1 className="text-3xl">Daily journal</h1>

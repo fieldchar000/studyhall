@@ -195,7 +195,8 @@ export const IDEAS: Idea[] = [
 
 // ---------- Conversation questions ----------
 
-export type QuestionDeck = 'light' | 'deep' | 'us' | 'future' | 'memories' | 'rather' | 'friends'
+export type QuestionDeck = 'light' | 'deep' | 'us' | 'future' | 'memories' | 'rather' | 'friends' | CoupleDeck
+export type CoupleDeck = 'deeper' | 'ourstory' | 'growing' | 'closeness' | 'checkin' | 'playful'
 
 export const DECKS: Record<QuestionDeck, string> = {
   light: 'Light & fun',
@@ -204,10 +205,138 @@ export const DECKS: Record<QuestionDeck, string> = {
   future: 'Dreams & future',
   memories: 'Memories',
   rather: 'Would you rather',
-  friends: 'Friends'
+  friends: 'Friends',
+  deeper: 'Deeper',
+  ourstory: 'Our story',
+  growing: 'Building a life',
+  closeness: 'Closeness',
+  checkin: 'Honest check-in',
+  playful: 'Playful'
+}
+
+/** For couples who already know each other well — past the getting-to-know-you stage. */
+export const COUPLE_DECKS: CoupleDeck[] = ['deeper', 'ourstory', 'growing', 'closeness', 'checkin', 'playful']
+
+const COUPLE_QUESTIONS: Record<CoupleDeck, string[]> = {
+  deeper: [
+    'What’s something about your childhood you’ve never fully explained to me?',
+    'When did you last feel lonely in our relationship, even a little?',
+    'What part of yourself do you still keep from me — and why?',
+    'What do you believe now that you didn’t believe when we met?',
+    'Which of my habits have you quietly adapted to without saying anything?',
+    'When you’re at your lowest, what do you need from me that I sometimes get wrong?',
+    'What’s a fear about us you’ve never said out loud?',
+    'When do you feel most respected by me?',
+    'What did I do in our first year that still means a lot to you?',
+    'What do you think I still misunderstand about you?',
+    'Is there a dream you’ve quietly let go of? Should we bring it back?',
+    'How have I changed you — for better and for worse?',
+    'What do you wish I asked you about more often?',
+    'When have you been proudest of me?',
+    'What part of our relationship feels most “ours” — something no one else has?',
+    'Is there anything you’ve forgiven me for that we’ve never really talked about?',
+    'What do you think we avoid talking about?',
+    'Which patterns from your family do you see showing up in us?',
+    'What would make you feel more chosen by me?',
+    'What’s something you’re working through right now that I might not see?'
+  ],
+  ourstory: [
+    'What do you remember most clearly about the day we met?',
+    'When did you know this was more than a crush?',
+    'What was going through your head on our first date?',
+    'Which argument taught us the most?',
+    'What’s a small moment from this past year you keep thinking about?',
+    'When did you first feel completely yourself around me?',
+    'What’s our best inside joke — and do you remember how it started?',
+    'What’s the hardest thing we’ve been through together, and what got us through it?',
+    'Which date would you relive exactly as it was?',
+    'What did you think of my friends and family when you first met them?',
+    'What have you learned about me only in the last six months?',
+    'When did you feel most taken care of by me?',
+    'Which place in Singapore feels most like “ours”?',
+    'How would you tell the story of us to a stranger?',
+    'What surprised you most about being with me?',
+    'If you could visit one version of us for a day — first month, first year, now — which would it be?',
+    'What’s a photo of us that says the most about our relationship?',
+    'What’s something we used to do that we’ve stopped — and should we bring it back?'
+  ],
+  growing: [
+    'Where do you picture us in five years — and what does an ordinary Tuesday look like there?',
+    'How do you honestly feel about the way we handle money?',
+    'What big decisions are coming up for us in the next two years?',
+    'When we live together, how should we split chores and life admin?',
+    'What do you want our home to feel like when people walk in?',
+    'What does marriage mean to you — not just whether, but what?',
+    'How do you feel about having children, and when would it feel right?',
+    'What would we do if one of us got a great job overseas?',
+    'How involved do you want our families to be in our life?',
+    'Which traditions from your family do you want us to keep?',
+    'What would a really good year for us look like?',
+    'How much time apart do we each need to feel like ourselves?',
+    'What should we be saving up for together?',
+    'How do we keep growing as individuals and not just as a couple?',
+    'If we had a really hard year, what would you want us to do differently from last time?',
+    'How do you want to mark our milestones?',
+    'Which couple do you look up to, and what do they do well?',
+    'What does commitment mean to you now, compared with when we started?',
+    'BTO, resale, renting, or somewhere else entirely — what are you hoping for?',
+    'What’s a trip we have to take together before life gets busier?'
+  ],
+  closeness: [
+    'How do you most like to be shown affection on a busy day?',
+    'What’s something small I do that makes you feel wanted?',
+    'When do you feel closest to me — talking, touch, or just being in the same room?',
+    'What’s a compliment from me you still remember?',
+    'Is there a kind of affection you’d like more of?',
+    'When do you feel most attractive?',
+    'What’s your favourite way to spend a slow evening with me?',
+    'How do you like to reconnect after we’ve been apart for a few days?',
+    'What’s something romantic you’ve always wanted to do but never asked for?',
+    'What makes you feel safe enough to be completely yourself with me?',
+    'How can you tell when I’m really listening?',
+    'What gesture would mean a lot to you but cost nothing?',
+    'When did you last get butterflies around me?',
+    'What’s your favourite part of our everyday routines?',
+    'What does a perfect lazy morning together look like?'
+  ],
+  checkin: [
+    'Out of 10, how connected do you feel to me this month — and what would make it one point higher?',
+    'Did I do something recently that hurt and you brushed it off?',
+    'Are we spending our time together on the right things?',
+    'What’s one thing I could stop doing?',
+    'What’s one thing I could start doing?',
+    'Do you feel heard when we disagree?',
+    'Is there a conversation you’ve been putting off?',
+    'Are you getting enough time for yourself?',
+    'How are you really doing — work or school, family, health?',
+    'Is stress from outside our relationship leaking into it?',
+    'Have we been having enough fun lately?',
+    'Is there something you need more reassurance about?',
+    'How could we argue more fairly next time?',
+    'What’s something you appreciated about how I handled something recently?',
+    'What are we looking forward to together?'
+  ],
+  playful: [
+    'What’s my most predictable habit? Do an impression.',
+    'If we swapped lives for a day, what would you do first as me?',
+    'What would our couple name be on a reality show — and what would we be famous for?',
+    'What’s the most “us” thing that has ever happened?',
+    'Rank our dates: top three, and the most chaotic one.',
+    'What would I order at a hawker centre if you weren’t there to stop me?',
+    'If we started a podcast, what would it be called?',
+    'What’s a hill I would die on that you think is ridiculous?',
+    'What do I say so often you could finish the sentence?',
+    'What would your toast at our 50th anniversary sound like?',
+    'If our relationship were a film, what genre is it — and who plays us?',
+    'What would you steal from my wardrobe?',
+    'Which animal am I when I’m hungry?',
+    'What’s the most romantic thing about our most boring routine?',
+    'What’s one thing I do that you’ve secretly started doing too?'
+  ]
 }
 
 export const QUESTIONS: Record<QuestionDeck, string[]> = {
+  ...COUPLE_QUESTIONS,
   light: [
     'What’s a food you could eat every day for a month?',
     'Which hawker dish would you take to a desert island?',

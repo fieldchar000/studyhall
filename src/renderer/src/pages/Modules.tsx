@@ -64,7 +64,7 @@ export function ModulesPage(): React.JSX.Element {
 
   return (
     <div className="mx-auto max-w-6xl px-8 py-7">
-      <header className="mb-6 flex flex-wrap items-end gap-3">
+      <header className="masthead mb-6 flex flex-wrap items-end gap-3">
         <div className="mr-auto">
           <div className="label-caps">Study</div>
           <h1 className="text-3xl">Modules</h1>

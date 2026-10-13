@@ -625,3 +625,87 @@ main h1.text-2xl {
 }
 
 
+
+/* A scrapbook page: warm paper, a faint margin rule, soft shadow */
+.scrap-page {
+  border-radius: 0.6rem;
+  border: 1px solid var(--color-line);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--color-brass) 22%, transparent) 0 1px, transparent 1px) 2.2rem 0 / 100% 100% no-repeat,
+    color-mix(in srgb, var(--color-panel) 92%, var(--color-brass));
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.05),
+    0 14px 30px -22px rgb(0 0 0 / 0.35);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .scrap-turn {
+    animation: scrap-turn 0.6s ease-out;
+  }
+}
+@keyframes scrap-turn {
+  from {
+    opacity: 0.25;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- Richer surfaces ----------
+   The sidebar is a deep "spine" in the category colour; feature cards share its look.
+   Inside them the colour tokens are redefined, so every utility (text-muted, bg-panel…) adapts. */
+:root {
+  --spine-base: var(--color-accent); /* captured here, before .on-dark swaps the accent for brass */
+}
+.on-dark {
+  --color-ink: #f3ecdc;
+  --color-muted: rgb(243 236 220 / 0.64);
+  --color-line: rgb(243 236 220 / 0.15);
+  --color-panel: rgb(255 255 255 / 0.07);
+  --color-canvas: rgb(0 0 0 / 0.16);
+  --color-accent: #d9bd7e;
+  --color-accent-soft: rgb(217 189 126 / 0.16);
+  --color-on-accent: #1d1810;
+  --color-brass: #d9bd7e;
+  --color-danger: #f2a39a;
+  --color-ok: #a7d8b8;
+  color: var(--color-ink);
+  color-scheme: dark;
+}
+.spine {
+  --spine: color-mix(in srgb, var(--spine-base) 74%, #0a0e0b);
+  --color-sidebar: var(--spine);
+  background:
+    radial-gradient(120% 50% at 0% 0%, rgb(255 255 255 / 0.07), transparent 60%),
+    linear-gradient(180deg, var(--spine), color-mix(in srgb, var(--spine) 78%, black));
+  border-color: rgb(0 0 0 / 0.3) !important;
+  box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.04);
+}
+:root[data-theme='dark'] .spine {
+  --spine: color-mix(in srgb, var(--spine-base) 26%, #070908);
+}
+.card-feature {
+  --feature: color-mix(in srgb, var(--spine-base) 80%, #0a0e0b);
+  border-radius: var(--radius-xl);
+  border: 1px solid color-mix(in srgb, #d9bd7e 35%, transparent);
+  background:
+    radial-gradient(90% 120% at 100% 0%, rgb(217 189 126 / 0.16), transparent 55%),
+    linear-gradient(160deg, color-mix(in srgb, var(--feature) 90%, white), var(--feature));
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.08) inset,
+    0 18px 36px -22px color-mix(in srgb, var(--feature) 80%, black);
+}
+:root[data-theme='dark'] .card-feature {
+  --feature: color-mix(in srgb, var(--spine-base) 30%, #0b0f0d);
+}
+
+/* Page headers: faint engraved rings in the corner, like the guilloché on a banknote.
+   Drawn as the header's own background so it never spills over the cards below. */
+.masthead {
+  background:
+    radial-gradient(circle at calc(100% - 70px) 30%, transparent 0 40px, var(--color-canvas) 210px),
+    repeating-radial-gradient(circle at calc(100% - 70px) 30%, transparent 0 9px, color-mix(in srgb, var(--color-brass) 26%, transparent) 9px 10px);
+  border-radius: var(--radius-xl);
+}

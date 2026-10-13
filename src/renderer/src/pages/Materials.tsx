@@ -131,7 +131,7 @@ export function MaterialsPage(): React.JSX.Element {
       }}
     >
       <header className="border-b border-line/70 px-8 pt-6 pb-4">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-end gap-3">
+        <div className="masthead mx-auto flex max-w-5xl flex-wrap items-end gap-3">
           <div className="mr-auto min-w-0">
             <div className="label-caps">Study library</div>
             <h1 className="text-3xl">Materials</h1>

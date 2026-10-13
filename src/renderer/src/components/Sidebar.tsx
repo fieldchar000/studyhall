@@ -151,7 +151,7 @@ export function Sidebar(): React.JSX.Element {
   }
 
   return (
-    <aside className="relative flex w-56 shrink-0 flex-col border-r border-line bg-sidebar">
+    <aside className="spine on-dark relative flex w-56 shrink-0 flex-col border-r">
       <div className="flex items-center gap-3 px-4 pt-5 pb-4">
         <span
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-[20px] leading-none text-on-accent"

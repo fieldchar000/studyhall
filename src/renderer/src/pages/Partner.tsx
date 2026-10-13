@@ -6,15 +6,15 @@ import { useMemo, useState } from 'react'
 import type { Person } from '@shared/types'
 import { AutoText } from '@/components/AutoField'
 import { Icon } from '@/components/ui'
-import { Avatar, FactsPanel, IdeasBrowser, MomentsPanel, PlansPanel, QuestionsCard, daysSince, daysUntil, firstName, inDays, yearsSince } from '@/components/Relationships'
+import { Avatar, FactsPanel, IdeasBrowser, MomentsPanel, PlansPanel, QuestionsCard, ScrapbookCarousel, daysSince, daysUntil, firstName, inDays, yearsSince } from '@/components/Relationships'
 import { db, useLive, useRows } from '@/lib/data'
 import { localDate } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
 import { setPartner, useProfile } from '@/lib/profile'
-import { APPRECIATION_PROMPTS, CHECKIN_PROMPTS, GIFT_IDEAS, IDEAS, IDEA_CATEGORIES, LOVE_LANGUAGES, PARTNER_LABELS, TIPS, questionOfTheDay } from '@/lib/peopleContent'
+import { APPRECIATION_PROMPTS, CHECKIN_PROMPTS, COUPLE_DECKS, GIFT_IDEAS, IDEAS, IDEA_CATEGORIES, LOVE_LANGUAGES, PARTNER_LABELS, TIPS, questionOfTheDay } from '@/lib/peopleContent'
 import { createPerson } from './People'
 
-type Tab = 'overview' | 'ideas' | 'plans' | 'memories' | 'details' | 'ask' | 'love' | 'checkin'
+type Tab = 'overview' | 'journal' | 'ideas' | 'plans' | 'details' | 'ask' | 'love' | 'checkin'
 
 export function PartnerPage(): React.JSX.Element {
   const profile = useProfile()
@@ -109,9 +109,9 @@ function PartnerHome({ partner: p, label }: { partner: Person; label: string }):
 
   const tabs: [Tab, string][] = [
     ['overview', 'Overview'],
+    ['journal', 'Our journal'],
     ['ideas', 'Date ideas'],
     ['plans', 'Plans'],
-    ['memories', 'Memories'],
     ['details', 'Little details'],
     ['ask', 'Questions'],
     ['love', 'Love & gifts'],
@@ -121,8 +121,7 @@ function PartnerHome({ partner: p, label }: { partner: Person; label: string }):
   return (
     <div className="h-full overflow-auto">
       <div className="mx-auto flex max-w-6xl flex-col gap-5 px-8 py-7">
-        <section className="card relative overflow-hidden px-7 py-6">
-          <div className="pointer-events-none absolute -top-16 -right-16 h-56 w-56 rounded-full opacity-[0.08]" style={{ background: 'var(--color-accent)' }} />
+        <section className="card-feature on-dark relative overflow-hidden px-7 py-6">
           <div className="flex flex-wrap items-center gap-5">
             <button onClick={() => navigate({ name: 'people', id: p.id })} title="Edit their details">
               <Avatar person={p} size={76} />
@@ -159,11 +158,11 @@ function PartnerHome({ partner: p, label }: { partner: Person; label: string }):
         {tab === 'overview' && <Overview partner={p} onTab={setTab} />}
         {tab === 'ideas' && <IdeasBrowser person={p} audience="date" />}
         {tab === 'plans' && <PlansPanel person={p} />}
-        {tab === 'memories' && <MomentsPanel person={p} title={`Memories with ${name}`} />}
+        {tab === 'journal' && <MomentsPanel person={p} title={`Our journal`} />}
         {tab === 'details' && <FactsPanel person={p} />}
         {tab === 'ask' && (
           <div className="card p-5">
-            <QuestionsCard decks={['us', 'deep', 'light', 'future', 'memories', 'rather']} title={`Ask ${name}`} />
+            <QuestionsCard decks={[...COUPLE_DECKS, 'rather']} title={`Ask ${name}`} />
           </div>
         )}
         {tab === 'love' && <LoveAndGifts partner={p} />}
@@ -187,7 +186,7 @@ function Countdown({ icon, label, days, empty = '—', onClick }: { icon: string
 
 function Overview({ partner: p, onTab }: { partner: Person; onTab: (t: Tab) => void }): React.JSX.Element {
   const name = firstName(p)
-  const question = useMemo(() => questionOfTheDay(['us', 'deep', 'light', 'future'], p.id), [p.id])
+  const question = useMemo(() => questionOfTheDay(['deeper', 'ourstory', 'growing', 'closeness', 'playful'], p.id), [p.id])
   const appreciations = (useRows('moments', { person_id: p.id, kind: 'appreciation' }, 'date') ?? []).slice(-5).reverse()
   const [note, setNote] = useState('')
   const prompt = APPRECIATION_PROMPTS[new Date().getDate() % APPRECIATION_PROMPTS.length]
@@ -205,6 +204,7 @@ function Overview({ partner: p, onTab }: { partner: Person; onTab: (t: Tab) => v
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="flex flex-col gap-5">
+        <ScrapbookCarousel person={p} onOpen={() => onTab('journal')} />
         <section className="card px-6 py-6 text-center">
           <div className="label-caps">Today’s question for {name}</div>
           <p className="font-display mx-auto mt-2 max-w-xl text-3xl leading-snug">{question}</p>

@@ -71,12 +71,12 @@ export function RecallPage(): React.JSX.Element {
   return (
     <div className="h-full overflow-auto">
       <div className="mx-auto flex max-w-5xl flex-col gap-5 px-8 py-7">
-        <header className="flex flex-wrap items-end gap-4">
+        <header className="masthead flex flex-wrap items-end gap-4">
           <div className="mr-auto">
             <div className="label-caps">Study · {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
             <h1 className="text-3xl">Active recall</h1>
             <p className="mt-1 max-w-xl text-sm text-muted">
-              Every day, {count} pages from each module. Try to remember what’s on a page before you look — that effort is what makes it stick.
+              Every day, {count} pages from each module. Study a page, it disappears, then write down everything you remember — pulling it back out of memory is what makes it stick.
             </p>
           </div>
           <label className="flex items-center gap-2 text-sm text-muted">
@@ -233,11 +233,26 @@ function ModuleRecall({
   )
 }
 
-/** One card at a time: cue → write what you remember → reveal → grade. Keys: Space, 1 2 3. */
+type Phase = 'look' | 'recall' | 'check'
+
+const LOOK_KEY = 'recall.lookSeconds'
+const lookSeconds = (): number => {
+  try {
+    return Number(localStorage.getItem(LOOK_KEY)) || 30
+  } catch {
+    return 30
+  }
+}
+
+/** One page at a time: look at the real page → it's hidden while you recall and write → check and grade.
+ *  Keys: Space moves on, 1 2 3 grade. */
 function Session({ module: m, cards, start, onClose }: { module: Module; cards: RecallCard[]; start: number; onClose: () => void }): React.JSX.Element {
   const [index, setIndex] = useState(start)
   const [page, setPage] = useState<RecallPage | null | 'missing'>(null)
-  const [revealed, setRevealed] = useState(false)
+  const [phase, setPhase] = useState<Phase>('look')
+  const [seconds, setSeconds] = useState(lookSeconds)
+  const [left, setLeft] = useState(seconds)
+  const [thinking, setThinking] = useState(0)
   const [jot, setJot] = useState('')
   const [results, setResults] = useState<Record<string, Result>>({})
   const [finished, setFinished] = useState(false)
@@ -247,8 +262,10 @@ function Session({ module: m, cards, start, onClose }: { module: Module; cards: 
     if (!card) return
     let live = true
     setPage(null)
-    setRevealed(false)
+    setPhase('look')
     setJot('')
+    setLeft(seconds)
+    setThinking(0)
     void pageFor(card)
       .then((p) => live && setPage(p ?? 'missing'))
       .catch(() => live && setPage('missing'))
@@ -256,6 +273,19 @@ function Session({ module: m, cards, start, onClose }: { module: Module; cards: 
       live = false
     }
   }, [card?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Look: count down, then hide the page. Recall: count the thinking time.
+  useEffect(() => {
+    if (!page || page === 'missing' || finished) return
+    const t = setInterval(() => {
+      if (phase === 'look') setLeft((s) => (seconds === 0 ? s : s - 1))
+      else if (phase === 'recall') setThinking((s) => s + 1)
+    }, 1000)
+    return () => clearInterval(t)
+  }, [phase, page, seconds, finished])
+  useEffect(() => {
+    if (phase === 'look' && seconds > 0 && left <= 0) setPhase('recall')
+  }, [left, phase, seconds])
 
   const rate = async (r: Result): Promise<void> => {
     if (!card) return
@@ -267,15 +297,29 @@ function Session({ module: m, cards, start, onClose }: { module: Module; cards: 
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.target as HTMLElement)?.tagName === 'TEXTAREA') return
-      if (!revealed && (e.key === ' ' || e.key === 'Enter')) {
+      const typing = (e.target as HTMLElement)?.tagName === 'TEXTAREA'
+      if (typing && !(e.key === 'Enter' && e.ctrlKey)) return
+      if (phase === 'look' && (e.key === ' ' || e.key === 'Enter')) {
         e.preventDefault()
-        setRevealed(true)
-      } else if (revealed && ['1', '2', '3'].includes(e.key)) void rate((['missed', 'partly', 'got'] as Result[])[Number(e.key) - 1])
+        setPhase('recall')
+      } else if (phase === 'recall' && (e.key === ' ' || e.key === 'Enter')) {
+        e.preventDefault()
+        setPhase('check')
+      } else if (phase === 'check' && ['1', '2', '3'].includes(e.key)) void rate((['missed', 'partly', 'got'] as Result[])[Number(e.key) - 1])
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
+
+  const setLook = (n: number): void => {
+    setSeconds(n)
+    setLeft(n)
+    try {
+      localStorage.setItem(LOOK_KEY, String(n))
+    } catch {
+      /* optional */
+    }
+  }
 
   const openSource = async (): Promise<void> => {
     const src = card && (await sourceFor(card))
@@ -285,6 +329,13 @@ function Session({ module: m, cards, start, onClose }: { module: Module; cards: 
   }
 
   const tally = Object.values(results)
+  const steps: [Phase, string][] = [
+    ['look', 'Look'],
+    ['recall', 'Recall'],
+    ['check', 'Check']
+  ]
+  const mmss = (s: number): string => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
   return (
     <Modal wide title={`Active recall — ${m.code || m.name}`} onClose={onClose}>
       {finished || !card ? (
@@ -300,25 +351,32 @@ function Session({ module: m, cards, start, onClose }: { module: Module; cards: 
           </button>
         </div>
       ) : (
-        <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-6">
+        <div className="mx-auto flex max-w-4xl flex-col gap-4 px-6 py-5">
+          {/* progress across today's pages */}
           <div className="flex items-center gap-1.5">
             {cards.map((c, i) => {
               const r = results[c.id] ?? (doneToday(c) ? c.last_result : null)
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => setIndex(i)}
-                  title={c.label}
-                  className={`h-1.5 flex-1 rounded-full ${i === index ? 'bg-ink' : r ? RESULT_STYLE[r].dot : 'bg-line'}`}
-                />
-              )
+              return <button key={c.id} onClick={() => setIndex(i)} title={c.label} className={`h-1.5 flex-1 rounded-full ${i === index ? 'bg-ink' : r ? RESULT_STYLE[r].dot : 'bg-line'}`} />
             })}
           </div>
-          <div className="text-xs text-muted">
-            {index + 1} of {cards.length} · {card.label}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1 text-sm">
+              {steps.map(([p, label], i) => (
+                <span key={p} className="flex items-center gap-1">
+                  {i > 0 && <span className="text-line">—</span>}
+                  <span className={`rounded-full px-2.5 py-0.5 ${phase === p ? 'bg-accent text-on-accent' : steps.findIndex((s) => s[0] === phase) > i ? 'text-ok' : 'text-muted'}`}>
+                    {i + 1}. {label}
+                  </span>
+                </span>
+              ))}
+            </div>
+            <span className="ml-auto text-xs text-muted">
+              Page {index + 1} of {cards.length} · {card.label}
+            </span>
           </div>
+
           {page === null ? (
-            <p className="text-muted">Opening the page…</p>
+            <p className="py-10 text-center text-muted">Opening the page…</p>
           ) : page === 'missing' ? (
             <div className="flex flex-col gap-3">
               <p className="text-muted">This page isn’t available on this PC (the file may be missing or was changed).</p>
@@ -326,49 +384,78 @@ function Session({ module: m, cards, start, onClose }: { module: Module; cards: 
                 Skip
               </button>
             </div>
+          ) : phase === 'look' ? (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                <div>
+                  <div className="label-caps">Read this page carefully</div>
+                  <h2 className="text-2xl leading-tight">{page.cue}</h2>
+                </div>
+                <div className="ml-auto flex items-center gap-2 text-sm text-muted">
+                  Time to look
+                  <select className="field-boxed w-auto py-0.5 text-sm" value={seconds} onChange={(e) => setLook(Number(e.target.value))}>
+                    {[15, 30, 45, 60, 90, 120].map((s) => (
+                      <option key={s} value={s}>
+                        {s < 60 ? `${s}s` : `${s / 60} min`}
+                      </option>
+                    ))}
+                    <option value={0}>No limit</option>
+                  </select>
+                </div>
+              </div>
+              {seconds > 0 && (
+                <div className="h-1 overflow-hidden rounded-full bg-line">
+                  <div className="h-full rounded-full bg-brass transition-all duration-1000 ease-linear" style={{ width: `${(left / seconds) * 100}%` }} />
+                </div>
+              )}
+              <PageView page={page} />
+              <div className="flex items-center gap-3">
+                <button className="btn-primary" onClick={() => setPhase('recall')}>
+                  I’m ready — hide it <kbd className="ml-1 rounded-sm border border-white/30 px-1 text-[10px]">Space</kbd>
+                </button>
+                {seconds > 0 && <span className="text-sm text-muted tabular-nums">hides in {left}s</span>}
+              </div>
+            </>
+          ) : phase === 'recall' ? (
+            <>
+              <div className="rounded-lg border border-dashed border-brass/60 bg-canvas/60 px-6 py-8 text-center">
+                <div className="label-caps">The page is hidden</div>
+                <h2 className="mt-1 text-3xl leading-tight">{page.cue}</h2>
+                <p className="mx-auto mt-2 max-w-xl text-sm text-muted">Close your eyes for a moment, then write down everything you remember — the main idea, key terms, examples, how it connects to what you already know.</p>
+              </div>
+              <textarea className="field-boxed min-h-48 text-[15px] leading-relaxed" placeholder="What do you remember?" value={jot} onChange={(e) => setJot(e.target.value)} autoFocus />
+              <div className="flex items-center gap-3">
+                <button className="btn-primary" onClick={() => setPhase('check')}>
+                  Check against the page <kbd className="ml-1 rounded-sm border border-white/30 px-1 text-[10px]">Ctrl+Enter</kbd>
+                </button>
+                <span className="text-sm text-muted tabular-nums">thinking {mmss(thinking)}</span>
+              </div>
+            </>
           ) : (
             <>
-              <div>
-                <div className="label-caps mb-1">What do you remember about</div>
-                <h2 className="text-3xl leading-tight">{page.cue}</h2>
+              <div className={`grid gap-4 ${jot.trim() ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]' : ''}`}>
+                {jot.trim() && (
+                  <div className="flex flex-col gap-1">
+                    <div className="label-caps">What you remembered</div>
+                    <div className="min-h-32 flex-1 rounded-lg border border-line bg-canvas/60 p-4 text-sm leading-relaxed whitespace-pre-wrap">{jot}</div>
+                  </div>
+                )}
+                <div className="flex min-w-0 flex-col gap-1">
+                  <div className="label-caps">The page</div>
+                  <PageView page={page} />
+                </div>
               </div>
-              {!revealed ? (
-                <>
-                  <textarea
-                    className="field-boxed min-h-32 leading-relaxed"
-                    placeholder="Write down everything you can remember — key ideas, definitions, examples. (Optional, but it works better.)"
-                    value={jot}
-                    onChange={(e) => setJot(e.target.value)}
-                    autoFocus
-                  />
-                  <button className="btn-primary self-start" onClick={() => setRevealed(true)}>
-                    Show the page <kbd className="ml-1 rounded-sm border border-white/30 px-1 text-[10px]">Space</kbd>
+              <div className="sticky bottom-0 flex flex-wrap items-center gap-2 border-t border-line bg-panel py-3">
+                <span className="mr-1 text-sm text-muted">How much did you get?</span>
+                {(['missed', 'partly', 'got'] as Result[]).map((r, i) => (
+                  <button key={r} className={`btn ${RESULT_STYLE[r].cls}`} onClick={() => void rate(r)}>
+                    {RESULT_STYLE[r].label} <kbd className="text-[10px] opacity-60">{i + 1}</kbd>
                   </button>
-                </>
-              ) : (
-                <>
-                  {jot.trim() && (
-                    <div className="rounded-md border border-line bg-canvas/60 p-3 text-sm whitespace-pre-wrap">
-                      <div className="label-caps mb-1">You wrote</div>
-                      {jot}
-                    </div>
-                  )}
-                  <div className="rounded-lg border border-line bg-panel p-4">
-                    {page.pdf ? <PdfPage data={page.pdf.data} page={page.pdf.page} /> : <article className="reader max-w-none" dangerouslySetInnerHTML={{ __html: page.html }} />}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="mr-1 text-sm text-muted">How did you do?</span>
-                    {(['missed', 'partly', 'got'] as Result[]).map((r, i) => (
-                      <button key={r} className={`btn ${RESULT_STYLE[r].cls}`} onClick={() => void rate(r)}>
-                        {RESULT_STYLE[r].label} <kbd className="text-[10px] opacity-60">{i + 1}</kbd>
-                      </button>
-                    ))}
-                    <button className="btn-ghost ml-auto text-xs" onClick={() => void openSource()}>
-                      Open the source
-                    </button>
-                  </div>
-                </>
-              )}
+                ))}
+                <button className="btn-ghost ml-auto text-xs" onClick={() => void openSource()}>
+                  Open the source
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -377,13 +464,17 @@ function Session({ module: m, cards, start, onClose }: { module: Module; cards: 
   )
 }
 
+function PageView({ page }: { page: RecallPage }): React.JSX.Element {
+  return <div className="rounded-lg border border-line bg-panel p-4">{page.pdf ? <PdfPage data={page.pdf.data} page={page.pdf.page} /> : <article className="reader max-w-none" dangerouslySetInnerHTML={{ __html: page.html }} />}</div>
+}
+
 function PdfPage({ data, page }: { data: Uint8Array; page: number }): React.JSX.Element {
   const ref = useRef<HTMLCanvasElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
     if (!ref.current || !wrap.current) return
-    void drawPdfPage(data, page, ref.current, Math.min(wrap.current.clientWidth, 760)).catch(() => setFailed(true))
+    void drawPdfPage(data, page, ref.current, Math.min(wrap.current.clientWidth, 900)).catch(() => setFailed(true))
   }, [data, page])
   return (
     <div ref={wrap} className="flex justify-center">

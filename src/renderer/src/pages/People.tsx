@@ -10,7 +10,7 @@ import { db, useRows } from '@/lib/data'
 import { localDate } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
 import { setPartner, useProfile } from '@/lib/profile'
-import { FRIEND_CHECKIN, LOVE_LANGUAGES, PERSON_KINDS, TIPS } from '@/lib/peopleContent'
+import { COUPLE_DECKS, FRIEND_CHECKIN, LOVE_LANGUAGES, PERSON_KINDS, TIPS } from '@/lib/peopleContent'
 
 const EMOJI = ['', '🌻', '🐻', '🦊', '🐱', '🌙', '⭐', '🍵', '🎧', '📚', '⚽', '🎨', '🌊', '🍜', '🧋', '🌸']
 
@@ -53,7 +53,7 @@ function PeopleList(): React.JSX.Element {
   return (
     <div className="h-full overflow-auto">
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-8 py-7">
-        <header className="flex flex-wrap items-end gap-3">
+        <header className="masthead flex flex-wrap items-end gap-3">
           <div className="mr-auto">
             <div className="label-caps">Life · people</div>
             <h1 className="text-3xl">People</h1>
@@ -317,7 +317,7 @@ function PersonPage({ id }: { id: string }): React.JSX.Element {
         {tab === 'plans' && <PlansPanel person={p} />}
         {tab === 'ask' && (
           <div className="card p-5">
-            <QuestionsCard decks={p.kind === 'partner' ? ['us', 'deep', 'light', 'future', 'memories'] : ['friends', 'light', 'deep', 'memories', 'rather']} title={`Things to ask ${firstName(p)}`} />
+            <QuestionsCard decks={p.kind === 'partner' ? [...COUPLE_DECKS] : ['friends', 'light', 'deep', 'memories', 'rather']} title={`Things to ask ${firstName(p)}`} />
           </div>
         )}
         {tab === 'ideas' && <IdeasBrowser person={p} audience={p.kind === 'partner' ? 'date' : 'friends'} />}
