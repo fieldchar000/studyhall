@@ -857,3 +857,24 @@ main h1.text-2xl {
     white-space: nowrap;
   }
 }
+/* Touch screens can't hover: show the little buttons that otherwise appear on mouse-over. */
+@media (hover: none) {
+  [class*='group-hover:opacity-100'] {
+    opacity: 1 !important;
+  }
+  [class*='group-hover:visible'] {
+    visibility: visible !important;
+  }
+  [class*='group-hover:block'] {
+    display: block !important;
+  }
+  [class*='group-hover:flex'] {
+    display: flex !important;
+  }
+  [class*='group-hover:inline-flex'] {
+    display: inline-flex !important;
+  }
+  [class*='group-hover:hidden'] {
+    display: none !important;
+  }
+}

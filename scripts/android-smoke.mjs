@@ -12,6 +12,16 @@ const OUT = 'smoke'
 mkdirSync(OUT, { recursive: true })
 
 const adb = (...args) => execFileSync('adb', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+/** Like adb(), but "nothing found" (non-zero exit) is just an empty answer. */
+const adbQuiet = (...args) => {
+  try {
+    return adb(...args)
+  } catch (e) {
+    return String(e.stdout ?? '')
+  }
+}
+/** Android's log for the app and its web view (crashes, console messages). */
+const saveLogcat = () => writeFileSync(`${OUT}/logcat.txt`, adbQuiet('logcat', '-d', '-v', 'brief', 'AndroidRuntime:E', 'Capacitor:*', 'Capacitor/Console:*', 'chromium:*', 'ActivityManager:I', '*:S'))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const report = []
 let failed = 0
@@ -25,8 +35,9 @@ const shot = (name) => writeFileSync(`${OUT}/${name}.png`, execFileSync('adb', [
 async function connect() {
   // The app's WebView exposes a DevTools socket named after its process id.
   for (let i = 0; i < 40; i++) {
-    const pid = adb('shell', 'pidof', PKG).trim()
-    const sockets = adb('shell', 'cat', '/proc/net/unix')
+    const pid = adbQuiet('shell', 'pidof', PKG).trim()
+    if (!pid && i === 12) launch() // not started after ~20s: try once more
+    const sockets = adbQuiet('shell', 'cat', '/proc/net/unix')
     const m = pid && new RegExp(`@(webview_devtools_remote_${pid})`).exec(sockets)
     if (m) {
       try {
@@ -87,7 +98,11 @@ const waitForApp = async (page) => {
 }
 
 async function main() {
+  // Wait for the emulator to finish booting and unlock its screen.
+  for (let i = 0; i < 60 && adbQuiet('shell', 'getprop', 'sys.boot_completed').trim() !== '1'; i++) await sleep(2000)
+  adbQuiet('shell', 'input', 'keyevent', '82')
   adb('install', '-r', APK)
+  adbQuiet('logcat', '-c')
   launch()
   let page = await connect()
   check('App starts (database, UI)', await waitForApp(page), await page.ev(`document.getElementById('boot-status')?.textContent ?? ''`).catch(() => ''))
@@ -169,6 +184,7 @@ async function main() {
   const errors = page.logs.filter((l) => !/favicon|ResizeObserver loop/i.test(l))
   check('No errors in the app’s console', errors.length === 0, errors.slice(0, 5).join(' | '))
   writeFileSync(`${OUT}/report.txt`, report.join('\n') + '\n')
+  saveLogcat()
   page.close()
   if (failed) process.exit(1)
 }
@@ -178,6 +194,7 @@ main().catch((e) => {
   writeFileSync(`${OUT}/report.txt`, report.join('\n') + '\n')
   try {
     shot('crash')
+    saveLogcat()
   } catch {}
   console.error(e)
   process.exit(1)
