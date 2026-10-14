@@ -105,7 +105,7 @@ export class DatabaseSync {
   private inTx = false
   private timer: ReturnType<typeof setTimeout> | undefined
   private saving: Promise<void> | null = null
-  private pragmas: string[] = []
+  private pragmas = new Map<string, string>() // name → latest "PRAGMA name = value"
 
   constructor(private path: string) {
     if (!SQL) throw new Error('SQLite is not loaded yet')
@@ -148,7 +148,7 @@ export class DatabaseSync {
 
   exec(sql: string): void {
     // Settings like foreign_keys are lost when the database is saved (sql.js reopens it), so keep them.
-    for (const m of sql.matchAll(/PRAGMA\s+(foreign_keys|busy_timeout)\s*=\s*\w+/gi)) if (!this.pragmas.includes(m[0])) this.pragmas.push(m[0])
+    for (const m of sql.matchAll(/PRAGMA\s+(foreign_keys|busy_timeout)\s*=\s*\w+/gi)) this.pragmas.set(m[1].toLowerCase(), m[0])
     this.db.exec(sql.replace(/PRAGMA\s+journal_mode\s*=\s*WAL\s*;?/i, ''))
     for (const part of sql.split(';')) if (part.trim()) this._touched(part)
   }
@@ -165,7 +165,7 @@ export class DatabaseSync {
     for (const s of this.cache.values()) s.free()
     this.cache.clear()
     const bytes = this.db.export() // (reopens the database internally)
-    if (this.pragmas.length) this.db.exec(this.pragmas.join('; '))
+    if (this.pragmas.size) this.db.exec([...this.pragmas.values()].join('; '))
     this.saving = (async () => {
       try {
         await writeBytes(`${this.path}.tmp`, bytes)

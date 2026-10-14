@@ -186,11 +186,16 @@ async function pull(): Promise<void> {
   if (changed.length) onApplied([...new Set(changed)])
 }
 
-const columnCache = new Map<string, string[]>()
-function localColumns(table: string): string[] {
+interface LocalColumn {
+  name: string
+  notnull: number
+  dflt_value: string | null
+}
+const columnCache = new Map<string, LocalColumn[]>()
+function localColumns(table: string): LocalColumn[] {
   let cols = columnCache.get(table)
   if (!cols) {
-    cols = (getDb().prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name)
+    cols = getDb().prepare(`PRAGMA table_info(${table})`).all() as unknown as LocalColumn[]
     columnCache.set(table, cols)
   }
   return cols
@@ -199,10 +204,14 @@ function localColumns(table: string): string[] {
 /** Write server rows locally (without queueing them for upload). Returns true if anything changed. */
 function applyRemote(table: string, rows: Record<string, unknown>[]): boolean {
   const db = getDb()
-  const cols = localColumns(table)
+  const info = localColumns(table)
+  const cols = info.map((c) => c.name)
   const pending = db.prepare('SELECT 1 FROM sync_outbox WHERE table_name = ? AND row_id = ?')
+  // Rows uploaded before a column existed can have it empty in the cloud; use this column's own
+  // default then (otherwise a new device can't store them and sync stops at that table).
+  const value = (c: LocalColumn): string => (c.notnull && c.dflt_value != null ? `COALESCE(?, ${c.dflt_value})` : '?')
   const upsert = db.prepare(
-    `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})
+    `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${info.map(value).join(', ')})
      ON CONFLICT(id) DO UPDATE SET ${cols.filter((c) => c !== 'id').map((c) => `${c} = excluded.${c}`).join(', ')}`
   )
   let changed = false
