@@ -12,6 +12,9 @@ export interface OculusState {
   version?: string // short commit id
   url?: string // the local server, while running
   updateAvailable?: string // short id of a newer version on GitHub
+  packs?: string[] // Studyhall additions in place (e.g. Singapore traffic cameras)
+  packsSkipped?: string[] // additions this version of God's Eye View can't take
+  ltaKey?: boolean // an LTA DataMall key is saved (all Singapore cameras)
 }
 export interface OculusRect {
   x: number
@@ -972,6 +975,7 @@ export interface Api {
     checkUpdate(): Promise<OculusState>
     update(): Promise<OculusState>
     remove(): Promise<OculusState>
+    setLtaKey(key: string): Promise<OculusState>
   }
   app: {
     dataPath(): Promise<string>

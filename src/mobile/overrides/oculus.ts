@@ -15,3 +15,4 @@ export const showOculus = (): void => {}
 export const hideOculus = (): void => {}
 export const openOculusInBrowser = (): void => {}
 export const isOculusContents = (): boolean => false
+export const setOculusLtaKey = (): OculusState => state

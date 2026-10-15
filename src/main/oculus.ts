@@ -13,9 +13,11 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promise
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import type { OculusRect, OculusState } from '@shared/types'
+import { getSetting, setSetting } from './db'
+import { applyPacks } from './oculusPacks'
 
 const REPO = 'bilawalsidhu/gods-eye-view'
-const PINNED = 'fd5a1ef8569a313b249af271fe3d2e6f18817cfa' // the version tested with Studyhall
+const PINNED = 'f0a1b22dc82c6c5cd9690d07c1cdb297818da86f' // the version tested with Studyhall (and its Singapore pack)
 const NODE_VERSION = '24.19.0' // God's Eye View needs Node >=24.14 <25
 const NODE_DIR = `node-v${NODE_VERSION}-win-x64`
 const PARTITION = 'persist:oculus'
@@ -53,6 +55,7 @@ export async function initOculus(onChange: (s: OculusState) => void): Promise<vo
   listener = onChange
   const i = await installed()
   state = i ? { phase: 'stopped', version: i.sha.slice(0, 7) } : { phase: 'absent' }
+  state.ltaKey = !!getSetting<string>('oculus_lta_key')
 }
 
 export const oculusState = (): OculusState => state
@@ -149,6 +152,8 @@ async function installVersion(sha: string): Promise<void> {
   await rename(join(tmp, top), join(root(), dir))
   await rm(tmp, { recursive: true, force: true })
   await npmCi(join(root(), dir))
+  set({ step: 'Adding Singapore' })
+  await usePacks(join(root(), dir))
   const before = await installed()
   await writeFile(join(root(), 'installed.json'), JSON.stringify({ sha, dir, at: new Date().toISOString() } satisfies Installed))
   if (before && before.dir !== dir) await rm(join(root(), before.dir), { recursive: true, force: true }).catch(() => {})
@@ -206,6 +211,25 @@ export const removeOculus = (): Promise<OculusState> =>
     set({ phase: 'absent', version: undefined, url: undefined, updateAvailable: undefined, message: undefined })
   })
 
+// ---------- Studyhall's additions (Singapore) and your keys for them ----------
+
+async function usePacks(dir: string): Promise<void> {
+  const r = await applyPacks(dir).catch(() => ({ applied: [] as string[], skipped: ['Singapore traffic cameras'] }))
+  set({ packs: r.applied, packsSkipped: r.skipped })
+}
+
+/** Your free LTA DataMall key (all Singapore cameras). Kept on this PC only, never synced. */
+export function setOculusLtaKey(key: string): OculusState {
+  const k = String(key ?? '').trim().slice(0, 200)
+  setSetting('oculus_lta_key', k)
+  set({ ltaKey: !!k })
+  if (server) {
+    stopServer()
+    void startOculus() // restart so the globe picks the key up
+  }
+  return state
+}
+
 // ---------- The local server ----------
 
 function freePort(from: number): Promise<number> {
@@ -233,10 +257,17 @@ export const startOculus = (): Promise<OculusState> =>
     set({ phase: 'starting', step: 'Starting the globe', message: undefined })
     const port = await freePort(4173)
     const dir = join(root(), i.dir)
+    await usePacks(dir) // copies installed before a pack existed get it now
     const proc = spawn(nodeExe(), [join(dir, 'node_modules', 'vite', 'bin', 'vite.js'), '--port', String(port), '--strictPort', '--host', '127.0.0.1'], {
       cwd: dir,
       windowsHide: true,
-      env: { ...process.env, PATH: `${join(root(), NODE_DIR)};${process.env.PATH ?? ''}`, BROWSER: 'none', NODE_ENV: 'development' }
+      env: {
+        ...process.env,
+        PATH: `${join(root(), NODE_DIR)};${process.env.PATH ?? ''}`,
+        BROWSER: 'none',
+        NODE_ENV: 'development',
+        LTA_DATAMALL_KEY: getSetting<string>('oculus_lta_key') ?? ''
+      }
     })
     server = proc
     let log = ''

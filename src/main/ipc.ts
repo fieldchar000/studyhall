@@ -18,7 +18,7 @@ import * as timer from './timer'
 import { applyLanShare, lanShareStatus } from './lanshare'
 import { lanPeers } from './lanfetch'
 import { fetchMissingFiles } from './cloud/sync'
-import { checkOculusUpdate, hideOculus, installOculus, oculusState, openOculusInBrowser, removeOculus, showOculus, startOculus, stopOculus, updateOculus } from './oculus'
+import { checkOculusUpdate, hideOculus, installOculus, oculusState, openOculusInBrowser, removeOculus, setOculusLtaKey, showOculus, startOculus, stopOculus, updateOculus } from './oculus'
 import type {
   AssessmentWithModule,
   CalendarRange,
@@ -389,4 +389,5 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('oculus:checkUpdate', () => checkOculusUpdate())
   handle('oculus:update', () => updateOculus())
   handle('oculus:remove', () => removeOculus())
+  handle('oculus:setLtaKey', (_e, key: string) => setOculusLtaKey(String(key ?? '')))
 }

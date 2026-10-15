@@ -8,6 +8,7 @@ import type { OculusState } from '@shared/types'
 import { api } from '@/lib/data'
 import { isPhoneApp } from '@/lib/platform'
 import { searchIsOpen, subscribeSearch } from '@/components/SearchPalette'
+import { Modal } from '@/components/ui'
 
 function useOculus(): OculusState | null {
   const [s, setS] = useState<OculusState | null>(null)
@@ -23,6 +24,7 @@ export function OculusPage(): React.JSX.Element {
   const box = useRef<HTMLDivElement>(null)
   const searchOpen = useSyncExternalStore(subscribeSearch, searchIsOpen)
   const [checked, setChecked] = useState(false)
+  const [sgOpen, setSgOpen] = useState(false)
 
   // Start the globe as soon as the page opens; look for a newer version once.
   useEffect(() => {
@@ -38,7 +40,7 @@ export function OculusPage(): React.JSX.Element {
     const el = box.current
     if (!el || s?.phase !== 'running') return
     const place = (): void => {
-      if (searchOpen || document.querySelector('[data-modal]')) {
+      if (sgOpen || searchOpen || document.querySelector('[data-modal]')) {
         void api.oculus.hide()
         return
       }
@@ -57,7 +59,7 @@ export function OculusPage(): React.JSX.Element {
       window.removeEventListener('resize', place)
       void api.oculus.hide()
     }
-  }, [s?.phase, searchOpen])
+  }, [s?.phase, searchOpen, sgOpen])
 
   if (isPhoneApp()) {
     return (
@@ -80,6 +82,9 @@ export function OculusPage(): React.JSX.Element {
               Update to {s.updateAvailable}
             </button>
           )}
+          <button className="rounded px-2 py-0.5 text-lime-200/90 hover:bg-lime-300/10" onClick={() => setSgOpen(true)} title="Singapore cameras and live feeds">
+            🇸🇬 Singapore
+          </button>
           <button className="rounded px-2 py-0.5 hover:bg-cyan-300/10" onClick={() => void api.oculus.openInBrowser()} title="Some graphics cards run it more smoothly in your normal browser">
             Open in browser
           </button>
@@ -88,6 +93,7 @@ export function OculusPage(): React.JSX.Element {
           </button>
         </div>
         <div ref={box} className="min-h-0 flex-1" />
+        {sgOpen && <SingaporePanel s={s} onClose={() => setSgOpen(false)} />}
       </div>
     )
   }
@@ -136,6 +142,60 @@ export function OculusPage(): React.JSX.Element {
         </button>
       )}
     </Shell>
+  )
+}
+
+/** Singapore extras: which are on, and your free LTA DataMall key for every camera. */
+function SingaporePanel({ s, onClose }: { s: OculusState; onClose: () => void }): React.JSX.Element {
+  const [key, setKey] = useState('')
+  const [saved, setSaved] = useState<string | null>(null)
+  const cams = s.packs?.includes('Singapore traffic cameras')
+  return (
+    <Modal title="Singapore" onClose={onClose}>
+      <div className="flex flex-col gap-4 text-sm">
+        <div>
+          <div className="font-semibold">Traffic cameras {cams ? <span className="text-ok">· on</span> : <span className="text-danger">· not available in this version</span>}</div>
+          <p className="mt-1 text-muted">
+            {s.ltaKey
+              ? 'All of LTA’s expressway cameras, refreshed every few minutes.'
+              : 'Right now: the Woodlands Causeway and Tuas Second Link checkpoint cameras (the free feed, updated about hourly). Add a free LTA DataMall key below for all ~90 expressway cameras, refreshed every few minutes.'}{' '}
+            Turn on <b>CCTV</b> in Data layers, then fly to Singapore (LOCATION → “Singapore”).
+          </p>
+          {s.packsSkipped?.length ? <p className="mt-1 text-xs text-danger">This version of God’s Eye View changed where cameras are added, so Studyhall left it alone. Update Studyhall to get them back.</p> : null}
+        </div>
+        <div>
+          <div className="font-semibold">LTA DataMall key {s.ltaKey && <span className="text-ok">· saved</span>}</div>
+          <p className="mt-1 text-xs text-muted">
+            Free: sign up at datamall.lta.gov.sg (“Request for API Access”); the key arrives by email. It’s kept on this PC only and used only to ask LTA for camera pictures.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <input className="field-boxed min-w-0 flex-1" type="password" autoComplete="off" placeholder={s.ltaKey ? 'Replace your saved key' : 'Paste your AccountKey'} value={key} onChange={(e) => setKey(e.target.value)} />
+            <button
+              className="btn-primary"
+              disabled={!key.trim()}
+              onClick={() =>
+                void api.oculus.setLtaKey(key).then(() => {
+                  setKey('')
+                  setSaved('Saved — the globe restarts to load every camera.')
+                })
+              }
+            >
+              Save
+            </button>
+            {s.ltaKey && (
+              <button className="btn-ghost" onClick={() => void api.oculus.setLtaKey('').then(() => setSaved('Key removed.'))}>
+                Remove
+              </button>
+            )}
+          </div>
+          {saved && <p className="mt-1 text-xs text-ok">{saved}</p>}
+        </div>
+        <div>
+          <div className="font-semibold">Already live over Singapore</div>
+          <p className="mt-1 text-muted">Aircraft around Changi (Live contacts), satellites and the ISS overhead (Space missions), weather and wind, haze-season fires in the region (with a free NASA FIRMS key), and local radio stations. Ships in the Singapore Strait need a free AISStream key (POWER UP → Provider Settings).</p>
+        </div>
+      </div>
+    </Modal>
   )
 }
 

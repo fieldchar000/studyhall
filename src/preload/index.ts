@@ -186,7 +186,8 @@ const api: Api = {
     openInBrowser: () => ipcRenderer.invoke('oculus:openInBrowser'),
     checkUpdate: () => ipcRenderer.invoke('oculus:checkUpdate'),
     update: () => ipcRenderer.invoke('oculus:update'),
-    remove: () => ipcRenderer.invoke('oculus:remove')
+    remove: () => ipcRenderer.invoke('oculus:remove'),
+    setLtaKey: (key) => ipcRenderer.invoke('oculus:setLtaKey', key)
   },
   app: {
     dataPath: () => ipcRenderer.invoke('app:dataPath'),
