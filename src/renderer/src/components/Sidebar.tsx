@@ -9,7 +9,8 @@ import { openSearch } from './SearchPalette'
 import { useCloud } from '@/lib/cloud'
 import { UpdateBanner } from './UpdateBanner'
 import { Icon, SaveIndicator } from './ui'
-import { setDrawer, useDrawer } from '@/lib/platform'
+import { isPhoneApp, setDrawer, useDrawer } from '@/lib/platform'
+import { usePrefs } from '@/lib/prefs'
 
 interface NavItem {
   label: string
@@ -134,7 +135,11 @@ export function Sidebar(): React.JSX.Element {
   const badge = (label: string): number => (label === 'Inbox' ? inboxCount : label === 'Servers' ? serverUnread : 0)
   const shown = MODES.filter((m) => enabled.includes(m.mode))
   const partnerLabel = useProfile()?.partner_label || 'Partner'
-  const index = Math.max(0, shown.findIndex((m) => m.mode === mode))
+  // Oculus Dei sits beside the categories as its own tab (unlocked by typing OCULUSDEI).
+  const oculus = !!usePrefs()?.oculusDei && !isPhoneApp()
+  const onOculus = route.name === 'oculus'
+  const tabs = shown.length + (oculus ? 1 : 0)
+  const index = onOculus && oculus ? shown.length : Math.max(0, shown.findIndex((m) => m.mode === mode))
 
   // Each category tints the whole app with its own accent.
   useEffect(() => setModeAccent(mode), [mode])
@@ -145,6 +150,7 @@ export function Sidebar(): React.JSX.Element {
   }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const switchTo = (m: Mode): void => {
+    if (route.name === 'oculus') navigate(m === 'dev' ? { name: 'briefing' } : { name: 'home' })
     if (m === mode) return
     void setMode(m)
     const only = MODE_PAGES[route.name]
@@ -172,28 +178,39 @@ export function Sidebar(): React.JSX.Element {
         </div>
       </div>
 
-      {shown.length > 1 && (
+      {tabs > 1 && (
         <div
           className="relative mx-3 mb-3 grid rounded-lg border border-line p-0.5"
-          style={{ gridTemplateColumns: `repeat(${shown.length}, 1fr)`, background: 'color-mix(in srgb, var(--color-line) 35%, transparent)' }}
+          style={{ gridTemplateColumns: `repeat(${tabs}, 1fr)`, background: 'color-mix(in srgb, var(--color-line) 35%, transparent)' }}
           role="tablist"
           aria-label="Category"
         >
           <span
             className="absolute top-0.5 bottom-0.5 left-0.5 rounded-md border border-line bg-panel shadow-sm transition-transform duration-300"
-            style={{ width: `calc((100% - 0.25rem) / ${shown.length})`, transform: `translateX(${index * 100}%)` }}
+            style={{ width: `calc((100% - 0.25rem) / ${tabs})`, transform: `translateX(${index * 100}%)` }}
           />
           {shown.map((m) => (
             <button
               key={m.mode}
               role="tab"
-              aria-selected={mode === m.mode}
+              aria-selected={mode === m.mode && !onOculus}
               onClick={() => switchTo(m.mode)}
-              className={`relative z-10 rounded-md py-1 text-xs font-semibold tracking-wide transition-colors ${mode === m.mode ? 'text-accent' : 'text-muted hover:text-ink'}`}
+              className={`relative z-10 rounded-md py-1 text-xs font-semibold tracking-wide transition-colors ${mode === m.mode && !onOculus ? 'text-accent' : 'text-muted hover:text-ink'}`}
             >
               {m.label}
             </button>
           ))}
+          {oculus && (
+            <button
+              role="tab"
+              aria-selected={onOculus}
+              onClick={() => navigate({ name: 'oculus' })}
+              title="Oculus Dei — God’s Eye View"
+              className={`relative z-10 rounded-md py-1 font-mono text-[10px] font-semibold tracking-wider transition-colors ${onOculus ? 'text-cyan-300' : 'text-muted hover:text-cyan-200'}`}
+            >
+              OCULUS
+            </button>
+          )}
         </div>
       )}
 

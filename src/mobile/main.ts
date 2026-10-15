@@ -9,7 +9,7 @@ import { SYNC_TABLES } from '@shared/sync'
 import { get, onDbChange, openDb, setWriteGuard } from '../main/db'
 import { cloudStatus, currentUserId, onAccountChange, restoreSession } from '../main/cloud/account'
 import { describeMessage, guardWrite, publishPresence, startLive, stopLive } from '../main/cloud/social'
-import { configureSync, ensureLocalFile, requestSync } from '../main/cloud/sync'
+import { configureSync, ensureLocalFile, fetchMissingFiles, requestSync } from '../main/cloud/sync'
 import { startFeedRefresh } from '../main/feeds'
 import { refreshSubscriptions } from '../main/ics'
 import { currentSenderId, registerIpc } from '../main/ipc'
@@ -115,10 +115,26 @@ export function startMain(): void {
   setTimeout(remind, 10_000)
   setInterval(remind, 60_000)
 
+  // Course files and photos: copy any that are missing from your PC while on the same Wi-Fi.
+  let fetching = false
+  const fetchRound = async (): Promise<void> => {
+    if (fetching || getPrefs().lanAutoFetch === false) return
+    fetching = true
+    try {
+      const r = await fetchMissingFiles(25)
+      if (r.fetched) ['materials', 'exam_papers', 'photos'].forEach((t) => broadcast('db:changed', t))
+    } finally {
+      fetching = false
+    }
+  }
+  setTimeout(() => void fetchRound(), 15_000)
+  setInterval(() => void fetchRound(), 2 * 60 * 1000)
+
   // Phone life cycle: save when leaving the app, catch up when coming back.
   void App.addListener('pause', () => void flushAll())
   void App.addListener('resume', () => {
     if (currentUserId()) requestSync()
+    void fetchRound()
     broadcast('db:changed', '*')
   })
   void LocalNotifications.addListener('localNotificationActionPerformed', (a) => {

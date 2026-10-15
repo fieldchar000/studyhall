@@ -10,6 +10,8 @@ import { configureSync, requestSync } from './cloud/sync'
 import { closeAllVideoRooms, isVideoContents } from './video'
 import { closeSpotifyPlayer, isSpotifyContents, openSpotifyPlayer } from './spotify'
 import { initUpdater } from './updater'
+import { initOculus, isOculusContents, stopOculus } from './oculus'
+import { applyLanShare, stopLanShare } from './lanshare'
 import { startFeedRefresh } from './feeds'
 import { SYNC_TABLES } from '@shared/sync'
 import type { DeepLink } from '@shared/cloud'
@@ -260,7 +262,7 @@ function createWindow(forceShow = false): void {
 /** Lock down every window/frame: no navigation away, no popups, no webviews. */
 function hardenContents(): void {
   app.on('web-contents-created', (_e, contents) => {
-    if (isVideoContents(contents.session) || isSpotifyContents(contents.session)) return // own rules
+    if (isVideoContents(contents.session) || isSpotifyContents(contents.session) || isOculusContents(contents.session)) return // own rules
     contents.on('will-navigate', (e, url) => {
       if (!url.startsWith(APP_ORIGIN) && !(DEV_URL && url.startsWith(DEV_URL))) e.preventDefault()
     })
@@ -356,6 +358,8 @@ if (!app.requestSingleInstanceLock()) {
 
     // Auto-update (installed app only). Tell the UI so it can offer "Restart to update".
     startFeedRefresh(() => broadcast('feeds:changed'))
+    void initOculus((s) => broadcast('oculus:state', s))
+    void applyLanShare().catch((e) => console.error('Wi-Fi sharing could not start', e))
     initUpdater((s) => {
       broadcast('app:update', s)
       if (s.status === 'ready') notify('Studyhall update ready', `Version ${s.version} will install when you restart Studyhall.`)
@@ -408,6 +412,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => app.quit())
   app.on('will-quit', () => {
     closeAllVideoRooms()
+    stopOculus()
+    stopLanShare()
     closeSpotifyPlayer()
     globalShortcut.unregisterAll()
     closeDb()

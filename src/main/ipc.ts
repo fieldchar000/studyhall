@@ -15,6 +15,10 @@ import { feedItems, feedStatus, fetchArticle, markRead, refreshFeeds, repoInfo, 
 import { registerCloudIpc } from './cloud/ipc'
 import { spotifyParts } from '@shared/links'
 import * as timer from './timer'
+import { applyLanShare, lanShareStatus } from './lanshare'
+import { lanPeers } from './lanfetch'
+import { fetchMissingFiles } from './cloud/sync'
+import { checkOculusUpdate, hideOculus, installOculus, oculusState, openOculusInBrowser, removeOculus, showOculus, startOculus, stopOculus, updateOculus } from './oculus'
 import type {
   AssessmentWithModule,
   CalendarRange,
@@ -295,7 +299,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('prefs:get', () => getPrefs())
   handle('prefs:set', (_e, patch: Record<string, unknown>) => {
     const clean: Partial<Prefs> = {}
-    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages'] as const) {
+    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages', 'syncAllFiles', 'oculusDei', 'lanShare', 'lanAutoFetch'] as const) {
       if (k in patch) clean[k] = !!patch[k]
     }
     if (typeof patch.quickCaptureShortcut === 'string' && SHORTCUTS.includes(patch.quickCaptureShortcut)) {
@@ -311,8 +315,15 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
           thumbnail_url: typeof l.thumbnail_url === 'string' && l.thumbnail_url.startsWith('https://') ? l.thumbnail_url : null
         }))
     }
-    return setPrefs(clean)
+    const saved = setPrefs(clean)
+    if ('lanShare' in clean) void applyLanShare()
+    return saved
   })
+
+  // Wi-Fi file sharing between your devices
+  handle('lan:status', () => lanShareStatus())
+  handle('lan:peers', () => lanPeers())
+  handle('lan:fetchNow', () => fetchMissingFiles(500))
 
   // Phase 4: links, search, quick capture, idle game
   handle('embed:lookup', (_e, url: string) => lookup(String(url)))
@@ -363,4 +374,19 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('app:updateState', () => updateState())
   handle('app:checkUpdates', () => checkForUpdates())
   handle('app:installUpdate', () => installUpdate())
+
+  // Oculus Dei (God's Eye View)
+  handle('oculus:state', () => oculusState())
+  handle('oculus:install', () => installOculus())
+  handle('oculus:start', () => startOculus())
+  handle('oculus:stop', () => stopOculus())
+  handle('oculus:show', (e, r: { x: number; y: number; width: number; height: number }) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (win && r && [r.x, r.y, r.width, r.height].every((n) => Number.isFinite(n))) showOculus(win, r)
+  })
+  handle('oculus:hide', () => hideOculus())
+  handle('oculus:openInBrowser', () => openOculusInBrowser())
+  handle('oculus:checkUpdate', () => checkOculusUpdate())
+  handle('oculus:update', () => updateOculus())
+  handle('oculus:remove', () => removeOculus())
 }

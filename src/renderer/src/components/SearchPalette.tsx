@@ -14,6 +14,11 @@ export function openSearch(open = true): void {
   isOpen = open
   listeners.forEach((l) => l())
 }
+export const searchIsOpen = (): boolean => isOpen
+export function subscribeSearch(l: () => void): () => void {
+  listeners.add(l)
+  return () => listeners.delete(l)
+}
 function useSearchOpen(): boolean {
   return useSyncExternalStore(
     (l) => {

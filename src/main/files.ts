@@ -117,7 +117,7 @@ export async function pickMaterials(win: BrowserWindow, target: MaterialPlace | 
 export async function readMaterial(id: string): Promise<PickedDoc | null> {
   const m = get<Material>('materials', id)
   if (!m?.local_path) return null
-  if (!(await ensureLocalFile(m))) throw new Error('This file is only on the PC it was added on (turn on "Sync file" there).')
+  if (!(await ensureLocalFile(m))) throw new Error('This file isn’t on this device yet. Open Studyhall on the PC it was added on, with Wi-Fi sharing on and both on the same Wi-Fi — or turn on “Sync file” there.')
   const [doc] = await readDocs([absolutePath(m)])
   return doc ? { ...doc, name: m.file_name } : null
 }
@@ -139,7 +139,7 @@ export async function pickAndImport(win: BrowserWindow, weekId: string): Promise
 export async function openExternal(id: string): Promise<void> {
   const m = get<Material>('materials', id)
   if (!m?.local_path) return
-  if (!(await ensureLocalFile(m))) throw new Error('This file is only on the PC it was added on (turn on "Sync file" there).')
+  if (!(await ensureLocalFile(m))) throw new Error('This file isn’t on this device yet. Open Studyhall on the PC it was added on, with Wi-Fi sharing on and both on the same Wi-Fi — or turn on “Sync file” there.')
   const path = absolutePath(m)
   if (RISKY.has(extname(path).toLowerCase())) {
     shell.showItemInFolder(path)
@@ -241,7 +241,7 @@ export async function pickPapers(win: BrowserWindow, moduleId: string | null): P
 export async function paperDoc(id: string): Promise<PickedDoc | null> {
   const p = get<ExamPaper>('exam_papers', id)
   if (!p?.local_path) return null
-  if (!(await ensureLocalFile(p, 'exam_papers'))) throw new Error('This file is only on the PC it was added on (turn on "Sync file" there).')
+  if (!(await ensureLocalFile(p, 'exam_papers'))) throw new Error('This file isn’t on this device yet. Open Studyhall on the PC it was added on, with Wi-Fi sharing on and both on the same Wi-Fi — or turn on “Sync file” there.')
   const [doc] = await readDocs([absolutePath(p)])
   return doc ? { ...doc, name: p.file_name } : null
 }
@@ -249,7 +249,7 @@ export async function paperDoc(id: string): Promise<PickedDoc | null> {
 export async function openPaperExternal(id: string): Promise<void> {
   const p = get<ExamPaper>('exam_papers', id)
   if (!p?.local_path) return
-  if (!(await ensureLocalFile(p, 'exam_papers'))) throw new Error('This file is only on the PC it was added on (turn on "Sync file" there).')
+  if (!(await ensureLocalFile(p, 'exam_papers'))) throw new Error('This file isn’t on this device yet. Open Studyhall on the PC it was added on, with Wi-Fi sharing on and both on the same Wi-Fi — or turn on “Sync file” there.')
   const path = absolutePath(p)
   if (RISKY.has(extname(path).toLowerCase())) return shell.showItemInFolder(path)
   const error = await shell.openPath(path)
@@ -291,7 +291,7 @@ export async function serveMaterial(request: Request): Promise<Response> {
     (paper ? ({ ...paper, kind: kindFor(extname(paper.local_path ?? '').toLowerCase()) } as unknown as Material) : null)
   if (!m?.local_path) return new Response('Not found', { status: 404 })
   if (!(await ensureLocalFile(m, paper ? 'exam_papers' : 'materials'))) {
-    return new Response('This file is only on the PC it was added on. Turn on "Sync file" there to see it here.', {
+    return new Response('This file isn’t on this device yet. Open Studyhall on the PC it was added on, with Wi-Fi sharing on and both on the same Wi-Fi — or turn on “Sync file” there.', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' }
     })

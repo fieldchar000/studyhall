@@ -16,7 +16,7 @@ export function PdfPages({ load }: { load: () => Promise<Uint8Array | null> }): 
     void (async () => {
       try {
         const data = await load()
-        if (!data) throw new Error('This file isn’t on this device yet — turn on “Sync file” for it on your PC.')
+        if (!data) throw new Error('This file isn’t on this device yet. Open Studyhall on the PC it was added on, with Wi-Fi sharing on and both on the same Wi-Fi — or turn on “Sync file” there.')
         const pdfjs = await import('pdfjs-dist')
         pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
         const t = pdfjs.getDocument({ data: data.slice() })

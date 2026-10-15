@@ -8,6 +8,7 @@ import { ClientDetailPage, ClientsPage } from './pages/Clients'
 import { FocusPage } from './pages/Focus'
 import { HomePage } from './pages/Home'
 import { BrainPage } from './pages/Brain'
+import { OculusPage } from './pages/Oculus'
 import { ModuleDetailPage } from './pages/ModuleDetail'
 import { ModulesPage } from './pages/Modules'
 import { MaterialsPage } from './pages/Materials'
@@ -67,6 +68,7 @@ export function App(): React.JSX.Element {
       <main className="min-w-0 flex-1 overflow-auto">
         {route.name === 'home' && <HomePage />}
         {route.name === 'brain' && <BrainPage key={route.q ?? ''} q={route.q} />}
+        {route.name === 'oculus' && <OculusPage />}
         {route.name === 'tasks' && <TasksPage />}
         {route.name === 'projects' && <ProjectsPage />}
         {route.name === 'project' && <ProjectDetailPage key={route.id} id={route.id} />}

@@ -5,6 +5,7 @@ import { setEnabledModes, setMode, useEnabledModes, useMode, useProfile } from '
 import { setAppearance, useAppearance, type Accent, type Theme } from '@/lib/appearance'
 import { shortcutLabel } from './Inbox'
 import { AccountCard } from '@/components/AccountCard'
+import { WifiShareCard } from '@/components/WifiShareCard'
 import { RelationshipsCard } from '@/components/RelationshipsSettings'
 import { UpdatesCard } from '@/components/UpdateBanner'
 import { isPhoneApp } from '@/lib/platform'
@@ -35,6 +36,7 @@ export function SettingsPage(): React.JSX.Element {
       <h1 className="mb-6 text-2xl font-semibold tracking-tight">Settings</h1>
 
       <AccountCard />
+      <WifiShareCard />
 
       <RelationshipsCard />
 

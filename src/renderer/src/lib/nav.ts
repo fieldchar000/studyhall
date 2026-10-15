@@ -7,6 +7,7 @@ import { setDrawer } from './platform'
 export type Route =
   | { name: 'home' }
   | { name: 'brain'; q?: string }
+  | { name: 'oculus' }
   | { name: 'tasks' }
   | { name: 'projects' }
   | { name: 'project'; id: string }

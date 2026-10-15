@@ -878,3 +878,13 @@ main h1.text-2xl {
     display: none !important;
   }
 }
+
+/* Oculus Dei install/start progress bar */
+@keyframes oculus-scan {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}

@@ -166,6 +166,28 @@ const api: Api = {
     ipcRenderer.on('db:changed', listener)
     return () => ipcRenderer.removeListener('db:changed', listener)
   },
+  lan: {
+    status: () => ipcRenderer.invoke('lan:status'),
+    peers: () => ipcRenderer.invoke('lan:peers'),
+    fetchNow: () => ipcRenderer.invoke('lan:fetchNow')
+  },
+  oculus: {
+    state: () => ipcRenderer.invoke('oculus:state'),
+    onState: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('oculus:state', l)
+      return () => ipcRenderer.removeListener('oculus:state', l)
+    },
+    install: () => ipcRenderer.invoke('oculus:install'),
+    start: () => ipcRenderer.invoke('oculus:start'),
+    stop: () => ipcRenderer.invoke('oculus:stop'),
+    show: (rect) => ipcRenderer.invoke('oculus:show', rect),
+    hide: () => ipcRenderer.invoke('oculus:hide'),
+    openInBrowser: () => ipcRenderer.invoke('oculus:openInBrowser'),
+    checkUpdate: () => ipcRenderer.invoke('oculus:checkUpdate'),
+    update: () => ipcRenderer.invoke('oculus:update'),
+    remove: () => ipcRenderer.invoke('oculus:remove')
+  },
   app: {
     dataPath: () => ipcRenderer.invoke('app:dataPath'),
     openDataFolder: () => ipcRenderer.invoke('app:openDataFolder'),

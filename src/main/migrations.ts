@@ -692,5 +692,18 @@ export const migrations: Migration[] = [
     notes TEXT NOT NULL DEFAULT ''
   );
   CREATE INDEX idx_plans_person ON plans(person_id);
+  `,
+
+  // 11 — Your devices: a laptop sharing course files over home Wi-Fi says where to find it
+  //      (its network addresses and port) and the private key a phone uses to fetch them.
+  `
+  CREATE TABLE devices (${base},
+    name TEXT NOT NULL DEFAULT '',
+    platform TEXT NOT NULL DEFAULT '',
+    lan_port INTEGER,
+    lan_addresses TEXT NOT NULL DEFAULT '[]',
+    lan_key TEXT NOT NULL DEFAULT '',
+    last_seen TEXT
+  );
   `
 ]

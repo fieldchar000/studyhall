@@ -60,7 +60,8 @@ const TABLES: readonly TableName[] = [
   'people',
   'person_facts',
   'moments',
-  'plans'
+  'plans',
+  'devices'
 ]
 
 /** When a parent is soft-deleted, these children are soft-deleted too. */

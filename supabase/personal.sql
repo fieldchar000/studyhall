@@ -1173,3 +1173,26 @@ revoke all on public.plans from anon;
 revoke delete on public.plans from authenticated; -- deletes are soft (deleted_at)
 drop trigger if exists plans_sync_guard on public.plans;
 create trigger plans_sync_guard before insert or update on public.plans for each row execute function public.sync_guard();
+
+-- devices
+create table if not exists public.devices (id text primary key);
+alter table public.devices add column if not exists created_at text;
+alter table public.devices add column if not exists updated_at text;
+alter table public.devices add column if not exists deleted_at text;
+alter table public.devices add column if not exists owner_id text;
+alter table public.devices add column if not exists name text;
+alter table public.devices add column if not exists platform text;
+alter table public.devices add column if not exists lan_port bigint;
+alter table public.devices add column if not exists lan_addresses text;
+alter table public.devices add column if not exists lan_key text;
+alter table public.devices add column if not exists last_seen text;
+alter table public.devices add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists devices_sync_idx on public.devices (server_updated_at);
+create index if not exists devices_owner_idx on public.devices (owner_id);
+alter table public.devices enable row level security;
+drop policy if exists "own rows" on public.devices;
+create policy "own rows" on public.devices for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.devices from anon;
+revoke delete on public.devices from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists devices_sync_guard on public.devices;
+create trigger devices_sync_guard before insert or update on public.devices for each row execute function public.sync_guard();

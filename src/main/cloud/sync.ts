@@ -14,6 +14,7 @@ import type { SyncState } from '@shared/cloud'
 import type { Material } from '@shared/types'
 import { getDb, getSetting, now, setSetting, update } from '../db'
 import { isNetworkError, supabase } from './client'
+import { fetchFromLan } from '../lanfetch'
 
 export const EPOCH = '1970-01-01T00:00:00.000Z'
 const BATCH = 400
@@ -315,15 +316,54 @@ async function uploadFiles(): Promise<void> {
 }
 
 /** Make sure a material's (or exam paper's) file is on this PC, downloading it if it was synced from elsewhere. */
-export async function ensureLocalFile(m: Pick<Material, 'local_path' | 'storage_path'>, _table: 'materials' | 'exam_papers' | 'photos' = 'materials'): Promise<boolean> {
+export async function ensureLocalFile(m: Pick<Material, 'id' | 'local_path' | 'storage_path'>, _table: 'materials' | 'exam_papers' | 'photos' = 'materials'): Promise<boolean> {
   const abs = join(dataDir(), m.local_path ?? '')
   if (m.local_path && existsSync(abs)) return true
-  if (!uid || !m.storage_path || !m.local_path) return false
+  if (!m.local_path) return false
+  // 1. Straight from one of your PCs on this Wi-Fi (free; no cloud storage used).
+  const lan = await fetchFromLan(m.id).catch(() => null)
+  if (lan) {
+    await mkdir(dirname(abs), { recursive: true })
+    await writeFile(abs, Buffer.from(lan))
+    return true
+  }
+  // 2. The cloud copy, if the file was uploaded.
+  if (!uid || !m.storage_path) return false
   const { data, error } = await supabase().storage.from('materials').download(m.storage_path)
   if (error || !data) return false
   await mkdir(dirname(abs), { recursive: true })
   await writeFile(abs, Buffer.from(await data.arrayBuffer()))
   return true
+}
+
+/** Copy files this device doesn't have yet from your PC over Wi-Fi (a few at a time).
+ *  Stops as soon as the PC can't be reached. Returns how many came and how many are still missing. */
+export async function fetchMissingFiles(max = 25): Promise<{ fetched: number; missing: number }> {
+  const db = getDb()
+  let fetched = 0
+  let missing = 0
+  let reachable = true
+  for (const table of ['materials', 'exam_papers', 'photos'] as const) {
+    const rows = db.prepare(`SELECT id, local_path FROM ${table} WHERE deleted_at IS NULL AND local_path IS NOT NULL`).all() as { id: string; local_path: string }[]
+    for (const r of rows) {
+      const abs = join(dataDir(), r.local_path)
+      if (existsSync(abs)) continue
+      if (!reachable || fetched >= max) {
+        missing++
+        continue
+      }
+      const data = await fetchFromLan(r.id).catch(() => null)
+      if (data) {
+        await mkdir(dirname(abs), { recursive: true })
+        await writeFile(abs, Buffer.from(data))
+        fetched++
+      } else {
+        missing++
+        if (fetched === 0) reachable = false // nothing answered: try again later
+      }
+    }
+  }
+  return { fetched, missing }
 }
 
 export async function storageUsed(): Promise<number> {

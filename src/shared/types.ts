@@ -4,6 +4,22 @@ import type { GameData, SummonResult } from './game'
 
 import type { CloudApi } from './cloud'
 
+/** Oculus Dei (God's Eye View) on this PC: not installed → installing → stopped ⇄ running. */
+export interface OculusState {
+  phase: 'absent' | 'installing' | 'stopped' | 'starting' | 'running' | 'error'
+  step?: string // what's happening right now
+  message?: string // what went wrong
+  version?: string // short commit id
+  url?: string // the local server, while running
+  updateAvailable?: string // short id of a newer version on GitHub
+}
+export interface OculusRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export type UpdateState =
   | { status: 'idle' | 'checking' | 'none' | 'dev' }
   | { status: 'downloading'; version: string; percent: number }
@@ -449,6 +465,7 @@ export interface TableMap {
   person_facts: PersonFact
   moments: Moment
   plans: Plan
+  devices: Device
 }
 
 export type FeedTopic = 'ai' | 'geo' | 'politics' | 'philosophy' | 'tech' | 'games' | 'science' | 'other'
@@ -678,6 +695,16 @@ export interface Moment extends BaseRow {
   rating: number | null
 }
 
+/** One of your devices. A PC sharing files over Wi-Fi lists where to reach it and its key. */
+export interface Device extends BaseRow {
+  name: string
+  platform: string // 'windows' | 'android'
+  lan_port: number | null
+  lan_addresses: string // JSON string[] of local network IPv4 addresses
+  lan_key: string // base64 32-byte key (requests are signed and replies encrypted with it)
+  last_seen: string | null
+}
+
 /** A date or hangout: an idea, something planned, or something done. */
 export interface Plan extends BaseRow {
   person_id: string | null
@@ -820,6 +847,9 @@ export interface Prefs {
   quickCaptureShortcut: string // Electron accelerator, '' = off
   spotifyLinks: SpotifyLink[]
   syncAllFiles?: boolean // upload every course file (so they open on your phone too)
+  oculusDei?: boolean // the Oculus Dei tab is unlocked on this PC (type OCULUSDEI)
+  lanShare?: boolean // PC: let your phone fetch files from this PC over Wi-Fi
+  lanAutoFetch?: boolean // phone: copy missing files from your PC whenever it's on the same Wi-Fi (default on)
 }
 
 /** The API the preload script exposes to the UI as window.api. */
@@ -925,6 +955,24 @@ export interface Api {
   onDbChanged(cb: (table: string) => void): () => void
   /** Account, sync, friends, servers (Phase 5). */
   cloud: CloudApi
+  lan: {
+    status(): Promise<{ sharing: boolean; addresses: string[]; port: number | null }>
+    peers(): Promise<{ name: string; reachable: boolean }[]>
+    fetchNow(): Promise<{ fetched: number; missing: number }>
+  }
+  oculus: {
+    state(): Promise<OculusState>
+    onState(cb: (s: OculusState) => void): () => void
+    install(): Promise<OculusState>
+    start(): Promise<OculusState>
+    stop(): Promise<void>
+    show(rect: OculusRect): Promise<void>
+    hide(): Promise<void>
+    openInBrowser(): Promise<void>
+    checkUpdate(): Promise<OculusState>
+    update(): Promise<OculusState>
+    remove(): Promise<OculusState>
+  }
   app: {
     dataPath(): Promise<string>
     openDataFolder(): Promise<void>

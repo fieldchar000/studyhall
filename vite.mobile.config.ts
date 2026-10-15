@@ -13,7 +13,7 @@ const shim = (f: string): string => resolve('src/mobile/shims', f)
 
 /** PC-only modules of src/main swapped for phone versions (updater, Spotify player, video windows). */
 function phoneOverrides(): Plugin {
-  const OVERRIDDEN = /^\.{1,2}\/(updater|spotify|video)$/
+  const OVERRIDDEN = /^\.{1,2}\/(updater|spotify|video|oculus|lanshare)$/
   return {
     name: 'studyhall-phone-overrides',
     enforce: 'pre',
