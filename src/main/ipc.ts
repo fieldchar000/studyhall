@@ -15,6 +15,7 @@ import { feedItems, feedStatus, fetchArticle, markRead, refreshFeeds, repoInfo, 
 import { registerCloudIpc } from './cloud/ipc'
 import { spotifyParts } from '@shared/links'
 import * as timer from './timer'
+import { slidesPdf } from './slides'
 import { applyLanShare, lanShareStatus } from './lanshare'
 import { lanPeers } from './lanfetch'
 import { fetchMissingFiles } from './cloud/sync'
@@ -147,6 +148,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('materials:pickTo', (e, place: Place) => pickMaterials(BrowserWindow.fromWebContents(e.sender)!, place))
   handle('materials:importTo', (_e, place: Place, paths: string[]) => importMaterials(place, paths))
   handle('materials:read', (_e, id: string) => readMaterial(id))
+  handle('materials:slidesPdf', (_e, id: string) => slidesPdf(String(id)))
   handle('photos:save', (_e, data: Uint8Array) => savePhoto(data))
   handle('materials:open', (_e, id: string) => openExternal(id))
   handle('materials:reveal', (_e, id: string) => showInFolder(id))
@@ -371,6 +373,11 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('app:dataPath', () => app.getPath('userData'))
   handle('app:openDataFolder', () => shell.openPath(app.getPath('userData')))
   handle('app:version', () => app.getVersion())
+  // Files open full screen; the viewer asks for it and gives it back when closed.
+  handle('app:setFullScreen', (e, on: boolean) => {
+    const win = BrowserWindow.fromWebContents(e.sender) as (BrowserWindow & { setFullScreen?: (f: boolean) => void }) | null
+    win?.setFullScreen?.(!!on)
+  })
   handle('app:updateState', () => updateState())
   handle('app:checkUpdates', () => checkForUpdates())
   handle('app:installUpdate', () => installUpdate())

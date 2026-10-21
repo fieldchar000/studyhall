@@ -871,6 +871,8 @@ export interface Api {
     importTo(place: MaterialPlace | null, paths: string[]): Promise<Material[]>
     /** File bytes for the in-app document viewer. */
     read(id: string): Promise<PickedDoc | null>
+    /** The real slides as a PDF (made by PowerPoint / LibreOffice on this PC), or null. */
+    slidesPdf(id: string): Promise<Uint8Array | null>
     openExternal(id: string): Promise<void>
     showInFolder(id: string): Promise<void>
     /** Real file path of a file dropped onto the window. */
@@ -981,6 +983,7 @@ export interface Api {
     dataPath(): Promise<string>
     openDataFolder(): Promise<void>
     version(): Promise<string>
+    setFullScreen(on: boolean): Promise<void>
     /** Main asks the UI to write any pending (debounced) edits before closing. */
     onFlushRequest(cb: () => void): () => void
     flushed(): void
