@@ -163,9 +163,15 @@ const CONTENT_TYPES: Record<MaterialKind, string> = {
 
 // Uploaded HTML is untrusted: it may run its own inline scripts, but it can't
 // load anything from the network and runs in an isolated, origin-less sandbox.
+// Interactive study pages (3D models, quizzes, simulations) may load what's built into them
+// (data:/blob:), common libraries, fonts and models from the web, and keep their own progress.
+// They stay sandboxed in their own material:// origin, so they can't reach the app or your data.
 const HTML_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
-  "img-src data: blob:; font-src data:; media-src data: blob:; sandbox allow-scripts"
+  "default-src 'none'; " +
+  "script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' data: blob: https:; " +
+  "style-src 'unsafe-inline' https:; img-src data: blob: https:; font-src data: https:; " +
+  "media-src data: blob: https:; connect-src data: blob: https:; worker-src blob: data:; " +
+  "sandbox allow-scripts allow-same-origin allow-popups allow-modals"
 
 // ---------- Exam papers ----------
 

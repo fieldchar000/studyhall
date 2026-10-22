@@ -206,9 +206,15 @@ export function MaterialViewer({ material: m, onClose }: { material: Material; o
           <PdfPages slides load={async () => slidePdf} />
         )
       ) : m.kind === 'html' ? (
-        // allow-scripts only: no same-origin, no popups, no top navigation, no forms.
-        // The file is also served with a CSP that blocks all network access.
-        <iframe title={m.title} src={src} sandbox="allow-scripts" className="h-full w-full flex-1 bg-white" />
+        // Sandboxed: no top navigation, no forms. On the PC the page has its own material:// origin
+        // (so it can keep its own progress); on the phone that would be the app's origin, so not there.
+        <iframe
+          title={m.title}
+          src={src}
+          sandbox={isPhoneApp() ? 'allow-scripts allow-popups allow-modals' : 'allow-scripts allow-same-origin allow-popups allow-modals'}
+          allow="fullscreen; xr-spatial-tracking"
+          className="h-full w-full flex-1 bg-white"
+        />
       ) : isPhoneApp() || present ? (
         <PdfPages key={present ? 'present' : 'scroll'} slides={present} load={async () => (await api.materials.read(m.id))?.data ?? null} />
       ) : (
