@@ -5,7 +5,7 @@
 //  • a clear level and target (CEFR A1–C2, with JLPT / HSK / Goethe / DELF equivalents)
 //  • know your "why", and use good free input (resources)
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import type { FocusSession, Flashcard, Language, LanguageLog, LanguageResource, LanguageSkill } from '@shared/types'
 import { AutoText } from '@/components/AutoField'
 import { Icon } from '@/components/ui'
@@ -14,6 +14,7 @@ import { addDays, localDate } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
 import { isDue } from '@/lib/sm2'
 import { LanguageLearn } from './LanguageLearn'
+import { Popover } from '@/components/Popover'
 
 export const LEVELS = ['A0', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const
 
@@ -250,6 +251,7 @@ function Ring({ value, goal, color, size = 44 }: { value: number; goal: number; 
 export function LanguagesPage(): React.JSX.Element {
   const data = useLanguageData()
   const [adding, setAdding] = useState(false)
+  const addRef = useRef<HTMLDivElement>(null)
   const [archived, setArchived] = useState(false)
 
   // First visit: start with Japanese, Chinese, German and French (remove any you don't want).
@@ -281,12 +283,12 @@ export function LanguagesPage(): React.JSX.Element {
           ))}
         </div>
         <div className="flex-1" />
-        <div className="relative">
+        <div className="relative" ref={addRef}>
           <button className="btn-primary" onClick={() => setAdding((v) => !v)}>
             <Icon name="plus" /> Add language
           </button>
           {adding && (
-            <div className="card absolute right-0 z-20 mt-1 flex w-60 flex-col p-1 shadow-xl">
+            <Popover anchor={addRef} onClose={() => setAdding(false)} className="w-60 p-1">
               {[...DEFAULTS, ...MORE]
                 .filter((p) => !used.has(p.code))
                 .map((p) => (
@@ -314,7 +316,7 @@ export function LanguagesPage(): React.JSX.Element {
               >
                 <Icon name="plus" /> Another language…
               </button>
-            </div>
+            </Popover>
           )}
         </div>
       </div>
@@ -567,13 +569,14 @@ function Tile({ label, value, hint }: { label: string; value: string; hint: stri
 
 function LangMenu({ l, save }: { l: Language; save: (p: Partial<Language>) => Promise<Language> }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
   return (
-    <div className="relative">
+    <div className="relative" ref={ref}>
       <button className="btn-ghost" onClick={() => setOpen((v) => !v)} title="More">
         •••
       </button>
       {open && (
-        <div className="card absolute right-0 z-20 mt-1 flex w-56 flex-col gap-2 p-3 text-sm shadow-xl">
+        <Popover anchor={ref} onClose={() => setOpen(false)} className="w-56 gap-2 p-3 text-sm">
           <label className="flex items-center justify-between gap-2">
             <span>Badge</span>
             <input className="field-boxed w-16 text-center" maxLength={3} value={l.flag} onChange={(e) => void save({ flag: e.target.value || '?' })} />
@@ -598,7 +601,7 @@ function LangMenu({ l, save }: { l: Language; save: (p: Partial<Language>) => Pr
           >
             Delete
           </button>
-        </div>
+        </Popover>
       )}
     </div>
   )

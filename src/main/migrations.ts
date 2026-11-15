@@ -705,5 +705,11 @@ export const migrations: Migration[] = [
     lan_key TEXT NOT NULL DEFAULT '',
     last_seen TEXT
   );
+  `,
+
+  // 12 — Starred files and notes (for a while, or until the star is taken off)
+  `
+  ALTER TABLE materials ADD COLUMN starred_until TEXT;
+  ALTER TABLE notes ADD COLUMN starred_until TEXT;
   `
 ]

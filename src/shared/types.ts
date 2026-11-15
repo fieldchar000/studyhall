@@ -72,6 +72,7 @@ export interface Material extends BaseRow {
   storage_path: string | null // cloud storage key (Phase 5)
   sort: number
   category: MaterialCategory
+  starred_until: string | null // starred until then (far future = until removed)
 }
 
 /** How a file or note is filed inside a week. */
@@ -272,6 +273,7 @@ export interface TimetableSlot extends BaseRow {
 }
 
 export interface Note extends BaseRow {
+  starred_until: string | null // starred until then (far future = until removed)
   title: string
   content: string // TipTap JSON document
   plain_text: string // for search

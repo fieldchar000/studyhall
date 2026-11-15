@@ -14,6 +14,7 @@ import { useMode, useProfile } from '@/lib/profile'
 import { addToTop3, isOverdue, openTask, removeFromTop3, setDone, todayStr } from '@/lib/tasks'
 import { ExamCountdownPanel } from '@/components/RevisionPlanner'
 import { SpotifyPanel } from '@/components/SpotifyPanel'
+import { StarredStrip } from '@/components/Star'
 import { LifeTodayCard } from './Habits'
 import { useRecallToday } from './Recall'
 import { doneToday } from '@/lib/recall'
@@ -40,6 +41,7 @@ export function HomePage(): React.JSX.Element {
     <div ref={pageRef} className="h-full overflow-auto">
       <div className="mx-auto flex max-w-6xl flex-col gap-5 px-8 py-7">
         <Greeting />
+        <StarredStrip title="Starred — keep handy" />
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="flex min-w-0 flex-col gap-5">
             {mode === 'study' && <RecallHomeCard />}

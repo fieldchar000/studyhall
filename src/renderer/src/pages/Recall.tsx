@@ -22,6 +22,7 @@ import {
   type RecallPage,
   type Result
 } from '@/lib/recall'
+import { Popover } from '@/components/Popover'
 
 const RESULT_STYLE: Record<Result, { label: string; cls: string; dot: string }> = {
   got: { label: 'Got it', cls: 'border-ok/40 text-ok', dot: 'bg-ok' },
@@ -492,14 +493,6 @@ function ScopePicker({ moduleId }: { moduleId: string }): React.JSX.Element {
   const [scope, setLocal] = useState<string[] | null>(() => getScope(moduleId))
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const close = (e: MouseEvent): void => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false)
-    }
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [open])
   const apply = (next: string[] | null): void => {
     setScope(moduleId, next)
     setLocal(next && next.length ? next : null)
@@ -526,7 +519,7 @@ function ScopePicker({ moduleId }: { moduleId: string }): React.JSX.Element {
         <Icon name="chevron" size={11} className={`transition-transform ${open ? '-rotate-90' : 'rotate-90'}`} />
       </button>
       {open && (
-        <div className="card absolute right-0 z-30 mt-1 flex max-h-80 w-60 flex-col overflow-auto p-1.5 shadow-xl">
+        <Popover anchor={ref} onClose={() => setOpen(false)} className="w-60 p-1.5">
           <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-line/40">
             <input type="radio" checked={!scope} onChange={() => apply(null)} />
             <span className="font-medium">All materials</span>
@@ -546,7 +539,7 @@ function ScopePicker({ moduleId }: { moduleId: string }): React.JSX.Element {
             <span className="text-muted">Not in a week</span>
           </label>
           <p className="px-2 pt-1 pb-0.5 text-[11px] text-muted">Pick one week before a quiz, several before a test, or all of them for revision.</p>
-        </div>
+        </Popover>
       )}
     </div>
   )

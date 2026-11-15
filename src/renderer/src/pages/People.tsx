@@ -1,7 +1,7 @@
 // Life → People: the people you care about and the little things worth remembering —
 // birthdays, what they love, what's going on in their life, memories and plans together.
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef } from 'react'
 import type { Person, PersonKind } from '@shared/types'
 import { AutoText } from '@/components/AutoField'
 import { Icon, PALETTE } from '@/components/ui'
@@ -11,6 +11,7 @@ import { localDate } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
 import { setPartner, useProfile } from '@/lib/profile'
 import { COUPLE_DECKS, FRIEND_CHECKIN, LOVE_LANGUAGES, PERSON_KINDS, TIPS } from '@/lib/peopleContent'
+import { Popover } from '@/components/Popover'
 
 const EMOJI = ['', '🌻', '🐻', '🦊', '🐱', '🌙', '⭐', '🍵', '🎧', '📚', '⚽', '🎨', '🌊', '🍜', '🧋', '🌸']
 
@@ -337,13 +338,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function AvatarPicker({ person, onSave }: { person: Person; onSave: (p: Partial<Person>) => Promise<unknown> }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
   return (
-    <div className="relative">
+    <div className="relative" ref={ref}>
       <button onClick={() => setOpen((o) => !o)} title="Change look">
         <Avatar person={person} size={72} />
       </button>
       {open && (
-        <div className="card absolute top-full left-0 z-30 mt-2 w-60 p-3 shadow-xl">
+        <Popover anchor={ref} align="left" onClose={() => setOpen(false)} className="w-60 p-3">
           <div className="mb-1 text-xs text-muted">Emoji</div>
           <div className="grid grid-cols-8 gap-1">
             {EMOJI.map((e) => (
@@ -361,7 +363,7 @@ function AvatarPicker({ person, onSave }: { person: Person; onSave: (p: Partial<
           <button className="btn mt-3 w-full justify-center text-xs" onClick={() => setOpen(false)}>
             Done
           </button>
-        </div>
+        </Popover>
       )}
     </div>
   )

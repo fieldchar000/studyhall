@@ -260,6 +260,26 @@ function NodePanel({ brain, node, onSelect, onOpen, onClose }: { brain: Brain; n
   const groups = new Map<string, BNode[]>()
   for (const n of neighbours.sort((a, b) => b.degree - a.degree)) groups.set(KIND_LABEL[n.kind], [...(groups.get(KIND_LABEL[n.kind]) ?? []), n])
   const text = (brain.docText.get(node.id) ?? '').replace(/\s+/g, ' ').trim()
+  // Why things are linked: the other notes and files that share this one's ideas, and which ones.
+  // the most telling shared ideas first: multi-word, and found in fewer places
+  const ideaIds = neighbours
+    .filter((n) => n.kind === 'idea')
+    .sort((a, b) => Number(b.label.includes(' ')) - Number(a.label.includes(' ')) || a.degree - b.degree)
+    .map((n) => n.id)
+  const shared = new Map<string, string[]>()
+  if (node.kind !== 'idea') {
+    for (const iid of ideaIds) {
+      for (const other of brain.adj.get(iid) ?? []) {
+        if (other === node.id || brain.nodes.get(other)?.kind === 'idea') continue
+        shared.set(other, [...(shared.get(other) ?? []), brain.nodes.get(iid)!.label])
+      }
+    }
+  }
+  const related = [...shared]
+    .filter(([, via]) => via.length >= 2)
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, 8)
+  const ideaByLabel = new Map(neighbours.filter((n) => n.kind === 'idea').map((n) => [n.label.toLowerCase(), n.id]))
   const preview = node.kind === 'fact' ? '' : text.slice(node.label.length, node.label.length + 320).trim()
   return (
     <aside className="card absolute top-4 right-4 flex max-h-[calc(100%-2rem)] w-[320px] flex-col overflow-hidden shadow-xl">
@@ -280,6 +300,44 @@ function NodePanel({ brain, node, onSelect, onOpen, onClose }: { brain: Brain; n
           <button className="btn-primary mb-3 w-full justify-center" onClick={() => onOpen(node)}>
             <Icon name="external" size={14} /> Open
           </button>
+        )}
+        {node.keys && node.keys.length > 0 && (
+          <div className="mb-3">
+            <div className="label-caps mb-1">Mostly about</div>
+            <div className="flex flex-wrap gap-1">
+              {node.keys.map((k) => {
+                const id = ideaByLabel.get(k.toLowerCase())
+                return (
+                  <button
+                    key={k}
+                    disabled={!id}
+                    onClick={() => id && onSelect(id)}
+                    className={`rounded-full border border-line px-2 py-0.5 text-[11.5px] ${id ? 'hover:bg-line/40' : 'cursor-default text-muted'}`}
+                    title={id ? 'Show everything about this' : 'Only in this one so far'}
+                  >
+                    {k}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+        {related.length > 0 && (
+          <div className="mb-3">
+            <div className="label-caps mb-1">Shares the most with</div>
+            {related.map(([id, via]) => {
+              const n = brain.nodes.get(id)!
+              return (
+                <button key={id} onClick={() => onSelect(id)} className="flex w-full flex-col rounded-md px-1.5 py-1 text-left hover:bg-line/40">
+                  <span className="flex items-center gap-2 text-[13px]">
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: n.color }} />
+                    <span className="truncate">{n.label}</span>
+                  </span>
+                  <span className="truncate pl-4 text-[11px] text-muted">both cover {via.slice(0, 3).join(', ')}{via.length > 3 ? ` +${via.length - 3}` : ''}</span>
+                </button>
+              )
+            })}
+          </div>
         )}
         {groups.size === 0 && <p className="text-sm text-muted">Not linked to anything yet. Mention it in a note, or type [[{node.label}]] somewhere.</p>}
         {[...groups].map(([label, list]) => (

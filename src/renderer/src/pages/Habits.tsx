@@ -1,7 +1,7 @@
 // Life → Habits: tick things off each day. A habit can be daily or "N days a week"
 // (realistic targets keep streaks alive). Checking one off also earns Pixel Quest gems.
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef } from 'react'
 import type { Habit, HabitCheck } from '@shared/types'
 import { AutoText } from '@/components/AutoField'
 import { Icon, PALETTE } from '@/components/ui'
@@ -12,6 +12,7 @@ import { Heatmap } from './Languages'
 import { MoodPicker, saveDay, useJournal } from './Journal'
 import { useMedia, KINDS } from './Library'
 import { money, useCurrency } from './Money'
+import { Popover } from '@/components/Popover'
 
 const SUGGESTIONS: Pick<Habit, 'name' | 'emoji' | 'color' | 'days_per_week'>[] = [
   { name: 'Read 20 minutes', emoji: '📚', color: '#2f6b52', days_per_week: 7 },
@@ -190,6 +191,7 @@ export function HabitsPage(): React.JSX.Element {
 function HabitRow({ h, days, checks }: { h: Habit; days: string[]; checks: HabitCheck[] }): React.JSX.Element {
   const s = habitStat(h, checks)
   const [menu, setMenu] = useState(false)
+  const menuRef = useRef<HTMLTableCellElement>(null)
   const save = (p: Partial<Habit>): Promise<Habit> => db.update('habits', h.id, p)
   return (
     <tr className="group border-b border-line last:border-0">
@@ -236,12 +238,12 @@ function HabitRow({ h, days, checks }: { h: Habit; days: string[]; checks: Habit
       <td className="px-3 py-2 whitespace-nowrap">
         🔥 {s.streak} {s.unit === 'day' ? (s.streak === 1 ? 'day' : 'days') : s.streak === 1 ? 'week' : 'weeks'}
       </td>
-      <td className="relative pr-3">
+      <td className="relative pr-3" ref={menuRef}>
         <button className="btn-ghost invisible px-1 group-hover:visible" onClick={() => setMenu((v) => !v)} title="More">
           •••
         </button>
         {menu && (
-          <div className="card absolute right-2 z-20 mt-1 flex w-44 flex-col p-1 text-sm shadow-xl" onMouseLeave={() => setMenu(false)}>
+          <Popover anchor={menuRef} onClose={() => setMenu(false)} className="w-44 p-1 text-sm">
             <div className="flex flex-wrap gap-1 p-1">
               {PALETTE.map((c) => (
                 <button key={c} className="h-5 w-5 rounded-full" style={{ background: c }} onClick={() => void save({ color: c })} />
@@ -256,7 +258,7 @@ function HabitRow({ h, days, checks }: { h: Habit; days: string[]; checks: Habit
             >
               Delete
             </button>
-          </div>
+          </Popover>
         )}
       </td>
     </tr>

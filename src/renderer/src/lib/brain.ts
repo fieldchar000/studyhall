@@ -14,6 +14,7 @@ import type { Assessment, FlashcardDeck, FocusSession, Material, Module, Note, P
 import { api } from './data'
 import { docToText, pdfText } from './importDoc'
 import { cleanPdfPages } from './recall'
+import { corpusPhrases, htmlStudyText } from './keyphrases'
 import type { Route } from './nav'
 
 export type Kind =
@@ -52,6 +53,8 @@ export interface BNode {
   date: string | null
   open: Open | null
   degree: number
+  /** For notes and files: the phrases it's most about, best first. */
+  keys?: string[]
 }
 
 export interface BEdge {
@@ -114,7 +117,10 @@ interface FileText {
   v: string // updated_at when read
   text: string
   heads: string[]
+  f?: number // how it was read (files read the old way are read again)
 }
+const FMT = 2
+const stale = (c: FileText | null, m: Material): boolean => !c || c.v !== m.updated_at || c.f !== FMT
 
 const DB_NAME = 'studyhall-brain'
 let opened: Promise<IDBDatabase> | null = null
@@ -173,10 +179,15 @@ async function readFile(m: Material): Promise<FileText | null> {
   if (doc.ext === 'pdf') {
     const pages = cleanPdfPages((await pdfText(doc.data)).pages)
     const text = pages.map((p) => p.text).join('\n')
-    return { v: m.updated_at, text: text.slice(0, MAX_TEXT), heads: [...pages.map((p) => p.cue), ...headingLines(text)] }
+    return { v: m.updated_at, f: FMT, text: text.slice(0, MAX_TEXT), heads: [...pages.map((p) => p.cue), ...headingLines(text)] }
+  }
+  // HTML notes: the real content (much of it inside the page's scripts), not its buttons.
+  if (/^html?$/.test(doc.ext)) {
+    const r = htmlStudyText(new TextDecoder().decode(doc.data))
+    return { v: m.updated_at, f: FMT, text: r.text.slice(0, MAX_TEXT), heads: r.heads }
   }
   const text = (await docToText(doc)).slice(0, MAX_TEXT)
-  return { v: m.updated_at, text, heads: headingLines(text) }
+  return { v: m.updated_at, f: FMT, text, heads: headingLines(text) }
 }
 
 /** Read any files not read yet (a few at a time), reporting progress. Returns how many were read. */
@@ -185,14 +196,14 @@ export async function readNewFiles(onProgress: (done: number, total: number) => 
   const todo: Material[] = []
   for (const m of files) {
     const c = await cacheGet(m.id)
-    if (!c || c.v !== m.updated_at) todo.push(m)
+    if (stale(c, m)) todo.push(m)
   }
   let done = 0
   onProgress(0, todo.length)
   for (const m of todo) {
     if (cancelled()) break
     const t = await readFile(m).catch(() => null)
-    await cachePut(m.id, t ?? { v: m.updated_at, text: '', heads: [] })
+    await cachePut(m.id, t ?? { v: m.updated_at, f: FMT, text: '', heads: [] })
     onProgress(++done, todo.length)
   }
   return done
@@ -205,7 +216,7 @@ const GENERIC = new Set(
     /\s+/
   )
 )
-const GENERIC_PHRASES = new Set(['table of contents', 'learning objectives', 'learning outcomes', 'key points', 'key takeaways', 'further reading', 'case study', 'main points', 'next steps', 'next week', 'any questions', 'thank you', 'for today', 'what we covered'])
+const GENERIC_PHRASES = new Set(['table of contents', 'learning objectives', 'learning outcomes', 'key points', 'key takeaways', 'further reading', 'case study', 'main points', 'next steps', 'next week', 'any questions', 'thank you', 'for today', 'what we covered', 'what happens', 'all topics', 'how it works', 'key terms', 'try it', 'quiz yourself', 'memory hook', 'when it goes wrong', 'lecture notes', 'clinical notes', 'practical class slides', 'exam tips', 'common mistakes', 'worked example', 'self check', 'flags from your slides'])
 const SMALL = new Set(['a', 'an', 'the', 'of', 'and', 'or', 'in', 'on', 'to', 'for', 'with', 'vs', 'versus', 'at', 'by', 'from', 'its', 'their', 'is', 'are'])
 
 export const norm = (s: string): string =>
@@ -394,7 +405,7 @@ export async function buildBrain(): Promise<Brain> {
     const id = `material:${m.id}`
     add({ id, kind: 'material', label: short(m.title || m.file_name), sub: [m.file_name.split('.').pop()?.toUpperCase(), modCode(m.module_id)].filter(Boolean).join(' · '), text: `${m.title} ${m.file_name}`, color: modColor(m.module_id), side: m.module_id ? 'study' : 'other', date: m.created_at.slice(0, 10), open: { material: m } })
     const c = READABLE.test(m.file_name) ? await cacheGet(m.id) : null
-    if (READABLE.test(m.file_name) && m.local_path && (!c || c.v !== m.updated_at)) unread++
+    if (READABLE.test(m.file_name) && m.local_path && stale(c, m)) unread++
     if (c?.text) {
       docText.set(id, `${m.title}\n${c.text}`)
       heads.set(id, [m.title, ...c.heads])
@@ -552,10 +563,34 @@ export async function buildBrain(): Promise<Brain> {
   const offer = (raw: string): void => {
     const k = ideaKey(raw)
     if (!k || byLabel.has(k)) return
-    const pretty = raw.replace(/\s+/g, ' ').trim().replace(/^[\d.\s]+/, '')
+    const pretty = raw
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^[\d.\s]+/, '')
+      .replace(/[\s([:–—-]+$/, '')
     if (!ideaLabel.has(k) || (/^[A-Z]/.test(pretty) && !/^[A-Z]/.test(ideaLabel.get(k)!))) ideaLabel.set(k, pretty.length <= 40 ? pretty : k)
   }
   for (const hs of heads.values()) for (const h of hs) offer(h)
+
+  // Key phrases: what each note / file is most about compared with everything else you have
+  // ("action potential", "pressure ulcer"), worked out from the words themselves.
+  const WRITTEN = new Set<Kind>(['note', 'material', 'deck', 'mindmap', 'project', 'journal', 'paper', 'video'])
+  const written = new Map([...docText].filter(([id]) => WRITTEN.has(nodes.get(id)?.kind as Kind)))
+  const kp = corpusPhrases(written)
+  const keyedIdeas = new Map<string, number>() // idea key → documents having it as a top phrase
+  for (const [id, keys] of kp.perDoc) {
+    const node = nodes.get(id)
+    const labels: string[] = []
+    for (const k of keys) {
+      const label = kp.labels.get(k) ?? k
+      labels.push(label)
+      const ik = ideaKey(label)
+      if (!ik || byLabel.has(ik)) continue
+      offer(label)
+      keyedIdeas.set(ik, (keyedIdeas.get(ik) ?? 0) + 1)
+    }
+    if (node) node.keys = labels.slice(0, 10)
+  }
 
   const wiki = new Map<string, string[]>() // node id → [[targets]]
   for (const [id, text] of docText) {
@@ -590,11 +625,19 @@ export async function buildBrain(): Promise<Brain> {
     }
   }
 
-  // Keep ideas found in two or more places; the most widespread first.
+  // Keep ideas found in two or more places — but not ones that are in nearly everything (they
+  // don't tell you how things connect). Ideas that are a main topic somewhere rank first.
   const wikiTargets = new Set([...wiki.values()].flat().map((w) => `idea:${ideaKey(w) ?? ''}`))
+  const tooCommon = Math.max(8, docText.size * 0.3)
+  const weight = (k: string, n: number): number => n + 3 * (keyedIdeas.get(k.slice(5)) ?? 0)
   const kept = [...ideaHits.entries()]
-    .filter(([k, set]) => set.size >= 2 || wikiTargets.has(k))
-    .sort((a, b) => b[1].size - a[1].size)
+    .filter(([k, set]) => {
+      if (wikiTargets.has(k)) return true
+      if (set.size < 2 || set.size > tooCommon) return false
+      // a single word ("Level", "Result") only counts when something is really about it
+      return k.slice(5).includes(' ') || keyedIdeas.has(k.slice(5))
+    })
+    .sort((a, b) => weight(b[0], b[1].size) - weight(a[0], a[1].size))
     .slice(0, 450)
   for (const [k, set] of kept) {
     const key = k.slice(5)

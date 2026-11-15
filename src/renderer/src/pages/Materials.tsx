@@ -2,7 +2,7 @@
 // each week split into Notes and Worksheets. Unsorted things live in "Other".
 // Anything can be moved by drag-and-drop, the week picker on each row, or "Move to…".
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { Material, MaterialCategory, Module, Note, Week } from '@shared/types'
 import { Icon } from '@/components/ui'
 import { api, db, notifyChanged, track, useRows } from '@/lib/data'
@@ -10,6 +10,8 @@ import { formatBytes } from '@/lib/dates'
 import { navigate } from '@/lib/nav'
 import { MaterialViewer, fileType, openMaterial } from '@/components/MaterialViewer'
 import { CategoryToggle, WeekSelect, createWeek, dragProps, useDrop, type Filed } from '@/components/Filing'
+import { Popover } from '@/components/Popover'
+import { StarButton, StarredStrip, useStarGestures } from '@/components/Star'
 
 type Item = { table: 'materials'; row: Material } | { table: 'notes'; row: Note }
 type Filter = 'all' | MaterialCategory
@@ -168,6 +170,7 @@ export function MaterialsPage(): React.JSX.Element {
       <div className={`min-h-0 flex-1 overflow-auto px-8 py-5 transition-colors ${dropAll ? 'bg-accent-soft/40' : ''}`}>
         <div className="mx-auto flex max-w-5xl flex-col gap-4">
           {msg && <div className="rounded-md border border-brass/40 bg-panel px-3 py-2 text-sm">{msg}</div>}
+          {!searching && <StarredStrip />}
           {loading ? null : !modules.length && !items.length ? (
             <div className="m-auto mt-16 flex max-w-md flex-col items-center gap-3 text-center">
               <Icon name="materials" size={40} className="text-brass" />
@@ -232,14 +235,6 @@ function ModulePicker({
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const close = (e: MouseEvent): void => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false)
-    }
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [open])
   const shown = modules.length + 1 - hidden.length
   return (
     <div className="relative" ref={ref}>
@@ -249,7 +244,7 @@ function ModulePicker({
         <Icon name="chevron" className={`transition-transform ${open ? '-rotate-90' : 'rotate-90'}`} size={12} />
       </button>
       {open && (
-        <div className="card absolute right-0 z-30 mt-1 flex w-64 flex-col p-1.5 shadow-xl">
+        <Popover anchor={ref} onClose={() => setOpen(false)} className="w-64 p-1.5">
           {[
             ...modules.map((m) => ({
               id: m.id,
@@ -269,7 +264,7 @@ function ModulePicker({
               Show all
             </button>
           )}
-        </div>
+        </Popover>
       )}
     </div>
   )
@@ -402,6 +397,9 @@ function Column({
 
 function Row({ item, modules, allWeeks, onOpen }: Shared & { item: Item }): React.JSX.Element {
   const [moving, setMoving] = useState(false)
+  const [starring, setStarring] = useState(false)
+  const rowRef = useRef<HTMLDivElement>(null)
+  const gestures = useStarGestures(() => setStarring(true))
   const type = item.table === 'notes' ? { label: 'Note', cls: 'bg-accent-soft text-accent' } : fileType(item.row)
   const open = (): void => {
     if (item.table === 'notes') navigate({ name: 'notes', id: item.row.id })
@@ -411,7 +409,7 @@ function Row({ item, modules, allWeeks, onOpen }: Shared & { item: Item }): Reac
     if (confirm(`Delete “${titleOf(item)}”?`)) void db.remove(item.table, item.row.id)
   }
   return (
-    <div className="group relative flex items-center gap-2 rounded-md py-0.5 pr-1 pl-1 hover:bg-line/30" {...dragProps(filed(item))}>
+    <div ref={rowRef} className="group relative flex items-center gap-2 rounded-md py-0.5 pr-1 pl-1 hover:bg-line/30" style={{ WebkitTouchCallout: 'none' }} {...dragProps(filed(item))} {...gestures}>
       <span className={`w-11 shrink-0 rounded-sm px-1 py-0.5 text-center text-[10px] font-semibold ${type.cls}`}>{type.label}</span>
       <button
         className="min-w-0 flex-1 truncate py-1 text-left text-[13.5px] hover:text-accent"
@@ -420,6 +418,7 @@ function Row({ item, modules, allWeeks, onOpen }: Shared & { item: Item }): Reac
       >
         {titleOf(item)}
       </button>
+      <StarButton table={item.table} row={item.row} anchor={rowRef} open={starring} onOpen={() => setStarring(true)} onClose={() => setStarring(false)} />
       <span className="shrink-0 text-[11px] text-muted tabular-nums group-hover:hidden">{item.table === 'materials' ? formatBytes(item.row.size_bytes) : ''}</span>
       <div className="hidden shrink-0 items-center group-hover:flex">
         {item.row.module_id && <WeekSelect item={filed(item)} moduleId={item.row.module_id} weekId={item.row.week_id} weeks={allWeeks} className="max-w-28" />}
@@ -436,24 +435,16 @@ function Row({ item, modules, allWeeks, onOpen }: Shared & { item: Item }): Reac
           <Icon name="trash" size={14} />
         </button>
       </div>
-      {moving && <MoveTo item={item} modules={modules} allWeeks={allWeeks} onClose={() => setMoving(false)} />}
+      {moving && <MoveTo anchor={rowRef} item={item} modules={modules} allWeeks={allWeeks} onClose={() => setMoving(false)} />}
     </div>
   )
 }
 
 /** Small "file it under…" popover: pick a module and week, then Move. */
-function MoveTo({ item, modules, allWeeks, onClose }: { item: Item; modules: Module[]; allWeeks: Week[]; onClose: () => void }): React.JSX.Element {
-  const ref = useRef<HTMLDivElement>(null)
+function MoveTo({ anchor, item, modules, allWeeks, onClose }: { anchor: React.RefObject<HTMLElement | null>; item: Item; modules: Module[]; allWeeks: Week[]; onClose: () => void }): React.JSX.Element {
   const [moduleId, setModuleId] = useState(item.row.module_id ?? '')
   const [weekId, setWeekId] = useState(item.row.week_id ?? '')
   const weeks = allWeeks.filter((w) => w.module_id === moduleId).sort((a, b) => a.number - b.number)
-  useEffect(() => {
-    const close = (e: MouseEvent): void => {
-      if (!ref.current?.contains(e.target as Node)) onClose()
-    }
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [onClose])
   const move = async (): Promise<void> => {
     let week = moduleId ? weekId || null : null
     if (week === 'new') week = (await createWeek(moduleId, weeks)).id
@@ -461,7 +452,7 @@ function MoveTo({ item, modules, allWeeks, onClose }: { item: Item; modules: Mod
     await db.update(item.table, item.row.id, { module_id: moduleId || null, week_id: week })
   }
   return (
-    <div ref={ref} className="card absolute top-full right-0 z-30 mt-1 flex w-64 flex-col gap-2 p-3 shadow-xl">
+    <Popover anchor={anchor} onClose={onClose} className="w-64 gap-2 p-3">
       <label className="flex flex-col gap-1 text-xs text-muted">
         Module
         <select
@@ -503,6 +494,6 @@ function MoveTo({ item, modules, allWeeks, onClose }: { item: Item; modules: Mod
           Move
         </button>
       </div>
-    </div>
+    </Popover>
   )
 }
