@@ -44,6 +44,8 @@ import { SearchPalette } from './components/SearchPalette'
 import { FriendsPage } from './pages/Friends'
 import { ServersPage } from './pages/Servers'
 import { InviteLinkHandler } from './components/InviteLinkHandler'
+import { VoiceOverlay } from './components/VoiceOverlay'
+import { isPhoneApp } from './lib/platform'
 
 export function App(): React.JSX.Element {
   const route = useRoute()
@@ -115,6 +117,7 @@ export function App(): React.JSX.Element {
       <SearchPalette />
       <InviteLinkHandler />
       <DevKitUnlock />
+      {isPhoneApp() && <VoiceOverlay />}
     </div>
   )
 }

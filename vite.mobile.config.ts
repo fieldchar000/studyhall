@@ -33,6 +33,8 @@ export default defineConfig({
   plugins: [phoneOverrides(), react(), tailwindcss()],
   resolve: {
     alias: [
+      // The PC's offline speech engines aren't part of the phone app (it uses Android's own).
+      { find: /^@\/pages\/Voice$/, replacement: resolve('src/mobile/overrides/voicePanel.tsx') },
       { find: /^@shared\//, replacement: `${resolve('src/shared')}/` },
       { find: /^@\//, replacement: `${resolve('src/renderer/src')}/` },
       { find: /^electron$/, replacement: shim('electron.ts') },

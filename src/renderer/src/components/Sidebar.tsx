@@ -6,6 +6,7 @@ import { setMode, useEnabledModes, useMode, useProfile } from '@/lib/profile'
 import { fmtClock, PHASE_LABEL, useRemaining, useTimerState } from '@/lib/timer'
 import { setModeAccent } from '@/lib/appearance'
 import { openSearch } from './SearchPalette'
+import { startBrief } from '@/lib/voice'
 import { useCloud } from '@/lib/cloud'
 import { UpdateBanner } from './UpdateBanner'
 import { Icon, SaveIndicator } from './ui'
@@ -214,14 +215,24 @@ export function Sidebar(): React.JSX.Element {
         </div>
       )}
 
-      <button
-        onClick={() => openSearch()}
-        className="mx-3 mb-4 flex items-center gap-2 rounded-md border border-line bg-panel px-3 py-1.5 text-left text-sm text-muted transition-colors hover:text-ink"
-      >
-        <Icon name="search" size={15} />
-        <span className="flex-1">Search</span>
-        <kbd className="rounded-sm border border-line px-1 font-sans text-[10px] max-md:hidden">Ctrl K</kbd>
-      </button>
+      <div className="mx-3 mb-4 flex gap-1.5">
+        <button
+          onClick={() => openSearch()}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-panel px-3 py-1.5 text-left text-sm text-muted transition-colors hover:text-ink"
+        >
+          <Icon name="search" size={15} />
+          <span className="flex-1">Search</span>
+          <kbd className="rounded-sm border border-line px-1 font-sans text-[10px] max-md:hidden">Ctrl K</kbd>
+        </button>
+        <button
+          onClick={() => void startBrief()}
+          className="grid w-9 shrink-0 place-items-center rounded-md border border-line bg-panel text-muted transition-colors hover:text-ink"
+          title="Brief Bauer — tell Studyhall what to add, cancel or log"
+          aria-label="Brief Bauer by voice"
+        >
+          <Icon name="mic" size={15} />
+        </button>
+      </div>
 
       <nav className="flex min-h-0 flex-col gap-4 overflow-auto px-3 pb-2">
         {groups.map((group, gi) => {
@@ -284,6 +295,9 @@ export function MobileBar(): React.JSX.Element {
         <div className="min-w-0 flex-1 truncate text-[19px] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
           {title}
         </div>
+        <button className="flex h-11 w-11 items-center justify-center rounded-lg text-ink" onClick={() => void startBrief()} aria-label="Brief Bauer by voice">
+          <Icon name="mic" size={20} />
+        </button>
         <button className="flex h-11 w-11 items-center justify-center rounded-lg text-ink" onClick={() => openSearch()} aria-label="Search">
           <Icon name="search" size={20} />
         </button>

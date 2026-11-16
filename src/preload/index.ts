@@ -190,6 +190,25 @@ const api: Api = {
     remove: () => ipcRenderer.invoke('oculus:remove'),
     setLtaKey: (key) => ipcRenderer.invoke('oculus:setLtaKey', key)
   },
+  voice: {
+    status: () => ipcRenderer.invoke('voice:status'),
+    download: () => ipcRenderer.invoke('voice:download'),
+    brief: () => ipcRenderer.invoke('voice:brief'),
+    onStatus: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('voice:status', l)
+      return () => ipcRenderer.removeListener('voice:status', l)
+    },
+    onCommand: (cb) => {
+      const l = (_e: unknown, c: Parameters<typeof cb>[0]): void => cb(c)
+      ipcRenderer.on('voice:command', l)
+      ipcRenderer.send('voice:window', { type: 'ready' })
+      return () => ipcRenderer.removeListener('voice:command', l)
+    },
+    show: (height, focus) => ipcRenderer.send('voice:window', { type: 'show', height, focus: !!focus }),
+    hide: () => ipcRenderer.send('voice:window', { type: 'hide' }),
+    report: (state) => ipcRenderer.send('voice:window', { type: 'state', state })
+  },
   app: {
     dataPath: () => ipcRenderer.invoke('app:dataPath'),
     openDataFolder: () => ipcRenderer.invoke('app:openDataFolder'),

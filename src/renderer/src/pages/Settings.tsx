@@ -9,6 +9,7 @@ import { WifiShareCard } from '@/components/WifiShareCard'
 import { RelationshipsCard } from '@/components/RelationshipsSettings'
 import { UpdatesCard } from '@/components/UpdateBanner'
 import { isPhoneApp } from '@/lib/platform'
+import { VoiceCard } from '@/components/VoiceCard'
 
 export function SettingsPage(): React.JSX.Element {
   const phone = isPhoneApp()
@@ -39,6 +40,8 @@ export function SettingsPage(): React.JSX.Element {
       <WifiShareCard />
 
       <RelationshipsCard />
+
+      <VoiceCard />
 
       <section className="card mb-4 p-5">
         <h2 className="mb-1 font-semibold">Categories</h2>

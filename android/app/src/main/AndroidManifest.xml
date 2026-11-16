@@ -26,6 +26,12 @@
 
         </activity>
 
+        <!-- "Hey Bauer": listens for the wake word while Studyhall is closed (shows a notification) -->
+        <service
+            android:name=".BauerService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -40,6 +46,17 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Voice briefings ("Hey Bauer") -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <!-- Studyhall only shows notifications straight away, so the notification library's extras for
          scheduled alarms (start at boot, keep awake, exact alarms) aren't needed: removed. -->

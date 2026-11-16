@@ -98,6 +98,9 @@ export interface IpcDeps {
   onCalendarUpdated: () => void
   hideCapture: () => void
   shortcutStatus: () => { accelerator: string; registered: boolean }
+  /** PC-only handlers (voice), registered with the same sender checks. */
+  extra?: (handle: (channel: string, fn: (e: IpcMainInvokeEvent, ...args: any[]) => unknown) => void) => void
+  onPrefs?: (patch: Partial<Prefs>) => void
 }
 
 export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
@@ -301,7 +304,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('prefs:get', () => getPrefs())
   handle('prefs:set', (_e, patch: Record<string, unknown>) => {
     const clean: Partial<Prefs> = {}
-    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages', 'syncAllFiles', 'oculusDei', 'lanShare', 'lanAutoFetch'] as const) {
+    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages', 'syncAllFiles', 'oculusDei', 'lanShare', 'lanAutoFetch', 'voiceWake'] as const) {
       if (k in patch) clean[k] = !!patch[k]
     }
     if (typeof patch.quickCaptureShortcut === 'string' && SHORTCUTS.includes(patch.quickCaptureShortcut)) {
@@ -317,7 +320,9 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
           thumbnail_url: typeof l.thumbnail_url === 'string' && l.thumbnail_url.startsWith('https://') ? l.thumbnail_url : null
         }))
     }
+    if ('voiceSensitivity' in patch && Number.isFinite(Number(patch.voiceSensitivity))) clean.voiceSensitivity = Math.max(0, Math.min(100, Math.round(Number(patch.voiceSensitivity))))
     const saved = setPrefs(clean)
+    deps.onPrefs?.(clean)
     if ('lanShare' in clean) void applyLanShare()
     return saved
   })
@@ -368,6 +373,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
 
   // Phase 5: account, sync, friends, servers, video rooms
   registerCloudIpc(handle)
+  deps.extra?.(handle)
 
   // App
   handle('app:dataPath', () => app.getPath('userData'))

@@ -843,6 +843,18 @@ export interface TimerState extends TimerContext {
   sessionId: string | null // focus_sessions row being recorded
 }
 
+/** Voice briefings ("Hey Bauer"). */
+export type VoiceState = 'off' | 'loading' | 'armed' | 'listening' | 'thinking' | 'review' | 'error'
+export interface VoiceStatus {
+  installed: boolean // speech models downloaded on this device
+  downloading: boolean
+  progress: number // 0..1
+  sizeMb: number
+  error: string | null
+  state: VoiceState
+}
+export type VoiceCommand = { type: 'listen' } | { type: 'config'; wake: boolean; sensitivity: number } | { type: 'stop' }
+
 export interface Prefs {
   closeToTray: boolean
   launchAtLogin: boolean
@@ -855,6 +867,8 @@ export interface Prefs {
   oculusDei?: boolean // the Oculus Dei tab is unlocked on this PC (type OCULUSDEI)
   lanShare?: boolean // PC: let your phone fetch files from this PC over Wi-Fi
   lanAutoFetch?: boolean // phone: copy missing files from your PC whenever it's on the same Wi-Fi (default on)
+  voiceWake?: boolean // listen for "Hey Bauer" (PC: while Studyhall runs, even in the tray)
+  voiceSensitivity?: number // 0–100, how readily "Hey Bauer" is accepted (default 50)
 }
 
 /** The API the preload script exposes to the UI as window.api. */
@@ -980,6 +994,20 @@ export interface Api {
     update(): Promise<OculusState>
     remove(): Promise<OculusState>
     setLtaKey(key: string): Promise<OculusState>
+  }
+  /** Voice briefings (PC). */
+  voice: {
+    status(): Promise<VoiceStatus>
+    /** One-time download of the offline speech models. */
+    download(): Promise<VoiceStatus>
+    /** Open the Bauer panel and start listening now. */
+    brief(): Promise<void>
+    onStatus(cb: (s: VoiceStatus) => void): () => void
+    // Used by the Bauer panel window itself:
+    onCommand(cb: (c: VoiceCommand) => void): () => void
+    show(height: number, focus?: boolean): void
+    hide(): void
+    report(state: VoiceState): void
   }
   app: {
     dataPath(): Promise<string>

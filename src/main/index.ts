@@ -1,6 +1,6 @@
 ﻿// Main process: creates the window, owns the database, enforces security rules.
 
-import { app, BrowserWindow, globalShortcut, Menu, nativeTheme, Notification, protocol, screen, session, shell } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeTheme, Notification, protocol, screen, session, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
 import { closeDb, getSetting, onDbChange, openDb, setSetting, setWriteGuard } from './db'
@@ -23,6 +23,7 @@ import { checkDeadlines } from './reminders'
 import * as timer from './timer'
 import { createTray, updateTray } from './tray'
 import { loadWindowState, trackWindowState } from './windowState'
+import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
 
@@ -51,6 +52,12 @@ const CSP = [
   "base-uri 'none'",
   "form-action 'none'"
 ].join('; ')
+// The Bauer panel runs the offline speech engines (WebAssembly in workers), so its page
+// may also compile WebAssembly and start workers from blobs. It's cross-origin isolated
+// (COOP/COEP) so speech recognition can use several CPU threads.
+const VOICE_CSP = CSP.replace("script-src 'self'", "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:")
+  .replace("connect-src 'self'", "connect-src 'self' data: blob:; worker-src 'self' blob:; media-src 'self' blob:")
+const VOICE_HEADERS = { 'cross-origin-opener-policy': 'same-origin', 'cross-origin-embedder-policy': 'require-corp' }
 // Vite's dev server needs inline scripts + a websocket for hot reload (dev only).
 const DEV_CSP = CSP.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'").replace(
   "connect-src 'self'",
@@ -79,14 +86,19 @@ const MIME: Record<string, string> = {
 
 /** Serve the built UI from inside the app package (app://studyhall/...). */
 async function serveApp(request: Request): Promise<Response> {
-  let path = decodeURIComponent(new URL(request.url).pathname)
+  const url = new URL(request.url)
+  let path = decodeURIComponent(url.pathname)
+  if (path.startsWith('/voice-models/')) return serveVoiceModel(url.pathname.slice('/voice-models/'.length))
   if (path === '/' || path === '') path = '/index.html'
   const file = normalize(join(RENDERER_DIR, path))
   if (!file.startsWith(RENDERER_DIR)) return new Response('Forbidden', { status: 403 })
   try {
     const body = await readFile(file)
     const headers: Record<string, string> = { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' }
-    if (file.endsWith('.html')) headers['content-security-policy'] = CSP
+    if (file.endsWith('.html')) {
+      if (url.searchParams.has('voice')) Object.assign(headers, VOICE_HEADERS, { 'content-security-policy': VOICE_CSP })
+      else headers['content-security-policy'] = CSP
+    } else Object.assign(headers, { 'cross-origin-resource-policy': 'same-origin', 'cross-origin-embedder-policy': 'require-corp' }) // (workers started from these files need it too)
     return new Response(body, { headers })
   } catch {
     return new Response('Not found', { status: 404 })
@@ -251,6 +263,7 @@ function createWindow(forceShow = false): void {
   win.on('closed', () => {
     mainWindow = null
     captureWindow?.destroy() // so the app can exit once the main window is gone
+    closeVoice()
   })
   // Windows is shutting down / logging off: really quit instead of hiding to the tray.
   win.on('session-end', () => (quitting = true))
@@ -298,8 +311,15 @@ if (!app.requestSingleInstanceLock()) {
 
     // Deny camera/mic/location/etc. by default (video calls get their own window later).
     const allowed = new Set(['clipboard-sanitized-write', 'fullscreen'])
-    session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)))
-    session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission))
+    // The one exception: the Bauer panel may use the microphone (sound only).
+    session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => {
+      if (permission === 'media' && wc && isVoiceContents(wc)) {
+        const types = (details as { mediaTypes?: string[] }).mediaTypes ?? []
+        return cb(types.length > 0 && types.every((t) => t === 'audio'))
+      }
+      cb(allowed.has(permission))
+    })
+    session.defaultSession.setPermissionCheckHandler((wc, permission) => allowed.has(permission) || (permission === 'media' && !!wc && isVoiceContents(wc)))
 
     // YouTube refuses to play embeds that don't say which app embeds them ("Error 153").
     // Apps without a website identify themselves with their app id as the Referer.
@@ -317,7 +337,9 @@ if (!app.requestSingleInstanceLock()) {
     // In dev the UI comes from Vite's server, so attach the CSP header there too.
     if (DEV_URL) {
       session.defaultSession.webRequest.onHeadersReceived({ urls: [`${DEV_URL}*`] }, (details, cb) => {
-        cb({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [DEV_CSP] } })
+        const voice = details.url.includes('?voice')
+        const csp = voice ? VOICE_CSP.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'").replace("connect-src 'self'", "connect-src 'self' ws://localhost:*") : DEV_CSP
+        cb({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp], ...(voice ? Object.fromEntries(Object.entries(VOICE_HEADERS).map(([k, v]) => [k, [v]])) : {}) } })
       })
     }
 
@@ -325,8 +347,21 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc([APP_ORIGIN, ...(DEV_URL ? [DEV_URL] : [])], {
       onCalendarUpdated: notifyCalendar,
       hideCapture: () => captureWindow?.hide(),
-      shortcutStatus: () => shortcut
+      shortcutStatus: () => shortcut,
+      extra: (handle) => {
+        handle('voice:status', () => voiceStatus())
+        handle('voice:download', () => downloadVoice())
+        handle('voice:brief', () => startBrief())
+      },
+      onPrefs: (patch) => {
+        if ('voiceWake' in patch || 'voiceSensitivity' in patch) syncVoiceWindow()
+      }
     })
+    // Messages from the Bauer panel window (show / hide / what it's doing).
+    ipcMain.on('voice:window', (e, msg) => {
+      if (isVoiceContents(e.sender) && msg && typeof msg === 'object') voiceFromWindow(msg)
+    })
+    configureVoice({ url: appUrl, webPreferences: SECURE_PREFS, onStatus: (st) => broadcast('voice:status', st) })
     // Tell every other window when data changes (e.g. quick capture -> inbox badge).
     onDbChange((table) => {
       // Local edit to a synced table: upload it shortly (when signed in).
@@ -371,6 +406,7 @@ if (!app.requestSingleInstanceLock()) {
     handleDeepLink(process.argv)
 
     createWindow()
+    syncVoiceWindow() // "Hey Bauer" keeps listening while Studyhall is in the tray
     applyShortcut(getPrefs().quickCaptureShortcut)
     watchShortcut(applyShortcut)
 
@@ -379,6 +415,7 @@ if (!app.requestSingleInstanceLock()) {
       show: () => showWindow(),
       openFocus: () => showWindow('focus'),
       openSpotify: () => void openSpotifyPlayer(),
+      brief: () => void voiceStatus().then((st) => (st.installed ? startBrief() : showWindow('settings'))),
       toggleTimer: () => (timer.getState().running ? timer.pause() : timer.start()),
       skip: () => timer.skip(),
       quit: () => app.quit()
@@ -415,6 +452,7 @@ if (!app.requestSingleInstanceLock()) {
     stopOculus()
     stopLanShare()
     closeSpotifyPlayer()
+    closeVoice()
     globalShortcut.unregisterAll()
     closeDb()
   })

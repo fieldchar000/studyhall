@@ -79,6 +79,7 @@ import {
   UploadSimple,
   UsersThree,
   Wallet,
+  Microphone,
   X
 } from '@phosphor-icons/react'
 
@@ -86,6 +87,7 @@ import {
 
 const ICONS: Record<string, PhosphorIcon> = {
   home: House,
+  mic: Microphone,
   menu: List,
   brain: ShareNetwork,
   modules: BookBookmark,
