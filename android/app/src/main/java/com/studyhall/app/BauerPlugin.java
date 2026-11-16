@@ -72,7 +72,7 @@ public class BauerPlugin extends Plugin {
     @Override
     protected void handleOnResume() {
         foreground = true;
-        if (!pendingItems(false).isEmpty()) notifyListeners("pending", new JSObject());
+        if (pendingItems(false).length() > 0) notifyListeners("pending", new JSObject());
     }
 
     @Override
