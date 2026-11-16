@@ -53,8 +53,17 @@ public class BauerService extends Service {
         boolean onWake();
     }
 
+    /** The app's "write this one down for me" request (Vosk instead of Android's recogniser). */
+    interface CaptureCallback {
+        void done(String text);
+    }
+
+    static final String ACTION_CAPTURE = "capture";
+    static final String ACTION_FINISH = "finish";
     static volatile WakeHandler wakeHandler;
-    static volatile boolean running = false;
+    static volatile CaptureCallback captureCallback;
+    static volatile boolean running = false; // listening for the wake word
+    static volatile boolean alive = false; // the service is up (wake word or a one-off capture)
     static volatile String state = "off";
 
     private static final String GRAMMAR = "[\"hey bauer\", \"hi bauer\", \"okay bauer\", \"hey bower\", \"hey power\", \"bauer\", \"hey\", \"hi\", \"okay\", \"power\", \"hour\", \"our\", \"flower\", \"tower\", \"shower\", \"how are\", \"hello\", \"[unk]\"]";
@@ -64,6 +73,7 @@ public class BauerService extends Service {
     private SpeechService speech;
     private int sensitivity = 50;
     private boolean paused = false;
+    private boolean discard = false; // the app cancelled the briefing being written down
     private long lastWake = 0;
 
     // Background capture of a briefing
@@ -113,11 +123,25 @@ public class BauerService extends Service {
                 paused = false;
                 startSpotting();
                 return START_STICKY;
+            case ACTION_CAPTURE:
+                // The app asks us to write down one briefing (its own recogniser isn't available).
+                if (!alive) goForeground();
+                alive = true;
+                paused = false;
+                stopSpeech();
+                if (model == null) loadModelThen(this::startCapture);
+                else startCapture();
+                return START_STICKY;
+            case ACTION_FINISH:
+                if (intent.getBooleanExtra("discard", false)) discard = true;
+                finishCapture();
+                return START_STICKY;
             default:
-                goForeground();
+                if (!alive) goForeground();
+                alive = true;
                 running = true;
                 paused = false;
-                if (model == null) loadModelThenSpot();
+                if (model == null) loadModelThen(this::startSpotting);
                 else startSpotting();
                 return START_STICKY;
         }
@@ -179,7 +203,7 @@ public class BauerService extends Service {
         state = s;
     }
 
-    private void loadModelThenSpot() {
+    private void loadModelThen(Runnable next) {
         setState("loading");
         new Thread(() -> {
             try {
@@ -187,13 +211,16 @@ public class BauerService extends Service {
                 Model m = new Model(modelDir(this).getAbsolutePath());
                 main.post(() -> {
                     model = m;
-                    if (running && !paused) startSpotting();
+                    if (!paused) next.run();
                 });
             } catch (Throwable e) {
                 Log.e(TAG, "Could not load the speech model", e);
                 main.post(() -> {
                     setState("error");
                     updateNotification("Hey Bauer couldn’t start — open Studyhall");
+                    CaptureCallback cb = captureCallback;
+                    captureCallback = null;
+                    if (cb != null) cb.done("");
                 });
             }
         }).start();
@@ -202,7 +229,7 @@ public class BauerService extends Service {
     // ---------- Wake word ----------
 
     private void startSpotting() {
-        if (model == null || paused || capturing) return;
+        if (!running || model == null || paused || capturing) return;
         stopSpeech();
         try {
             Recognizer r = new Recognizer(model, 16000.0f, GRAMMAR);
@@ -288,6 +315,7 @@ public class BauerService extends Service {
     // ---------- Writing down a briefing while Studyhall is closed ----------
 
     private void startCapture() {
+        discard = false;
         capturing = true;
         said.setLength(0);
         lastSpeech = 0;
@@ -331,8 +359,8 @@ public class BauerService extends Service {
             });
             main.postDelayed(captureTick, 250);
         } catch (Exception e) {
-            capturing = false;
-            startSpotting();
+            Log.e(TAG, "Could not start writing down", e);
+            completeCapture(); // (tells the app, if it asked, then goes back to the wake word)
         }
     }
 
@@ -345,11 +373,33 @@ public class BauerService extends Service {
     }
 
     private void completeCapture() {
+        capturing = false;
+        main.removeCallbacks(captureTick);
         if (speech != null) {
             speech.shutdown();
             speech = null;
         }
-        String text = said.toString().trim();
+        String text = discard ? "" : said.toString().trim();
+        CaptureCallback cb = captureCallback;
+        boolean forApp = cb != null || discard;
+        discard = false;
+        if (forApp) {
+            // Written down for the app, which shows the review list itself (or it was cancelled).
+            captureCallback = null;
+            if (cb != null) {
+                beep(text.isEmpty() ? ToneGenerator.TONE_PROP_NACK : ToneGenerator.TONE_PROP_BEEP2);
+                cb.done(text);
+            }
+            if (!running) {
+                stopEverything();
+                stopSelf();
+            } else {
+                paused = true; // the app says "resume" after the review
+                setState("paused");
+                updateNotification("Listening for “Hey Bauer”");
+            }
+            return;
+        }
         if (!text.isEmpty()) {
             savePending(this, text);
             beep(ToneGenerator.TONE_PROP_BEEP2);
@@ -410,6 +460,10 @@ public class BauerService extends Service {
         main.removeCallbacksAndMessages(null);
         stopSpeech();
         running = false;
+        alive = false;
+        CaptureCallback cb = captureCallback;
+        captureCallback = null;
+        if (cb != null) cb.done("");
         setState("off");
         if (model != null) {
             model.close();

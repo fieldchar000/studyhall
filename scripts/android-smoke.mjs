@@ -205,8 +205,9 @@ async function main() {
   const pend = await page.ev(`${B}.pending().then((r) => r.items.length)`).catch((e) => e.message)
   check('Pending briefings readable', pend === 0, String(pend))
   // Android's recogniser: with no microphone sound it should give up politely, not crash.
-  const heard = await page.ev(`Promise.race([${B}.listen().then((r) => 'text: ' + r.text, (e) => 'rejected: ' + e.message), new Promise((r) => setTimeout(() => r('timeout'), 15000))])`)
-  report.push(`INFO  listen() on the emulator: ${heard} (recogniser available: ${st.recognizer})`)
+  const heard = await page.ev(`Promise.race([${B}.listen().then((r) => 'text: ' + r.text, (e) => 'rejected: ' + e.message), new Promise((r) => setTimeout(() => r('timeout'), 30000))])`)
+  // (the emulator's recogniser refuses English → retries → Bauer's offline model hears silence)
+  check('Listening once ends cleanly (no crash, no hang)', /^rejected: nothing|^text: /.test(heard), heard)
   await page.ev(`${B}.cancelListening().catch(() => {}); ${B}.stop()`)
   await sleep(1500)
   const stopped = await page.ev(`${B}.status()`).catch(() => ({}))

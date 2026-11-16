@@ -268,22 +268,55 @@ public class BauerPlugin extends Plugin {
     }
 
     private void reallyListen(PluginCall call) {
+        call.setKeepAlive(true);
         if (!SpeechRecognizer.isRecognitionAvailable(getContext())) {
-            call.reject("no_recognizer");
+            listenOffline(call, "no_recognizer");
             return;
         }
         // The wake-word service lets go of the microphone first.
         if (BauerService.running) getContext().startService(new Intent(getContext(), BauerService.class).setAction(BauerService.ACTION_PAUSE));
-        call.setKeepAlive(true);
+        listenNative(call, false);
+    }
+
+    /** Write it down with the offline model instead (no recogniser, or it refuses English). */
+    private void listenOffline(PluginCall call, String whyNot) {
+        if (!BauerService.modelReady(getContext())) {
+            call.setKeepAlive(false);
+            call.reject(whyNot);
+            return;
+        }
+        BauerService.captureCallback = (text) -> {
+            call.setKeepAlive(false);
+            if (text == null || text.trim().isEmpty()) call.reject("nothing");
+            else call.resolve(new JSObject().put("text", text));
+        };
+        offline = true;
+        notifyListeners("state", new JSObject().put("state", "listening"));
+        try {
+            ContextCompat.startForegroundService(getContext(), new Intent(getContext(), BauerService.class).setAction(BauerService.ACTION_CAPTURE));
+        } catch (Exception e) {
+            BauerService.captureCallback = null;
+            call.setKeepAlive(false);
+            call.reject("Speech recognition couldn’t start: " + e.getMessage());
+        }
+    }
+
+    private boolean offline = false;
+
+    /** Android's own recogniser. plain = without asking for English / offline (some refuse those). */
+    private void listenNative(PluginCall call, boolean plain) {
+        offline = false;
         getActivity().runOnUiThread(() -> {
             try {
                 if (recognizer != null) recognizer.destroy();
                 recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
                 Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
                 intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en");
+                if (!plain) {
+                    intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US");
+                    intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
+                }
                 intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-                intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true);
                 intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000);
                 intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1800);
                 intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 4000);
@@ -320,6 +353,13 @@ public class BauerPlugin extends Plugin {
                     public void onError(int error) {
                         if (done) return;
                         done = true;
+                        // 12/13 = "language not supported / unavailable": try without asking for
+                        // English, then with Bauer's own offline model.
+                        if (error == 12 || error == 13) {
+                            if (!plain) listenNative(call, true);
+                            else listenOffline(call, "Speech recognition isn’t set up for English on this device.");
+                            return;
+                        }
                         String why;
                         switch (error) {
                             case SpeechRecognizer.ERROR_NO_MATCH:
@@ -371,6 +411,7 @@ public class BauerPlugin extends Plugin {
 
     @PluginMethod
     public void stopListening(PluginCall call) {
+        if (offline && BauerService.alive) getContext().startService(new Intent(getContext(), BauerService.class).setAction(BauerService.ACTION_FINISH));
         getActivity().runOnUiThread(() -> {
             if (recognizer != null) recognizer.stopListening();
             call.resolve();
@@ -379,6 +420,12 @@ public class BauerPlugin extends Plugin {
 
     @PluginMethod
     public void cancelListening(PluginCall call) {
+        if (offline && BauerService.alive && BauerService.captureCallback != null) {
+            BauerService.CaptureCallback cb = BauerService.captureCallback;
+            BauerService.captureCallback = null;
+            cb.done(""); // tell the waiting listen() it's over
+            getContext().startService(new Intent(getContext(), BauerService.class).setAction(BauerService.ACTION_FINISH).putExtra("discard", true));
+        }
         getActivity().runOnUiThread(() -> {
             if (recognizer != null) {
                 recognizer.cancel();
