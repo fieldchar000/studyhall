@@ -470,6 +470,7 @@ export interface TableMap {
   person_facts: PersonFact
   moments: Moment
   plans: Plan
+  weekly_reviews: WeeklyReview
   devices: Device
 }
 
@@ -723,6 +724,15 @@ export interface Plan extends BaseRow {
   notes: string
 }
 
+/** Your reflection on one week (Monday = week_start). */
+export interface WeeklyReview extends BaseRow {
+  week_start: string // YYYY-MM-DD (a Monday)
+  rating: number | null // 1–5
+  wins: string
+  lessons: string
+  next_focus: string
+}
+
 export type MediaKind = 'book' | 'film' | 'show' | 'anime' | 'game' | 'podcast'
 export type MediaStatus = 'want' | 'doing' | 'done' | 'dropped'
 
@@ -867,6 +877,9 @@ export interface Prefs {
   oculusDei?: boolean // the Oculus Dei tab is unlocked on this PC (type OCULUSDEI)
   lanShare?: boolean // PC: let your phone fetch files from this PC over Wi-Fi
   lanAutoFetch?: boolean // phone: copy missing files from your PC whenever it's on the same Wi-Fi (default on)
+  notifyBudgets?: boolean // a category reaches 80% / 100% of its monthly budget (default on)
+  notifyPeople?: boolean // birthdays and anniversaries, with gift ideas (default on)
+  notifyCheckin?: boolean // evening check-in nudge and Sunday weekly review (default on)
   voiceWake?: boolean // listen for "Hey Bauer" (PC: while Studyhall runs, even in the tray)
   voiceSensitivity?: number // 0–100, how readily "Hey Bauer" is accepted (default 50)
 }

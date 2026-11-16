@@ -75,6 +75,26 @@ export async function applyBrief(actions: BriefAction[], mode: Mode): Promise<nu
           else await db.create('journal_entries', { date: a.date, content: a.text })
           break
         }
+        case 'checkin': {
+          const [entry] = await api.list('journal_entries', { date: a.date })
+          const patch: Record<string, unknown> = {}
+          if (a.mood) patch.mood = a.mood
+          if (a.energy) patch.energy = a.energy
+          if (a.sleep) patch.sleep_hours = a.sleep
+          if (a.gratitude) patch.gratitude = entry?.gratitude ? `${entry.gratitude.trimEnd()}\n${a.gratitude}` : a.gratitude
+          if (a.highlight) {
+            let details: Record<string, unknown> = {}
+            try {
+              details = JSON.parse(entry?.details || '{}') as Record<string, unknown>
+            } catch {
+              /* start fresh */
+            }
+            patch.details = JSON.stringify({ ...details, highlight: a.highlight })
+          }
+          if (entry) await db.update('journal_entries', entry.id, patch)
+          else await db.create('journal_entries', { date: a.date, ...patch })
+          break
+        }
         case 'inbox':
           await db.create('inbox_items', { text: a.text })
           break

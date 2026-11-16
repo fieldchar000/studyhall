@@ -59,6 +59,7 @@ const groups: { title?: string; items: NavItem[] }[] = [
       // Life
       { label: 'Languages', icon: 'globe', route: { name: 'languages' }, match: ['languages', 'language'], modes: ['life'] },
       { label: 'Habits', icon: 'flame', route: { name: 'habits' }, match: ['habits'], modes: ['life'] },
+      { label: 'Trends', icon: 'gauge', route: { name: 'trends' }, match: ['trends'], modes: ['life'] },
       { label: 'Daily journal', icon: 'quill', route: { name: 'journal' }, match: ['journal'], modes: ['life'] },
       { label: 'People', icon: 'users', route: { name: 'people' }, match: ['people'], modes: ['life'] },
       { label: 'Partner', icon: 'heart', route: { name: 'partner' }, match: ['partner'], modes: ['life'] },
@@ -89,6 +90,7 @@ const groups: { title?: string; items: NavItem[] }[] = [
   {
     title: 'You',
     items: [
+      { label: 'Weekly review', icon: 'calendar', route: { name: 'review' }, match: ['review'], modes: ALL },
       { label: 'Stats', icon: 'grades', route: { name: 'stats' }, match: ['stats'], modes: ALL },
       { label: 'Pixel Quest', icon: 'game', route: { name: 'game' }, match: ['game'], modes: ALL },
       { label: 'Settings', icon: 'settings', route: { name: 'settings' }, match: ['settings'], modes: ALL }

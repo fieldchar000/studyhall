@@ -61,6 +61,7 @@ const TABLES: readonly TableName[] = [
   'person_facts',
   'moments',
   'plans',
+  'weekly_reviews',
   'devices'
 ]
 

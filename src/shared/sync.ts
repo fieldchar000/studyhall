@@ -50,7 +50,8 @@ export const SYNC_TABLES = [
   'person_facts',
   'moments',
   'plans',
-  'devices'
+  'devices',
+  'weekly_reviews'
 ] as const
 
 export type SyncTable = (typeof SYNC_TABLES)[number]

@@ -61,6 +61,7 @@ begin
   execute 'set local role authenticated';
   insert into modules (id, owner_id, created_at, updated_at, name, code) values ('mod-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-05-01T00:00:00.000Z', 'Alice module', 'A1');
   insert into notes (id, owner_id, created_at, updated_at, title, content, plain_text, kind, mode) values ('note-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'Alice note', '', '', 'note', 'study');
+  insert into plans (id, owner_id, created_at, updated_at, title, status) values ('plan-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'Picnic at the gardens', 'idea');
   insert into focus_sessions (id, owner_id, created_at, updated_at, started_at, planned_minutes, focused_seconds, completed, kind) values ('fs-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-06-01T00:00:00.000Z', 25, 1500, 1, 'focus');
   insert into languages (id, owner_id, created_at, updated_at, name) values ('lang-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'Japanese');
   insert into habits (id, owner_id, created_at, updated_at, name) values ('habit-a1', a::text, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 'Read');
@@ -109,6 +110,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
   execute 'set local role authenticated';
   insert into shares (resource_type, resource_id, shared_with, permission) values ('module', 'mod-a1', b, 'view'), ('note', 'note-a1', b, 'edit');
+  insert into shares (resource_type, resource_id, shared_with, permission) values ('plans', a::text, b, 'edit');
   update profiles set leaderboard_opt_in = 1 where id = a::text;
   execute 'reset role';
 
@@ -117,6 +119,23 @@ begin
   select count(*) into n from modules where id = 'mod-a1'; r := r || case when n = 1 then E'\nPASS Bob reads the module Alice shared' else E'\nFAIL shared module not visible' end;
   update modules set name = 'Bob was here', updated_at = '2026-07-01T00:00:00.000Z' where id = 'mod-a1';
   get diagnostics n = row_count; r := r || case when n = 0 then E'\nPASS Bob cannot edit a view-only shared module' else E'\nFAIL Bob edited the module' end;
+  select count(*) into n from plans where id = 'plan-a1'; r := r || case when n = 1 then E'\nPASS Bob sees the plans board Alice shared' else E'\nFAIL shared plans not visible' end;
+  update plans set status = 'planned', date = '2026-08-01', updated_at = '2026-07-01T00:00:00.000Z' where id = 'plan-a1';
+  get diagnostics n = row_count; r := r || case when n = 1 then E'\nPASS Bob can edit a plan on Alice''s shared board' else E'\nFAIL Bob could not edit a shared plan' end;
+  begin
+    update plans set owner_id = b::text where id = 'plan-a1';
+    get diagnostics n = row_count;
+    r := r || case when n = 0 then E'\nPASS Bob cannot take over Alice''s plan' else E'\nFAIL Bob took over a plan' end;
+  exception when others then r := r || E'\nPASS Bob cannot take over Alice''s plan'; end;
+  begin
+    insert into shares (resource_type, resource_id, shared_with, permission) values ('plans', a::text, c, 'edit');
+    r := r || E'\nFAIL Bob re-shared Alice''s board';
+  exception when others then r := r || E'\nPASS Bob cannot share Alice''s board onwards'; end;
+  begin
+    update notes set owner_id = b::text where id = 'note-a1';
+    get diagnostics n = row_count;
+    r := r || case when n = 0 then E'\nPASS Bob cannot take over Alice''s shared note' else E'\nFAIL Bob took over a note' end;
+  exception when others then r := r || E'\nPASS Bob cannot take over Alice''s shared note'; end;
   update notes set title = 'Edited by Bob', updated_at = '2026-07-01T00:00:00.000Z' where id = 'note-a1';
   get diagnostics n = row_count; r := r || case when n = 1 then E'\nPASS Bob can edit a note shared with edit rights' else E'\nFAIL Bob could not edit shared note' end;
   select count(*) into n from leaderboard('2020-01-01'); r := r || case when n = 2 then E'\nPASS leaderboard shows Bob + opted-in friend Alice only' else E'\nFAIL leaderboard rows: ' || n end;
@@ -127,6 +146,9 @@ begin
   execute 'set local role authenticated';
   select count(*) into n from modules; r := r || case when n = 0 then E'\nPASS Carol sees no one else''s modules' else E'\nFAIL Carol sees modules' end;
   select count(*) into n from notes; r := r || case when n = 0 then E'\nPASS Carol sees no one else''s notes' else E'\nFAIL Carol sees notes' end;
+  select count(*) into n from plans; r := r || case when n = 0 then E'\nPASS Carol cannot see Alice''s plans board' else E'\nFAIL plans leaked to Carol' end;
+  update plans set title = 'Carol' where id = 'plan-a1'; get diagnostics n = row_count;
+  r := r || case when n = 0 then E'\nPASS Carol cannot edit Alice''s plans' else E'\nFAIL Carol edited a plan' end;
   update notes set title = 'Carol' where id = 'note-a1'; get diagnostics n = row_count;
   r := r || case when n = 0 then E'\nPASS Carol cannot edit Alice''s note' else E'\nFAIL Carol edited a note' end;
   select count(*) into n from user_directory where id in (a, b); r := r || case when n = 0 then E'\nPASS Carol cannot look up Alice or Bob (no public profiles)' else E'\nFAIL directory leaked' end;

@@ -20,6 +20,7 @@ import { refreshSubscriptions } from './ics'
 import { currentSenderId, registerIpc } from './ipc'
 import { applyLoginItem, getPrefs, watchShortcut } from './prefs'
 import { checkDeadlines } from './reminders'
+import { checkLifeReminders } from './lifeReminders'
 import * as timer from './timer'
 import { createTray, updateTray } from './tray'
 import { loadWindowState, trackWindowState } from './windowState'
@@ -440,7 +441,10 @@ if (!app.requestSingleInstanceLock()) {
     setInterval(refresh, ICS_REFRESH_MS)
 
     // Deadline reminders: shortly after start, then every minute.
-    const remind = (): void => checkDeadlines((title, body) => notify(title, body, 'home'))
+    const remind = (): void => {
+      checkDeadlines((title, body) => notify(title, body, 'home'))
+      checkLifeReminders(notify)
+    }
     setTimeout(remind, 10_000)
     setInterval(remind, 60_000)
   })

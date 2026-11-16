@@ -15,6 +15,7 @@ import { refreshSubscriptions } from '../main/ics'
 import { currentSenderId, registerIpc } from '../main/ipc'
 import { getPrefs } from '../main/prefs'
 import { checkDeadlines } from '../main/reminders'
+import { checkLifeReminders } from '../main/lifeReminders'
 import * as timer from '../main/timer'
 import { initUpdater } from './overrides/updater'
 import { broadcast } from './shims/electron'
@@ -111,7 +112,10 @@ export function startMain(): void {
   const refresh = (): void => void refreshSubscriptions().then(() => broadcast('calendar:updated'))
   setTimeout(refresh, 3000)
   setInterval(refresh, 30 * 60 * 1000)
-  const remind = (): void => checkDeadlines((title, body) => void notify(title, body, 'home'))
+  const remind = (): void => {
+    checkDeadlines((title, body) => void notify(title, body, 'home'))
+    checkLifeReminders((title, body, page) => void notify(title, body, page))
+  }
   setTimeout(remind, 10_000)
   setInterval(remind, 60_000)
 

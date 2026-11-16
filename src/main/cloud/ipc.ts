@@ -51,9 +51,9 @@ export function registerCloudIpc(handle: Handle): void {
   handle('cloud:removeFriend', (_e, u: string) => social.removeFriend(id(u)))
   handle('cloud:leaderboard', (_e, since: string) => social.leaderboard(str(since, 40)))
 
-  handle('cloud:sharesFor', (_e, type: string, rid: string) => social.sharesFor(oneOf(type, ['module', 'note'] as const), id(rid)))
+  handle('cloud:sharesFor', (_e, type: string, rid: string) => social.sharesFor(oneOf(type, ['module', 'note', 'plans'] as const), id(rid)))
   handle('cloud:share', (_e, type: string, rid: string, u: string, perm: string) =>
-    social.share(oneOf(type, ['module', 'note'] as const), id(rid), id(u), oneOf(perm, ['view', 'edit'] as const))
+    social.share(oneOf(type, ['module', 'note', 'plans'] as const), id(rid), id(u), oneOf(perm, ['view', 'edit'] as const))
   )
   handle('cloud:unshare', (_e, sid: string) => social.unshare(id(sid)))
   handle('cloud:sharedWithMe', () => social.sharedWithMe())

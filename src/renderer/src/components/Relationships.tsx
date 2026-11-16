@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Moment, Person, Plan } from '@shared/types'
 import { AutoText } from './AutoField'
+import type { BoardSharing } from './SharedPlans'
 import { Icon } from './ui'
 import { PhotoTray, Polaroids } from './Scrapbook'
 import { addPhotos, pastedImages, photoSrc } from '@/lib/photos'
@@ -203,8 +204,11 @@ export function MomentsPanel({ person, kind = 'memory', title = 'Memories' }: { 
 
 // ---------- Plans ----------
 
-export function PlansPanel({ person }: { person: Person | null }): React.JSX.Element {
-  const plans = useRows('plans', person ? { person_id: person.id } : {}, 'date') ?? []
+export function PlansPanel({ person, sharing }: { person: Person | null; sharing?: BoardSharing }): React.JSX.Element {
+  const all = useRows('plans', sharing?.myId ? {} : person ? { person_id: person.id } : {}, 'date') ?? []
+  // A shared board also shows your partner's plans (theirs point at their own People list).
+  const plans = sharing?.myId ? all.filter((p) => (person ? p.person_id === person.id : true) && p.owner_id === sharing.myId || (p.owner_id !== sharing.myId && sharing.incoming.some((r) => r.owner_id === p.owner_id))) : all
+  const ownerName = (p: Plan): string | null => (sharing?.myId && p.owner_id !== sharing.myId ? (sharing.incoming.find((r) => r.owner_id === p.owner_id)?.owner_name ?? 'partner') : null)
   const today = localDate(new Date())
   const upcoming = plans.filter((p) => p.status === 'planned').sort((a, b) => (a.date ?? '9').localeCompare(b.date ?? '9'))
   const ideas = plans.filter((p) => p.status === 'idea')
@@ -227,7 +231,7 @@ export function PlansPanel({ person }: { person: Person | null }): React.JSX.Ele
           <div key={label as string} className="flex flex-col gap-1.5">
             <div className="label-caps">{label as string}</div>
             {(list as Plan[]).map((p) => (
-              <PlanRow key={p.id} plan={p} past={!!p.date && p.date < today && p.status === 'planned'} person={person} />
+              <PlanRow key={p.id} plan={p} past={!!p.date && p.date < today && p.status === 'planned'} person={person} from={ownerName(p)} />
             ))}
           </div>
         ) : null
@@ -237,11 +241,11 @@ export function PlansPanel({ person }: { person: Person | null }): React.JSX.Ele
   )
 }
 
-function PlanRow({ plan: p, past, person }: { plan: Plan; past: boolean; person: Person | null }): React.JSX.Element {
+function PlanRow({ plan: p, past, person, from }: { plan: Plan; past: boolean; person: Person | null; from?: string | null }): React.JSX.Element {
   const idea = IDEAS.find((i) => i.id === p.idea_id)
   const toMemory = async (): Promise<void> => {
     await db.update('plans', p.id, { status: 'done', date: p.date ?? localDate(new Date()) })
-    await db.create('moments', { person_id: person?.id ?? p.person_id, kind: 'memory', date: p.date ?? localDate(new Date()), title: p.title, place: p.place || idea?.area || '' })
+    await db.create('moments', { person_id: person?.id ?? (from ? null : p.person_id), kind: 'memory', date: p.date ?? localDate(new Date()), title: p.title, place: p.place || idea?.area || '' })
   }
   return (
     <div className={`group flex flex-wrap items-center gap-2 rounded-md border border-line bg-panel px-3 py-2 ${p.status === 'done' ? 'opacity-70' : ''}`}>
@@ -264,6 +268,7 @@ function PlanRow({ plan: p, past, person }: { plan: Plan; past: boolean; person:
       <button className="btn-ghost hidden px-1 group-hover:inline-flex hover:text-danger" onClick={() => void db.remove('plans', p.id)} title="Remove">
         <Icon name="trash" size={13} />
       </button>
+      {from && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[10px]">from {from}</span>}
       {idea && <div className="w-full pl-7 text-xs text-muted">{idea.area} · {idea.blurb}</div>}
     </div>
   )

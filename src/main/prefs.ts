@@ -10,6 +10,9 @@ const DEFAULTS: Prefs = {
   notifyDeadlines: true,
   notifyTimer: true,
   notifyMessages: true,
+  notifyBudgets: true,
+  notifyPeople: true,
+  notifyCheckin: true,
   quickCaptureShortcut: 'CommandOrControl+Shift+Space',
   spotifyLinks: []
 }

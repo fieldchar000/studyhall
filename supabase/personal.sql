@@ -1198,3 +1198,25 @@ revoke all on public.devices from anon;
 revoke delete on public.devices from authenticated; -- deletes are soft (deleted_at)
 drop trigger if exists devices_sync_guard on public.devices;
 create trigger devices_sync_guard before insert or update on public.devices for each row execute function public.sync_guard();
+
+-- weekly_reviews
+create table if not exists public.weekly_reviews (id text primary key);
+alter table public.weekly_reviews add column if not exists created_at text;
+alter table public.weekly_reviews add column if not exists updated_at text;
+alter table public.weekly_reviews add column if not exists deleted_at text;
+alter table public.weekly_reviews add column if not exists owner_id text;
+alter table public.weekly_reviews add column if not exists week_start text;
+alter table public.weekly_reviews add column if not exists rating bigint;
+alter table public.weekly_reviews add column if not exists wins text;
+alter table public.weekly_reviews add column if not exists lessons text;
+alter table public.weekly_reviews add column if not exists next_focus text;
+alter table public.weekly_reviews add column if not exists server_updated_at timestamptz not null default now();
+create index if not exists weekly_reviews_sync_idx on public.weekly_reviews (server_updated_at);
+create index if not exists weekly_reviews_owner_idx on public.weekly_reviews (owner_id);
+alter table public.weekly_reviews enable row level security;
+drop policy if exists "own rows" on public.weekly_reviews;
+create policy "own rows" on public.weekly_reviews for all to authenticated using (owner_id = auth.uid()::text) with check (owner_id = auth.uid()::text);
+revoke all on public.weekly_reviews from anon;
+revoke delete on public.weekly_reviews from authenticated; -- deletes are soft (deleted_at)
+drop trigger if exists weekly_reviews_sync_guard on public.weekly_reviews;
+create trigger weekly_reviews_sync_guard before insert or update on public.weekly_reviews for each row execute function public.sync_guard();

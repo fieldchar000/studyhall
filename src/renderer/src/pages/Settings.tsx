@@ -131,6 +131,9 @@ export function SettingsPage(): React.JSX.Element {
         {pref('notifyDeadlines', 'Remind me about deadlines', 'About 24 hours and 1 hour before tasks and assessments are due.')}
         {pref('notifyTimer', 'Notify me when a focus session or break ends')}
         {pref('notifyMessages', 'Notify me about new server messages', 'Only while Studyhall is in the background; muted channels stay quiet.')}
+        {pref('notifyBudgets', 'Budget alerts', 'When a category reaches 80% and 100% of its monthly budget.')}
+        {pref('notifyPeople', 'Birthdays and anniversaries', 'Two weeks before, three days before and on the day — with gift ideas from their page.')}
+        {pref('notifyCheckin', 'Evening check-in and weekly review', 'A nudge at 9pm if you haven’t checked in, and on Sunday evening when your week in review is ready.')}
       </section>
 
       {!phone && (

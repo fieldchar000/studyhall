@@ -102,23 +102,26 @@ export async function leaderboard(sinceIso: string): Promise<LeaderRow[]> {
 
 let editableNotes = new Set<string>()
 export const canEditSharedNote = (id: string): boolean => editableNotes.has(id)
+let planOwners = new Set<string>()
+/** Someone shared their plans board with us (so we may edit their plans). */
+export const canEditSharedPlans = (ownerId: string): boolean => planOwners.has(ownerId)
 
 async function withNames(rows: ShareRow[]): Promise<ShareRow[]> {
   await loadNames(rows.flatMap((r) => [r.owner_id, r.shared_with]))
   return rows.map((r) => ({ ...r, owner_name: nameOf(r.owner_id), with_name: nameOf(r.shared_with) }))
 }
 
-export async function sharesFor(type: 'module' | 'note', id: string): Promise<ShareRow[]> {
+export async function sharesFor(type: 'module' | 'note' | 'plans', id: string): Promise<ShareRow[]> {
   me()
   return withNames((await run(supabase().from('shares').select('*').eq('resource_type', type).eq('resource_id', id))) as ShareRow[])
 }
 
-export async function share(type: 'module' | 'note', id: string, userId: string, permission: 'view' | 'edit'): Promise<void> {
+export async function share(type: 'module' | 'note' | 'plans', id: string, userId: string, permission: 'view' | 'edit'): Promise<void> {
   me()
   // Make sure the module/note itself is uploaded first (the database checks you own it).
   const { syncNow } = await import('./sync')
   await syncNow()
-  await run(supabase().from('shares').insert({ resource_type: type, resource_id: id, shared_with: userId, permission: type === 'module' ? 'view' : permission }))
+  await run(supabase().from('shares').insert({ resource_type: type, resource_id: id, shared_with: userId, permission: type === 'module' ? 'view' : type === 'plans' ? 'edit' : permission }))
 }
 
 export async function unshare(shareId: string): Promise<void> {
@@ -131,12 +134,13 @@ export async function sharedWithMe(): Promise<ShareRow[]> {
   const uid = me()
   const rows = (await run(supabase().from('shares').select('*').eq('shared_with', uid))) as ShareRow[]
   editableNotes = new Set(rows.filter((r) => r.resource_type === 'note' && r.permission === 'edit').map((r) => r.resource_id))
+  planOwners = new Set(rows.filter((r) => r.resource_type === 'plans').map((r) => r.owner_id))
   const key = rows.map((r) => `${r.id}:${r.permission}`).sort().join(',')
   if (key !== knownIncoming) {
     // Something new was shared (or unshared): re-download the shareable tables and drop what's gone.
     knownIncoming = key
-    pruneUnshared(new Set(rows.filter((r) => r.resource_type === 'module').map((r) => r.resource_id)), new Set(rows.filter((r) => r.resource_type === 'note').map((r) => r.resource_id)))
-    resetCursors(['modules', 'weeks', 'materials', 'assessments', 'notes'])
+    pruneUnshared(new Set(rows.filter((r) => r.resource_type === 'module').map((r) => r.resource_id)), new Set(rows.filter((r) => r.resource_type === 'note').map((r) => r.resource_id)), planOwners)
+    resetCursors(['modules', 'weeks', 'materials', 'assessments', 'notes', 'plans'])
     requestSync()
   }
   return withNames(rows)
@@ -364,6 +368,7 @@ export function stopLive(): void {
   if (channel) void supabase().removeChannel(channel)
   channel = null
   editableNotes = new Set()
+  planOwners = new Set()
   knownIncoming = ''
 }
 
@@ -380,6 +385,7 @@ export function guardWrite(table: string, row: { owner_id?: string; module_id?: 
   }
   if (row.owner_id && row.owner_id !== uid) {
     if (table === 'notes' && kind === 'update' && canEditSharedNote(String(row.id))) return
+    if (table === 'plans' && canEditSharedPlans(row.owner_id)) return // a shared plans board (edit or remove)
     throw new Error('This was shared with you read-only.')
   }
 }

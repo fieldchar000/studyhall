@@ -1,6 +1,7 @@
 // Life → Money: a simple student budget. Log spending and income in seconds, set a
 // monthly budget per category, see where it goes, and save towards goals.
 
+import { BudgetAlerts } from '@/components/LifeCards'
 import { useMemo, useState } from 'react'
 import type { Budget, MoneyEntry, SavingsGoal } from '@shared/types'
 import { AutoNumber, AutoText } from '@/components/AutoField'
@@ -117,6 +118,7 @@ export function MoneyPage(): React.JSX.Element {
             ))}
           </select>
         </div>
+        {month === today.slice(0, 7) && <BudgetAlerts />}
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Tile label="Spent" value={money(m.spent, cur)} hint={`${money(m.spent / Math.max(1, dayNow), cur)} a day`} />

@@ -711,5 +711,17 @@ export const migrations: Migration[] = [
   `
   ALTER TABLE materials ADD COLUMN starred_until TEXT;
   ALTER TABLE notes ADD COLUMN starred_until TEXT;
+  `,
+
+  // 13 — Weekly review: how the week went and what to focus on next (one row per week)
+  `
+  CREATE TABLE weekly_reviews (${base},
+    week_start TEXT NOT NULL,
+    rating INTEGER,
+    wins TEXT NOT NULL DEFAULT '',
+    lessons TEXT NOT NULL DEFAULT '',
+    next_focus TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX idx_weekly_reviews_week ON weekly_reviews(week_start);
   `
 ]

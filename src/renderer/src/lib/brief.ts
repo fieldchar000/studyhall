@@ -32,6 +32,7 @@ export type BriefAction = Common &
     | { kind: 'habit'; id: string; name: string; date: string }
     | { kind: 'money'; amount: number; flow: 'expense' | 'income'; category: string; note: string; date: string }
     | { kind: 'journal'; text: string; date: string }
+    | { kind: 'checkin'; date: string; mood?: number; energy?: number; sleep?: number; highlight?: string; gratitude?: string }
     | { kind: 'inbox'; text: string }
   )
 export type BriefKind = BriefAction['kind']
@@ -296,7 +297,7 @@ const DONE =
 const IS_ON = /\b(?:is|are|'s)\s+(?:on|at|this|next|tomorrow|today|tonight)\b/i
 const JOURNAL =/^(?:note(?: that| down)?|journal|diary|dear diary|write (?:down|in my journal)|for (?:my|the) journal|add to (?:my|the) journal)\b[:,]?\s*(.+)/i
 const LOG_VERB =
-  /\b(?:studied|study|worked|work|revised|revise|practi[cs]ed|practi[cs]e|read|reviewed|focused|coded|wrote|went over|learned|learnt|log(?:ged)?|did|spent|put in|trained|prepped|prepared|researched|drilled)\b/i
+  /\b(?:studied|study|worked|work|revised|revise|practi[cs]ed|practi[cs]e|read|reviewed|focused|coded|wrote|went over|learned|learnt|log(?:ged)?|did|spent|put in|trained|prepped|prepared|researched|drilled|revision|got)\b/i
 const MONEY_VERB = /\b(?:spent|spend|paid|pay|bought|buy|cost|costs|was|were|got|earned|received|made|cashed|lent|owe|for)\b/i
 const HABIT_HINT = /\b(?:did|done|went|had|took|completed|check(?:ed)?(?: off)?|tick(?:ed)?(?: off)?|log(?:ged)?|habit|ran|meditated|read|walked|swam|slept|drank|journaled|stretched|practi[cs]ed)\b/i
 
@@ -334,6 +335,10 @@ function understand(raw: string, ctx: BriefContext, now: Date): BriefAction | nu
   // 1) Journal
   const jm = JOURNAL.exec(c)
   if (jm) return { ...base, kind: 'journal', text: cap(tidy(jm[1])), date: pastDay(c, now) }
+
+  // 1b) Daily check-in: "I'm feeling about a four", "energy is low", "slept 7 hours", "highlight was…"
+  const ci = readCheckin(c)
+  if (ci) return { ...base, kind: 'checkin', date: pastDay(c, now), ...ci }
 
   // 2) Cancel something
   const cm = CANCEL.exec(c)
@@ -378,7 +383,7 @@ function understand(raw: string, ctx: BriefContext, now: Date): BriefAction | nu
   if (dur && !taskLead && !eventLead && (LOG_VERB.test(c) || /^log\b/i.test(c)) && !(habit && !/\b(?:stud|revis|work)/i.test(c))) {
     const mod = bestModule(c, ctx)
     let subject = without(c, dur.text)
-      .replace(/\b(?:i|i've|i have|we)\b|\b(?:log(?:ged)?|studied|study|worked|work|revised|revise|practi[cs]ed|practi[cs]e|read|reviewed|focused|coded|wrote|went over|learned|learnt|did|spent|put in|trained|prepped|prepared|researched|drilled|today|yesterday|this morning|this afternoon|this evening|tonight|for|on|of|doing|some|about|around|roughly|like|just|hours?|minutes?)\b/gi, ' ')
+      .replace(/\b(?:i|i've|i have|we)\b|\b(?:log(?:ged)?|studied|study|worked|work|revised|revise|practi[cs]ed|practi[cs]e|read|reviewed|focused|coded|wrote|went over|learned|learnt|did|spent|put in|trained|prepped|prepared|researched|drilled|revision|got|done|today|yesterday|this morning|this afternoon|this evening|tonight|for|on|of|doing|some|about|around|roughly|like|just|hours?|minutes?)\b/gi, ' ')
     subject = tidy(subject)
     return { ...base, kind: 'log', minutes: Math.max(1, Math.min(16 * 60, dur.value)), subject: cap(subject || mod?.name || 'Study'), moduleId: mod?.id ?? null, date: pastDay(c, now) }
   }
@@ -441,11 +446,73 @@ export function parseBrief(text: string, ctx: BriefContext, now = new Date()): B
   for (const clause of splitClauses(text)) {
     const a = understand(clause, ctx, now)
     if (!a) continue
+    // Several check-in sentences about the same day become one check-in.
+    const prev = a.kind === 'checkin' ? out.find((b): b is Extract<BriefAction, { kind: 'checkin' }> => b.kind === 'checkin' && b.date === a.date) : undefined
+    if (prev && a.kind === 'checkin') {
+      Object.assign(prev, Object.fromEntries(Object.entries(a).filter(([k, v]) => v !== undefined && !['key', 'said', 'on', 'kind'].includes(k))))
+      prev.said = `${prev.said}. ${a.said}`
+      continue
+    }
     // The same thing twice (people repeat themselves) → keep one.
     if (out.some((b) => JSON.stringify({ ...b, key: 0, said: 0 }) === JSON.stringify({ ...a, key: 0, said: 0 }))) continue
     out.push(a)
   }
   return out
+}
+
+// ---------- Daily check-in ----------
+
+const MOOD_WORDS: [RegExp, number][] = [
+  [/\b(?:amazing|fantastic|awesome|brilliant|great|excellent|wonderful|really good|very good|happy)\b/i, 5],
+  [/\b(?:good|pretty good|nice|well|positive|content)\b/i, 4],
+  [/\b(?:okay|ok|alright|fine|so-so|not bad|average|meh then)\b/i, 3],
+  [/\b(?:meh|tired|stressed|low|down|bit off|not great|anxious|worn out|flat)\b/i, 2],
+  [/\b(?:awful|terrible|horrible|really bad|very bad|sad|miserable|depressed|exhausted)\b/i, 1]
+]
+const ENERGY_WORDS: [RegExp, number][] = [
+  [/\b(?:very high|really high|full of energy|buzzing|energetic|pumped)\b/i, 5],
+  [/\b(?:high|good|decent)\b/i, 4],
+  [/\b(?:okay|ok|medium|average|alright|fine)\b/i, 3],
+  [/\b(?:low|tired|sluggish|meh)\b/i, 2],
+  [/\b(?:very low|really low|exhausted|drained|dead|wiped out|knackered)\b/i, 1]
+]
+/** "4", "four", "4 out of 5", "8 out of 10" → 1–5. */
+function scale(raw: string): number | null {
+  const s = raw.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (w) => String(['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'].indexOf(w.toLowerCase()) + 1))
+  const m =/\b(\d+(?:\.\d+)?)\s*(?:\/|out of)\s*(5|10)\b/i.exec(s) ?? /\b(?:a|about|around|like|maybe)?\s*(\d)\b/i.exec(s)
+  if (!m) return null
+  let v = parseFloat(m[1])
+  if (m[2] === '10') v = v / 2
+  return v >= 1 && v <= 5 ? Math.round(v) : null
+}
+const fromWords = (s: string, list: [RegExp, number][]): number | null => {
+  // Check the strongest phrases first ("very low" before "low").
+  for (const [re, v] of [...list].sort((a, b) => b[0].source.length - a[0].source.length)) if (re.test(s)) return v
+  return null
+}
+
+/** The check-in parts of one sentence, or null if it isn't a check-in. */
+export function readCheckin(c: string): { mood?: number; energy?: number; sleep?: number; highlight?: string; gratitude?: string } | null {
+  const out: { mood?: number; energy?: number; sleep?: number; highlight?: string; gratitude?: string } = {}
+  const t = normaliseNumbers(` ${c} `)
+  const sleep = /\b(?:slept|sleep(?:ing)?)\s+(?:for\s+)?(?:about\s+|around\s+|like\s+)?(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b|\b(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)\s+(?:of\s+)?sleep\b/i.exec(t)
+  if (sleep) {
+    const h = parseFloat(sleep[1] ?? sleep[2])
+    if (h > 0 && h <= 16) out.sleep = h
+  }
+  const energy = /\benergy(?:\s+(?:level|levels))?\s*(?:is|was|'s|are|were|:)?\s*([^,.;]+)/i.exec(t)
+  if (energy) out.energy = scale(energy[1]) ?? fromWords(energy[1], ENERGY_WORDS) ?? undefined
+  else if (/\b(?:i'?m|i am|feeling|feel)\s+(?:so\s+|really\s+|pretty\s+|quite\s+)?(?:exhausted|drained|knackered|wiped out|full of energy|energetic)\b/i.test(t)) out.energy = fromWords(t, ENERGY_WORDS) ?? undefined
+  const mood = /\b(?:mood(?:\s+is|\s+was|'s)?|i'?m feeling|i am feeling|i feel|feeling|i'?m|i am|today was|day was|it was a|had a)\s+(?:a\s+|an\s+|about\s+|around\s+|like\s+|maybe\s+|really\s+|pretty\s+|quite\s+|so\s+)*([^,.;]+)/i.exec(t)
+  if (mood && (/\b(?:mood|feel|feeling)\b/i.test(t) || /\b(?:today was|today's been|day was|had an?|it was an?|been an?)\b.*\bday\b/i.test(t))) {
+    const v = scale(mood[1]) ?? fromWords(mood[1], MOOD_WORDS)
+    if (v && !(out.energy && /^\s*(?:exhausted|drained|knackered|wiped out)/i.test(mood[1]))) out.mood = v
+  }
+  const hi = /\b(?:the\s+)?(?:highlight|best (?:part|thing|bit))(?:\s+of\s+(?:the|my|today)(?:\s+day)?)?\s+(?:was|is|has been)\s+(.+)/i.exec(c)
+  if (hi) out.highlight = cap(tidy(hi[1]))
+  const gr = /\b(?:i'?m|i am|i feel|feeling)\s+(?:really\s+|so\s+)?(?:grateful|thankful)\s+(?:for|that)\s+(.+)/i.exec(c)
+  if (gr) out.gratitude = cap(tidy(gr[1]))
+  return Object.values(out).some((v) => v !== undefined) ? out : null
 }
 
 // ---------- How each action reads in the list ----------
@@ -485,6 +552,17 @@ export function describe(a: BriefAction, currency = ''): { icon: string; verb: s
       }
     case 'journal':
       return { icon: '📓', verb: 'Journal', text: a.text, detail: dayName(a.date) }
+    case 'checkin': {
+      const faces = ['', '😞', '😕', '😐', '🙂', '😄']
+      const bits = [
+        a.mood ? `${faces[a.mood]} mood ${a.mood}/5` : '',
+        a.energy ? `⚡ energy ${a.energy}/5` : '',
+        a.sleep ? `😴 slept ${a.sleep}h` : '',
+        a.highlight ? `✨ ${a.highlight}` : '',
+        a.gratitude ? `🙏 ${a.gratitude}` : ''
+      ].filter(Boolean)
+      return { icon: '🌤️', verb: 'Check-in', text: bits.join(' · '), detail: dayName(a.date) }
+    }
     case 'inbox':
       return { icon: '📥', verb: 'To Inbox', text: a.text, detail: '' }
   }

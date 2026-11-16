@@ -51,7 +51,7 @@ export interface LeaderRow {
 
 export interface ShareRow {
   id: string
-  resource_type: 'module' | 'note'
+  resource_type: 'module' | 'note' | 'plans'
   resource_id: string
   owner_id: string
   shared_with: string
@@ -142,8 +142,8 @@ export interface CloudApi {
   friends(): Promise<Friend[]>
   removeFriend(userId: string): Promise<void>
   leaderboard(sinceIso: string): Promise<LeaderRow[]>
-  sharesFor(type: 'module' | 'note', id: string): Promise<ShareRow[]>
-  share(type: 'module' | 'note', id: string, userId: string, permission: 'view' | 'edit'): Promise<void>
+  sharesFor(type: 'module' | 'note' | 'plans', id: string): Promise<ShareRow[]>
+  share(type: 'module' | 'note' | 'plans', id: string, userId: string, permission: 'view' | 'edit'): Promise<void>
   unshare(shareId: string): Promise<void>
   sharedWithMe(): Promise<ShareRow[]>
   servers(): Promise<ServerSummary[]>

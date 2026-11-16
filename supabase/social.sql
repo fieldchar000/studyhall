@@ -94,6 +94,9 @@ create table if not exists public.shares (
   created_at timestamptz not null default now(),
   unique (resource_type, resource_id, shared_with)
 );
+-- Also: your whole plans board ('plans', resource_id = your user id), shared with your partner to edit.
+alter table public.shares drop constraint if exists shares_resource_type_check;
+alter table public.shares add constraint shares_resource_type_check check (resource_type in ('module','note','plans'));
 
 -- "Who's studying now": one row per user, refreshed every minute while the app is open.
 create table if not exists public.presence (
@@ -163,6 +166,11 @@ $$;
 create or replace function public.shared_module_ids() returns setof text
 language sql stable security definer set search_path = public as $$
   select resource_id from shares where resource_type = 'module' and shared_with = auth.uid()
+$$;
+
+create or replace function public.shared_plan_owner_ids() returns setof text
+language sql stable security definer set search_path = public as $$
+  select owner_id::text from shares where resource_type = 'plans' and shared_with = auth.uid() and permission = 'edit'
 $$;
 
 create or replace function public.shared_note_ids(p_edit boolean) returns setof text
@@ -271,6 +279,7 @@ create policy "shares create" on public.shares for insert to authenticated with 
       and exists (select 1 from public.modules m where m.id = resource_id and m.owner_id = auth.uid()::text))
     or (resource_type = 'note'
       and exists (select 1 from public.notes n where n.id = resource_id and n.owner_id = auth.uid()::text))
+    or (resource_type = 'plans' and permission = 'edit' and resource_id = auth.uid()::text)
   )
 );
 drop policy if exists "shares remove" on public.shares;
@@ -321,6 +330,28 @@ create policy "shared read" on public.notes for select to authenticated
 drop policy if exists "shared edit" on public.notes;
 create policy "shared edit" on public.notes for update to authenticated
   using (id in (select public.shared_note_ids(true))) with check (id in (select public.shared_note_ids(true)));
+-- A shared plans board: your partner can see and edit (not take over) your plans.
+drop policy if exists "shared read" on public.plans;
+create policy "shared read" on public.plans for select to authenticated using (owner_id in (select public.shared_plan_owner_ids()));
+drop policy if exists "shared edit" on public.plans;
+create policy "shared edit" on public.plans for update to authenticated
+  using (owner_id in (select public.shared_plan_owner_ids())) with check (owner_id in (select public.shared_plan_owner_ids()));
+
+-- Policies are OR'd, so an editor could otherwise pass the "own rows" check by writing their
+-- own id into owner_id. A shared note or plan can be edited, never taken over.
+create or replace function public.keep_owner() returns trigger
+language plpgsql as $$
+begin
+  if new.owner_id is distinct from old.owner_id then
+    raise exception 'Shared items keep their owner';
+  end if;
+  return new;
+end
+$$;
+drop trigger if exists keep_owner on public.notes;
+create trigger keep_owner before update on public.notes for each row execute function public.keep_owner();
+drop trigger if exists keep_owner on public.plans;
+create trigger keep_owner before update on public.plans for each row execute function public.keep_owner();
 
 -- =====================================================================
 -- Sign-up: only with a valid invite code, username + password, no email.

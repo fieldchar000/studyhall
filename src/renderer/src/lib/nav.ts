@@ -30,6 +30,8 @@ export type Route =
   | { name: 'videos' }
   | { name: 'video'; id: string }
   | { name: 'stats' }
+  | { name: 'trends' }
+  | { name: 'review' }
   | { name: 'game' }
   | { name: 'languages' }
   | { name: 'language'; id: string }
@@ -86,5 +88,5 @@ export function useRoute(): Route {
 
 // The tray menu and notifications can ask for a page.
 api.app.onNavigate((page) => {
-  if (page === 'focus' || page === 'home' || page === 'tasks' || page === 'inbox' || page === 'servers' || page === 'friends') navigate({ name: page })
+  if (['focus', 'home', 'tasks', 'inbox', 'servers', 'friends', 'money', 'people', 'partner', 'journal', 'review', 'trends'].includes(page)) navigate({ name: page } as Route)
 })

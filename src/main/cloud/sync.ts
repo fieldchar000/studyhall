@@ -128,9 +128,10 @@ async function push(): Promise<void> {
         const { error } = await supabase().from(table).upsert(mine, { onConflict: 'id' })
         if (error) handlePushError(error, table)
       }
-      // Rows owned by someone else: only notes shared with edit rights can be written.
-      for (const r of rows.filter((x) => x.owner_id !== uid && table === 'notes')) {
+      // Rows owned by someone else: only shared notes and a shared plans board can be written.
+      for (const r of rows.filter((x) => x.owner_id !== uid && (table === 'notes' || table === 'plans'))) {
         const { id, owner_id: _owner, ...rest } = r // eslint-disable-line @typescript-eslint/no-unused-vars
+        if (table === 'plans') delete rest.person_id // (points at their own People list, not ours)
         const { error } = await supabase().from(table).update(rest).eq('id', id as string)
         if (error) handlePushError(error, table)
       }
@@ -259,7 +260,7 @@ function adoptProfileIfNew(): boolean {
 }
 
 /** Remove local copies of other people's rows that are no longer shared with us. */
-export function pruneUnshared(moduleIds: Set<string>, noteIds: Set<string>): void {
+export function pruneUnshared(moduleIds: Set<string>, noteIds: Set<string>, planOwners: Set<string> = new Set()): void {
   if (!uid) return
   const db = getDb()
   const mods = [...moduleIds]
@@ -271,9 +272,11 @@ export function pruneUnshared(moduleIds: Set<string>, noteIds: Set<string>): voi
     db.prepare(`DELETE FROM modules WHERE owner_id != ? AND NOT (${mods.length ? `id IN (${mods.map(() => '?').join(',')})` : '0'})`).run(uid, ...mods)
     for (const t of ['weeks', 'materials', 'assessments']) db.prepare(`DELETE FROM ${t} WHERE owner_id != ? AND NOT (${inMods})`).run(uid, ...mods)
     db.prepare(`DELETE FROM notes WHERE owner_id != ? AND NOT (${inNotes} OR ${inMods})`).run(uid, ...notes, ...mods)
+    const owners = [...planOwners]
+    db.prepare(`DELETE FROM plans WHERE owner_id != ? AND NOT (${owners.length ? `owner_id IN (${owners.map(() => '?').join(',')})` : '0'})`).run(uid, ...owners)
     // Anything else not ours shouldn't be here at all.
     for (const t of SYNC_TABLES) {
-      if (!['modules', 'weeks', 'materials', 'assessments', 'notes'].includes(t)) db.prepare(`DELETE FROM ${t} WHERE owner_id != ?`).run(uid)
+      if (!['modules', 'weeks', 'materials', 'assessments', 'notes', 'plans'].includes(t)) db.prepare(`DELETE FROM ${t} WHERE owner_id != ?`).run(uid)
     }
   } finally {
     db.exec('PRAGMA foreign_keys = ON')

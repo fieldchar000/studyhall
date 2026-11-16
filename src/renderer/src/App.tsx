@@ -34,6 +34,8 @@ import { PeoplePage } from './pages/People'
 import { PartnerPage } from './pages/Partner'
 import { LibraryPage } from './pages/Library'
 import { MoneyPage } from './pages/Money'
+import { TrendsPage } from './pages/Trends'
+import { ReviewPage } from './pages/Review'
 import { BriefingPage } from './pages/dev/Briefing'
 import { FeedsPage } from './pages/dev/Feeds'
 import { ReadingPage } from './pages/dev/Reading'
@@ -91,6 +93,8 @@ export function App(): React.JSX.Element {
         {route.name === 'videos' && <VideosPage />}
         {route.name === 'video' && <VideoPage key={route.id} id={route.id} />}
         {route.name === 'stats' && <StatsPage />}
+        {route.name === 'trends' && <TrendsPage />}
+        {route.name === 'review' && <ReviewPage />}
         {route.name === 'game' && <GamePage />}
         {route.name === 'languages' && <LanguagesPage />}
         {route.name === 'language' && <LanguageDetailPage key={route.id} id={route.id} />}

@@ -13,6 +13,18 @@ import { navigate } from '@/lib/nav'
 import { setPartner, useProfile } from '@/lib/profile'
 import { APPRECIATION_PROMPTS, CHECKIN_PROMPTS, COUPLE_DECKS, GIFT_IDEAS, IDEAS, IDEA_CATEGORIES, LOVE_LANGUAGES, PARTNER_LABELS, TIPS, questionOfTheDay } from '@/lib/peopleContent'
 import { createPerson } from './People'
+import { SharedBoardCard, useBoardSharing } from '@/components/SharedPlans'
+
+/** Plans tab: the board (shared with your partner's account when you both sign in). */
+function PartnerPlans({ person, name }: { person: Person; name: string }): React.JSX.Element {
+  const [sharing, refresh] = useBoardSharing()
+  return (
+    <div className="flex flex-col gap-4">
+      <SharedBoardCard sharing={sharing} refresh={refresh} partnerName={name} />
+      <PlansPanel person={person} sharing={sharing} />
+    </div>
+  )
+}
 
 type Tab = 'overview' | 'journal' | 'ideas' | 'plans' | 'details' | 'ask' | 'love' | 'checkin'
 
@@ -157,7 +169,7 @@ function PartnerHome({ partner: p, label }: { partner: Person; label: string }):
 
         {tab === 'overview' && <Overview partner={p} onTab={setTab} />}
         {tab === 'ideas' && <IdeasBrowser person={p} audience="date" />}
-        {tab === 'plans' && <PlansPanel person={p} />}
+        {tab === 'plans' && <PartnerPlans person={p} name={name} />}
         {tab === 'journal' && <MomentsPanel person={p} title={`Our journal`} />}
         {tab === 'details' && <FactsPanel person={p} />}
         {tab === 'ask' && (

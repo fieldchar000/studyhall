@@ -16,6 +16,7 @@ import { ExamCountdownPanel } from '@/components/RevisionPlanner'
 import { SpotifyPanel } from '@/components/SpotifyPanel'
 import { StarredStrip } from '@/components/Star'
 import { LifeTodayCard } from './Habits'
+import { BudgetAlerts, CheckinCard, OccasionsCard } from '@/components/LifeCards'
 import { useRecallToday } from './Recall'
 import { doneToday } from '@/lib/recall'
 
@@ -42,6 +43,7 @@ export function HomePage(): React.JSX.Element {
       <div className="mx-auto flex max-w-6xl flex-col gap-5 px-8 py-7">
         <Greeting />
         <StarredStrip title="Starred — keep handy" />
+        <BudgetAlerts />
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="flex min-w-0 flex-col gap-5">
             {mode === 'study' && <RecallHomeCard />}
@@ -53,7 +55,9 @@ export function HomePage(): React.JSX.Element {
             <ResizableCalendar />
           </div>
           <div className="flex flex-col gap-5">
+            <CheckinCard />
             <ExamCountdownPanel />
+            <OccasionsCard />
             <DeadlinesPanel />
             <SpotifyPanel />
             <SubscriptionsPanel />

@@ -34,6 +34,38 @@
   --radius-2xl: 0.7rem;
 }
 
+/* Chart colours (Trends, Weekly review): validated for colour-blind separation and contrast
+   on both surfaces. Series 1 = blue, 2 = orange; seq-* = one-hue blue ramp for heatmaps. */
+:root {
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-seq-1: #cde2fb;
+  --chart-seq-2: #9ec5f4;
+  --chart-seq-3: #6da7ec;
+  --chart-seq-4: #3987e5;
+  --chart-seq-5: #1c5cab;
+}
+:root[data-theme='dark'] {
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-seq-1: #104281;
+  --chart-seq-2: #184f95;
+  --chart-seq-3: #256abf;
+  --chart-seq-4: #3987e5;
+  --chart-seq-5: #86b6ef;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --chart-1: #3987e5;
+    --chart-2: #d95926;
+    --chart-seq-1: #104281;
+    --chart-seq-2: #184f95;
+    --chart-seq-3: #256abf;
+    --chart-seq-4: #3987e5;
+    --chart-seq-5: #86b6ef;
+  }
+}
+
 /* Dark palette: a panelled library at night (deep green-black, ivory text, brass) */
 :root[data-theme='dark'] {
   --color-canvas: #0f1311;
