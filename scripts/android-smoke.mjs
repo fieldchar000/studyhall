@@ -21,7 +21,7 @@ const adbQuiet = (...args) => {
   }
 }
 /** Android's log for the app and its web view (crashes, console messages). */
-const saveLogcat = () => writeFileSync(`${OUT}/logcat.txt`, adbQuiet('logcat', '-d', '-v', 'brief', 'AndroidRuntime:E', 'Capacitor:*', 'Capacitor/Console:*', 'chromium:*', 'ActivityManager:I', '*:S'))
+const saveLogcat = () => writeFileSync(`${OUT}/logcat.txt`, adbQuiet('logcat', '-d', '-v', 'brief', 'AndroidRuntime:E', 'Capacitor:*', 'Capacitor/Console:*', 'chromium:*', 'ActivityManager:I', 'Bauer:*', 'VoskAPI:*', '*:S'))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const report = []
 let failed = 0
@@ -180,6 +180,41 @@ async function main() {
   await page.ev(`[...document.querySelectorAll('aside nav button')].find(b => b.textContent.trim().startsWith('Settings'))?.click(); true`)
   await sleep(1500)
   shot('7-settings')
+
+  // Voice ("Hey Bauer"): model download, the listening service and its notification.
+  adbQuiet('shell', 'pm', 'grant', PKG, 'android.permission.RECORD_AUDIO')
+  adbQuiet('shell', 'pm', 'grant', PKG, 'android.permission.POST_NOTIFICATIONS')
+  const B = `window.Capacitor.registerPlugin('Bauer')`
+  const before = await page.ev(`${B}.status()`).catch((e) => ({ error: e.message }))
+  check('Voice plugin answers', before && !before.error, JSON.stringify(before))
+  const dl = await page.ev(`${B}.downloadModel().then(() => 'ok', (e) => 'error: ' + e.message)`)
+  const ready = await page.ev(`${B}.status()`).catch(() => ({}))
+  check('Wake-word model downloads', dl === 'ok' && ready.modelReady, dl)
+  const started = await page.ev(`${B}.start({ sensitivity: 50 }).then(() => 'ok', (e) => 'error: ' + e.message)`)
+  let st = {}
+  for (let i = 0; i < 20; i++) {
+    await sleep(1000)
+    st = await page.ev(`${B}.status()`).catch(() => ({}))
+    if (st.state === 'armed' || st.state === 'error') break
+  }
+  check('“Hey Bauer” listener starts', started === 'ok' && st.running && st.state === 'armed', `${started} ${JSON.stringify(st)}`)
+  adbQuiet('shell', 'cmd', 'statusbar', 'expand-notifications')
+  await sleep(1500)
+  shot('8-listening-notification')
+  adbQuiet('shell', 'cmd', 'statusbar', 'collapse')
+  const pend = await page.ev(`${B}.pending().then((r) => r.items.length)`).catch((e) => e.message)
+  check('Pending briefings readable', pend === 0, String(pend))
+  // Android's recogniser: with no microphone sound it should give up politely, not crash.
+  const heard = await page.ev(`Promise.race([${B}.listen().then((r) => 'text: ' + r.text, (e) => 'rejected: ' + e.message), new Promise((r) => setTimeout(() => r('timeout'), 15000))])`)
+  report.push(`INFO  listen() on the emulator: ${heard} (recogniser available: ${st.recognizer})`)
+  await page.ev(`${B}.cancelListening().catch(() => {}); ${B}.stop()`)
+  await sleep(1500)
+  const stopped = await page.ev(`${B}.status()`).catch(() => ({}))
+  check('“Hey Bauer” listener stops', stopped.running === false, JSON.stringify(stopped))
+  await page.ev(`window.dispatchEvent(new Event('studyhall:brief')); true`)
+  await sleep(1500)
+  shot('9-voice-sheet')
+  adb('shell', 'input', 'keyevent', '4')
 
   // Debug builds log every failed plugin call (e.g. "folder doesn't exist yet" on first start) as an
   // object — those are expected; real problems are exceptions and error messages.
