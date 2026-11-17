@@ -19,6 +19,7 @@ let cards: BauerCard[] = []
 let quitting = false
 let startBrief: () => void = () => {}
 let shot: { image: string; width: number; height: number } | null = null
+let suspended = false // Studyhall is closed to the tray: Bauer stays off the screen
 export const CIRCLE_SHORTCUT = 'CommandOrControl+Alt+B'
 /** Automated tests: windows live far off-screen, nothing is captured, nothing takes focus. */
 const OFFSCREEN = process.env.STUDYHALL_OFFSCREEN === '1'
@@ -42,8 +43,25 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
     else if (msg.type === 'hideOrb' && from === orbWin) orbWin?.hide()
     else if (from === orbWin && orbWin && (msg.type === 'dragStart' || msg.type === 'dragMove' || msg.type === 'dragEnd')) dragOrb(msg.type, Number(msg.x), Number(msg.y))
   })
-  if (!OFFSCREEN) globalShortcut.register(CIRCLE_SHORTCUT, () => void startCircle())
+  setShortcut(true)
   syncOrb()
+}
+
+function setShortcut(on: boolean): void {
+  if (OFFSCREEN) return
+  if (on && !globalShortcut.isRegistered(CIRCLE_SHORTCUT)) globalShortcut.register(CIRCLE_SHORTCUT, () => void startCircle())
+  else if (!on && globalShortcut.isRegistered(CIRCLE_SHORTCUT)) globalShortcut.unregister(CIRCLE_SHORTCUT)
+}
+
+/** Studyhall closed to the tray: hide the orb, cards and circling layer, and free Ctrl+Alt+B. Opened again: bring them back. */
+export function setBauerSuspended(on: boolean): void {
+  suspended = on
+  if (on) {
+    for (const w of [orbWin, cardsWin, circleWin]) if (w && !w.isDestroyed()) w.hide()
+    shot = null
+  }
+  setShortcut(!on)
+  if (!on) syncOrb()
 }
 
 export function closeBauerWindows(): void {
@@ -85,7 +103,7 @@ const overlayWindow = (bounds: Electron.Rectangle, hash: string, focusable = fal
 
 /** Show or hide the orb to match Settings. */
 export function syncOrb(): void {
-  const on = getPrefs().bauerOrb !== false
+  const on = getPrefs().bauerOrb !== false && !suspended
   if (!on) {
     orbWin?.hide()
     return
@@ -148,6 +166,7 @@ function ensureCards(): BrowserWindow {
 
 export function showCards(add: BauerCard[]): void {
   cards = [...add, ...cards].slice(0, 8)
+  if (suspended) return
   const w = ensureCards()
   const send = (): void => {
     w.webContents.send('bauer:cards', cards)
@@ -167,6 +186,7 @@ export function clearCards(): void {
 
 /** Freeze the screen under the mouse into a picture, then open the circling layer over it. */
 export async function startCircle(): Promise<void> {
+  if (suspended) return
   if (circleWin && !circleWin.isDestroyed() && circleWin.isVisible()) return
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const { width, height } = display.size

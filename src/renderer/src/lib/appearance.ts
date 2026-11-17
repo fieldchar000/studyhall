@@ -27,7 +27,11 @@ const dark = window.matchMedia('(prefers-color-scheme: dark)')
 
 function apply(): void {
   const root = document.documentElement
-  root.dataset.theme = current.theme === 'system' ? (dark.matches ? 'dark' : 'light') : current.theme
+  // Since v0.29 the whole app lives in deep space (dark, frosted glass over a live sky), on every
+  // window, including menus and dialogs that render outside the main frame.
+  void current.theme
+  root.dataset.theme = 'dark'
+  root.classList.add('space-shell')
   if (current.accent === 'mode') delete root.dataset.accent
   else root.dataset.accent = current.accent
   root.dataset.glow = current.glow ? 'on' : 'off'

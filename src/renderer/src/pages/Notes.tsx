@@ -254,7 +254,7 @@ export function NoteView({ id, compact = false }: { id: string; compact?: boolea
   const save = (patch: Partial<Note>): Promise<unknown> => db.update('notes', n.id, patch)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="reading-pane flex min-h-0 flex-1 flex-col">
       <div className={`flex flex-col gap-2 border-b border-line ${compact ? 'px-3 py-2' : 'px-8 pt-6 pb-3'}`}>
         <div className="flex items-center gap-2">
           <AutoText value={n.title} onSave={(v) => save({ title: v || 'Untitled note' })} className={`field ${compact ? 'font-semibold' : 'text-2xl font-semibold tracking-tight'}`} />

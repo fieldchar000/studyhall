@@ -12,6 +12,7 @@ import './lib/appearance' // theme + accent before the first paint
 // and the Bauer voice panel (PC only; its speech engines load only in that window).
 const isCapture = location.hash === '#capture'
 const isVoice = location.hash === '#voice'
+if (isVoice) document.documentElement.classList.add('bauer-voice')
 const VoicePanel = lazy(() => import('@/pages/Voice'))
 // Bauer on the PC screen: the floating orb, cards beside your work, circle-to-ask.
 const screenPart = ['#orb', '#cards', '#circle'].includes(location.hash) ? location.hash : null

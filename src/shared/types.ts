@@ -932,6 +932,8 @@ export interface Prefs {
   bauerConfirm?: boolean // show the checklist before Bauer changes anything (default off: he just does it, with Undo)
   bauerTalk?: boolean // Bauer says out loud what he did (default on)
   bauerOrb?: boolean // PC: Bauer floats at the edge of the screen (default on)
+  bauerOnlyWhenOpen?: boolean // Bauer stops listening and leaves the screen when Studyhall is closed (default on)
+  sky?: 'nebula' | 'blackhole' | 'galaxy' | 'off' // the live sky behind every page (default nebula)
 }
 
 /** The API the preload script exposes to the UI as window.api. */

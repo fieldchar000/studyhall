@@ -24,9 +24,9 @@ import { checkLifeReminders } from './lifeReminders'
 import * as timer from './timer'
 import { createTray, updateTray } from './tray'
 import { loadWindowState, trackWindowState } from './windowState'
-import { aiChat, aiStatus, configureAi, downloadAi, downloadEyes, removeAi, removeEyes, warmAi } from './ai'
-import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, showCards, startCircle, syncOrb, takeShot, wikiSummary } from './bauer'
-import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
+import { aiChat, aiStatus, configureAi, downloadAi, downloadEyes, removeAi, removeEyes, stopAi, warmAi } from './ai'
+import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary } from './bauer'
+import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
 
@@ -221,6 +221,15 @@ function notify(title: string, body: string, page?: string): void {
   n.show()
 }
 
+/** "Bauer only while Studyhall is open": when the window is closed to the tray, Bauer stops
+ *  listening, leaves the screen and the AI shuts down; opening Studyhall brings him back. */
+function bauerAway(away: boolean): void {
+  const off = away && getPrefs().bauerOnlyWhenOpen !== false
+  setVoiceSuspended(off)
+  setBauerSuspended(off)
+  if (off) stopAi()
+}
+
 function createWindow(forceShow = false): void {
   const state = loadWindowState()
   const win = new BrowserWindow({
@@ -234,6 +243,8 @@ function createWindow(forceShow = false): void {
   })
   mainWindow = win
   trackWindowState(win)
+  win.on('hide', () => bauerAway(true))
+  win.on('show', () => bauerAway(false))
   win.once('ready-to-show', () => {
     if (START_HIDDEN && !forceShow) return // stay in the tray when started with Windows
     // Automated tests: render far off-screen without taking focus, so nothing appears for the user.
@@ -300,6 +311,9 @@ function hardenContents(): void {
 }
 
 // Only one copy of the app may run (two would fight over the database).
+// Automated tests keep windows far off-screen; stop Windows counting them as hidden (or the live sky pauses).
+if (process.env.STUDYHALL_OFFSCREEN === '1') app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -382,6 +396,7 @@ if (!app.requestSingleInstanceLock()) {
       onPrefs: (patch) => {
         if ('voiceWake' in patch || 'voiceSensitivity' in patch) syncVoiceWindow()
         if ('bauerOrb' in patch) syncOrb()
+        if ('bauerOnlyWhenOpen' in patch) bauerAway(!mainWindow?.isVisible())
       }
     })
     // Messages from the Bauer panel window (show / hide / what it's doing).
@@ -402,6 +417,8 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
     configureBauer({ url: appUrl, webPreferences: SECURE_PREFS, startBrief: () => void startBrief() })
+    // Started hidden in the tray (with Windows)? Bauer waits until Studyhall is opened.
+    bauerAway(!mainWindow?.isVisible())
     // Tell every other window when data changes (e.g. quick capture -> inbox badge).
     onDbChange((table) => {
       // Local edit to a synced table: upload it shortly (when signed in).

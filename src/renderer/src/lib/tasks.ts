@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react'
 import type { Mode, Task, TaskStatus } from '@shared/types'
 import { api, db } from './data'
 import { localDate } from './dates'
+import { skyPulse } from './sky/sky'
 
 export const STATUSES: { key: Exclude<TaskStatus, 'inbox'>; label: string }[] = [
   { key: 'todo', label: 'To do' },
@@ -37,6 +38,7 @@ export function isOverdue(t: Pick<Task, 'due_at' | 'status'>): boolean {
 export async function createTask(mode: Mode, values: Partial<Task>): Promise<Task> {
   const siblings = await api.list('tasks', { mode, status: values.status ?? 'todo' })
   const sort = Math.max(0, ...siblings.map((s) => s.sort)) + 1
+  skyPulse()
   return db.create('tasks', { title: 'New task', status: 'todo', ...values, mode, sort })
 }
 
@@ -59,6 +61,7 @@ export async function moveTask(task: Task, status: TaskStatus, before: Task | nu
 }
 
 export function setDone(task: Task, done: boolean): Promise<unknown> {
+  if (done) skyPulse() // finishing something sends a wave through the sky
   return db.update('tasks', task.id, {
     status: done ? 'done' : task.status === 'done' ? 'todo' : task.status,
     completed_at: done ? new Date().toISOString() : null

@@ -2,7 +2,6 @@ import type { Mode, Prefs } from '@shared/types'
 import { Icon } from '@/components/ui'
 import { api, notifyChanged, track, useLive } from '@/lib/data'
 import { setEnabledModes, setMode, useEnabledModes, useMode, useProfile } from '@/lib/profile'
-import { setAppearance, useAppearance, type Accent, type Theme } from '@/lib/appearance'
 import { shortcutLabel } from './Inbox'
 import { AccountCard } from '@/components/AccountCard'
 import { WifiShareCard } from '@/components/WifiShareCard'
@@ -16,7 +15,6 @@ export function SettingsPage(): React.JSX.Element {
   const mode = useMode()
   const enabled = useEnabledModes()
   const profile = useProfile()
-  const look = useAppearance()
   const { data } = useLive([], async () => ({ path: await api.app.dataPath(), version: await api.app.version() }), [])
   const { data: prefs } = useLive(['prefs'], () => api.prefs.get(), [])
   const { data: shortcut } = useLive(['prefs'], () => api.capture.shortcutStatus(), [])
@@ -80,47 +78,21 @@ export function SettingsPage(): React.JSX.Element {
       </section>
 
       <section className="card mb-4 p-5">
-        <h2 className="mb-1 font-semibold">Appearance</h2>
-        <p className="mb-3 text-sm text-muted">On this PC only.</p>
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-4">
-            <span className="w-20 text-sm">Theme</span>
-            <div className="flex gap-0.5 rounded-lg bg-line/50 p-0.5 text-sm">
-              {(['system', 'light', 'dark'] as Theme[]).map((t) => (
-                <button key={t} onClick={() => setAppearance({ theme: t })} className={`rounded-md px-3 py-1 capitalize ${look.theme === t ? 'bg-panel font-medium shadow-sm' : 'text-muted'}`}>
-                  {t === 'system' ? 'Match Windows' : t}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="w-20 text-sm">Accent</span>
-            <div className="flex flex-wrap gap-2">
-              {(
-                [
-                  ['mode', 'By category: green for Study, navy for Work, oxblood for Life, petrol for DevKit', 'conic-gradient(#1f4d3a 0 25%, #1e3a5f 0 50%, #6b2234 0 75%, #12505e 0)'],
-                  ['emerald', 'Racing green', '#1f4d3a'],
-                  ['blue', 'Navy', '#1e3a5f'],
-                  ['rose', 'Oxblood', '#6b2234'],
-                  ['cyan', 'Petrol', '#12505e'],
-                  ['violet', 'Plum', '#533a63'],
-                  ['amber', 'Camel', '#7d5f27']
-                ] as [Accent, string, string][]
-              ).map(([a, label, bg]) => (
-                <button
-                  key={a}
-                  title={label}
-                  onClick={() => setAppearance({ accent: a })}
-                  className={`h-8 w-8 rounded-full ring-offset-2 ring-offset-panel transition-transform hover:scale-110 ${look.accent === a ? 'ring-2 ring-brass' : ''}`}
-                  style={{ background: bg, boxShadow: 'inset 0 0 0 1px rgb(255 255 255 / 0.18)' }}
-                />
-              ))}
-            </div>
-          </div>
-          <label className="flex items-center gap-3 text-sm">
-            <input type="checkbox" checked={look.glow} onChange={(e) => setAppearance({ glow: e.target.checked })} />
-            Paper texture and warm light in the background
-          </label>
+        <h2 className="mb-1 font-semibold">Sky</h2>
+        <p className="mb-3 text-sm text-muted">The live sky behind every page (Home and the Brain keep their galaxy). It reacts to your mouse, to things you finish, and to Bauer listening. Colours follow the category you’re in.</p>
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              ['nebula', 'Hollow nebula', 'Fine glowing strands flowing through a nebula'],
+              ['blackhole', 'Black hole', 'Rings of light streaming round a black hole'],
+              ['galaxy', 'Galaxies', 'Spiral galaxies of sharp stars, slowly turning'],
+              ['off', 'Plain', 'Dark and still (saves battery)']
+            ] as [NonNullable<Prefs['sky']>, string, string][]
+          ).map(([k, label, hint]) => (
+            <button key={k} title={hint} onClick={() => savePrefs({ sky: k })} className={`glass rounded-full px-4 py-1.5 text-sm font-semibold ${(prefs?.sky ?? 'nebula') === k ? 'ring-1 ring-[var(--glow)]' : 'text-muted'}`}>
+              {label}
+            </button>
+          ))}
         </div>
       </section>
 

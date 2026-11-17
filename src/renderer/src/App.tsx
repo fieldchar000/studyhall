@@ -47,6 +47,7 @@ import { FriendsPage } from './pages/Friends'
 import { ServersPage } from './pages/Servers'
 import { InviteLinkHandler } from './components/InviteLinkHandler'
 import { VoiceOverlay } from './components/VoiceOverlay'
+import { AppSky, PageDock } from './components/AppSky'
 import { isPhoneApp } from './lib/platform'
 
 export function App(): React.JSX.Element {
@@ -66,10 +67,13 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener('studyhall:back', onBack)
   }, [route.name])
   return (
-    <div className={`app-shell flex h-full ${route.name === 'home' || route.name === 'brain' ? 'space-shell' : ''}`}>
+    <div className="app-shell space-shell flex h-full">
+      <AppSky />
       <MobileBar />
       <Sidebar />
-      <main className="min-w-0 flex-1 overflow-auto">
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <PageDock />
+        <div className="page-scroll min-h-0 flex-1 overflow-auto">
         {(route.name === 'home' || route.name === 'brain') && <HomePage key="home" view={route.name} q={route.name === 'brain' ? route.q : undefined} />}
         {route.name === 'oculus' && <OculusPage />}
         {route.name === 'tasks' && <TasksPage />}
@@ -116,6 +120,7 @@ export function App(): React.JSX.Element {
         {route.name === 'servers' && <ServersPage key={route.serverId ?? ''} serverId={route.serverId} channelId={route.channelId} />}
         {route.name === 'focus' && <FocusPage />}
         {route.name === 'settings' && <SettingsPage />}
+        </div>
       </main>
       <TaskDrawer />
       <SearchPalette />

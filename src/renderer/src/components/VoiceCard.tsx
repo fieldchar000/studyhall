@@ -197,6 +197,13 @@ export function VoiceCard(): React.JSX.Element {
               <span className="block text-xs text-muted">Off: Bauer just does it (you can undo). On: you get a checklist to tick first.</span>
             </span>
           </label>
+          <label className="flex items-start gap-3 py-1">
+            <input type="checkbox" className="mt-1" checked={prefs?.bauerOnlyWhenOpen !== false} onChange={(e) => void savePrefs({ bauerOnlyWhenOpen: e.target.checked })} />
+            <span>
+              <span className="block text-sm">Bauer only while Studyhall is open</span>
+              <span className="block text-xs text-muted">{phone ? 'When you leave the app, Bauer stops listening until you come back.' : 'When you close the window (Studyhall keeps running in the tray) or quit, Bauer stops listening, leaves your screen and his AI shuts down. Open Studyhall to bring him back. Good for exams.'}</span>
+            </span>
+          </label>
           {!phone && (
             <label className="flex items-start gap-3 py-1">
               <input type="checkbox" className="mt-1" checked={prefs?.bauerOrb !== false} onChange={(e) => void savePrefs({ bauerOrb: e.target.checked })} />

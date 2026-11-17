@@ -124,7 +124,16 @@ export function VoiceOverlay(): React.JSX.Element | null {
       if (p.voiceWake) void Bauer.start({ sensitivity: p.voiceSensitivity ?? 50 }).catch(() => {})
     })
     void takePending()
+    // "Bauer only while Studyhall is open": stop listening when you leave the app, start again when you come back.
+    const onVis = (): void =>
+      void api.prefs.get().then((p) => {
+        if (!p.voiceWake || p.bauerOnlyWhenOpen === false) return
+        if (document.visibilityState === 'hidden') void Bauer.stop().catch(() => {})
+        else void Bauer.start({ sensitivity: p.voiceSensitivity ?? 50 }).catch(() => {})
+      })
+    document.addEventListener('visibilitychange', onVis)
     return () => {
+      document.removeEventListener('visibilitychange', onVis)
       window.removeEventListener('studyhall:brief', onBrief)
       subs.forEach((s) => void s.then((h) => h.remove()))
     }

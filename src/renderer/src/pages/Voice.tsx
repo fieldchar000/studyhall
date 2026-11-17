@@ -214,11 +214,11 @@ export default function VoicePanel(): React.JSX.Element {
   const ticked = actions.filter((a) => a.on).length
 
   return (
-    <div ref={card} className="flex flex-col gap-3 bg-panel p-4 text-ink select-none" style={{ minHeight: 0 }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+    <div ref={card} className="flex flex-col gap-2.5 p-3.5 text-ink select-none" style={{ minHeight: 0 }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <div className="flex items-center gap-2.5">
         <Orb phase={phase} level={level} heard={heard} />
         <div className="min-w-0 flex-1">
-          <div className="font-serif text-[17px] leading-tight">
+          <div className="font-serif text-[15px] leading-tight">
             {phase === 'starting' && 'Getting ready…'}
             {phase === 'listening' && (heard ? 'Listening…' : 'Go ahead — I’m listening')}
             {phase === 'thinking' && 'On it…'}

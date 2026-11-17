@@ -804,7 +804,7 @@ main h1.text-2xl {
   }
 
   /* Pages: phone-sized margins, one column */
-  .app-shell > main > div {
+  .app-shell > main > .page-scroll > div {
     padding-left: 14px !important;
     padding-right: 14px !important;
   }
@@ -812,14 +812,14 @@ main h1.text-2xl {
     padding-left: 14px !important;
     padding-right: 14px !important;
   }
-  .app-shell > main > div[class*='p-8'],
-  .app-shell > main > div[class*='py-7'],
-  .app-shell > main > div > div.mx-auto[class*='py-7'],
-  .app-shell > main > div > div.mx-auto[class*='p-8'] {
+  .app-shell > main > .page-scroll > div[class*='p-8'],
+  .app-shell > main > .page-scroll > div[class*='py-7'],
+  .app-shell > main > .page-scroll > div > div.mx-auto[class*='py-7'],
+  .app-shell > main > .page-scroll > div > div.mx-auto[class*='p-8'] {
     padding-top: 16px !important;
     padding-bottom: 24px !important;
   }
-  .app-shell > main > div.grid,
+  .app-shell > main > .page-scroll > div.grid,
   .app-shell > main [class*='grid-cols-[1fr_3'],
   .app-shell > main [class*='grid-cols-[1fr_2'],
   .app-shell > main [class*='grid-cols-[2'],
@@ -1288,4 +1288,122 @@ main h1.text-2xl {
 }
 .circle-chip:disabled {
   opacity: 0.5;
+}
+
+/* ---------- Space everywhere (v0.29): every page floats on frosted glass over the live sky ----------
+   (components/AppSky.tsx draws the sky; Home and the Brain keep their 3D galaxy). */
+.space-shell {
+  --glow: #a9bcff;
+}
+:root[data-mode='life'] .space-shell { --glow: #f2b5d4; }
+:root[data-mode='dev'] .space-shell { --glow: #9ee8e0; }
+:root[data-mode='work'] .space-shell { --glow: #a5c8ff; }
+body:has(.space-shell) { background: #02030a; }
+body:has(.space-shell)::before { display: none; }
+/* Inside the app frame, panels are see-through so the sky shows behind them (menus and
+   pop-ups rendered outside the frame stay solid). Light blur keeps the hollow lines readable. */
+.app-shell.space-shell {
+  --color-canvas: rgb(6 8 18 / 0.38);
+}
+.space-shell .card,
+.space-shell .glass {
+  background: linear-gradient(180deg, rgb(18 22 40 / 0.38), rgb(8 10 22 / 0.32));
+  border: 1px solid rgb(255 255 255 / 0.08);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  backdrop-filter: blur(7px) saturate(1.15);
+}
+/* big reading surfaces (the note editor) get a calmer veil so text never fights the sky */
+.space-shell .reading-pane {
+  background: rgb(3 4 11 / 0.55);
+  backdrop-filter: blur(5px);
+}
+.space-shell button.card:hover,
+.space-shell .glass:hover {
+  border-color: color-mix(in oklab, var(--glow) 35%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 0 34px -16px var(--glow);
+  transform: none;
+}
+.space-shell .card-feature {
+  background: linear-gradient(160deg, color-mix(in oklab, var(--glow) 14%, rgb(14 18 36 / 0.7)), rgb(8 10 22 / 0.55));
+  border-color: color-mix(in oklab, var(--glow) 30%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07);
+  backdrop-filter: blur(14px);
+}
+.space-shell .spine {
+  background: rgb(4 5 12 / 0.55) !important;
+  backdrop-filter: blur(18px) saturate(1.1);
+}
+.space-shell [data-modal] > .card {
+  background: linear-gradient(180deg, rgb(16 20 38 / 0.92), rgb(8 10 22 / 0.92));
+}
+.space-shell .btn-primary {
+  background: #eef1fb;
+  color: #0a0d1a;
+  box-shadow: 0 0 22px -10px var(--glow);
+}
+.space-shell .field-boxed,
+.space-shell input.field,
+.space-shell select,
+.space-shell textarea {
+  background-color: rgb(255 255 255 / 0.045);
+}
+/* the command bar and dock at the top of pages */
+.page-dock {
+  background: linear-gradient(180deg, rgb(2 3 10 / 0.55), transparent);
+}
+.dock-cmd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  text-align: left;
+  font-size: 13.5px;
+}
+.dock-kbd {
+  font-size: 11px;
+  color: var(--color-muted);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+.dock-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 15px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--color-ink);
+}
+.dock-act svg {
+  color: var(--glow);
+}
+.dock-main {
+  background: #eef1fb;
+  color: #0a0d1a;
+}
+.dock-main svg {
+  color: #0a0d1a;
+}
+/* Bauer's panel: smaller, always his own dark aurora blue */
+.bauer-voice,
+.bauer-voice body,
+.bauer-voice #root {
+  --color-panel: #070f2a;
+  --color-canvas: rgb(59 130 246 / 0.08);
+  --color-line: rgb(96 165 250 / 0.22);
+  --color-ink: #e8eeff;
+  --color-muted: #93a4cf;
+  --color-accent: #7ea6ff;
+  --color-on-accent: #050a1c;
+  color-scheme: dark;
+  background: linear-gradient(160deg, #0a1a44, #050a1c);
+  font-size: 13px;
+}
+.bauer-voice body::before {
+  display: none;
 }

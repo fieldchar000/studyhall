@@ -181,7 +181,7 @@ export async function serveVoiceModel(path: string): Promise<Response> {
 let win: BrowserWindow | null = null
 let ready = false
 let pending: VoiceCommand[] = []
-const W = 440
+const W = 340
 const H_SMALL = 236
 let loadUrl: (hash: string) => string = (h) => h
 let webPrefs: Electron.WebPreferences = {}
@@ -209,7 +209,7 @@ function ensureWindow(): BrowserWindow {
     alwaysOnTop: true,
     skipTaskbar: true,
     title: 'Bauer',
-    backgroundColor: '#14161c',
+    backgroundColor: '#070f2a',
     webPreferences: { ...webPrefs, backgroundThrottling: false, spellcheck: false }
   })
   win.setAlwaysOnTop(true, 'floating')
@@ -236,9 +236,22 @@ function send(cmd: VoiceCommand): void {
   win.webContents.send('voice:command', cmd)
 }
 
+/** True while Studyhall is closed to the tray and "Bauer only while Studyhall is open" is on. */
+let suspended = false
 const wakeConfig = (): { wake: boolean; sensitivity: number } => {
   const p = getPrefs()
-  return { wake: !!p.voiceWake, sensitivity: typeof p.voiceSensitivity === 'number' ? p.voiceSensitivity : 50 }
+  return { wake: !!p.voiceWake && !suspended, sensitivity: typeof p.voiceSensitivity === 'number' ? p.voiceSensitivity : 50 }
+}
+
+/** Studyhall closed (to the tray) or opened again: stop or restart listening for "Hey Bauer". */
+export function setVoiceSuspended(on: boolean): void {
+  if (suspended === on) return
+  suspended = on
+  if (on && win && !win.isDestroyed()) {
+    send({ type: 'stop' })
+    win.hide()
+  }
+  syncVoiceWindow()
 }
 
 /** Start/stop the hidden listener to match the settings (called at start-up and on changes). */
