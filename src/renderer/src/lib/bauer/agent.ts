@@ -480,6 +480,15 @@ export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad
   // Small talk, one word, half a sentence: say nothing, do nothing, log nothing.
   const nothing = { reply: source === 'typed' ? 'I didn’t find anything to do in that.' : '', actions: [] as BriefAction[], logId: null, ignored: true }
   if (isChitChat(text)) return nothing
+  // "Draft a document about…" with your Claude connectors (only when you've switched that on).
+  if (onPc() && wantsDocument(text)) {
+    const prefs = await api.prefs.get()
+    if (prefs.novaConnectors) {
+      const said = await api.claude.draft(text).catch((e) => `I couldn’t draft that: ${e instanceof Error ? e.message : String(e)}`)
+      await logAnswer(text, said, source)
+      return { reply: said, actions: [], logId: null }
+    }
+  }
   // About the app on your screen ("where's export?", "how do I save this as a PDF?")? Look and point.
   if (onPc() && (looksAtScreen(text) || wantsHands(text))) {
     const said = await api.eyes.help(text, wantsHands(text)).catch((e) => `I couldn’t look at your screen: ${e instanceof Error ? e.message : String(e)}`)
@@ -521,6 +530,12 @@ export function looksAtScreen(t: string): boolean {
     /\b(on (my|the|this) screen|this (page|window|app|site|website|document|doc|file|button|menu|tab|box|field|thing|bit|part|error|message|option|setting|chart|table|cell|slide|link|icon|code|graph)|that (button|menu|tab|option|icon|link)|in (this|the) (app|window|page|document))\b/.test(s) ||
     /^(how (do|can|would|should) i|where('s| is| are| do i| can i)|which (button|menu|option|tab)|show me (how|where)|walk me through|help me (find|with this)|what (does|do) (this|that|these)|what('s| is) (this|that)\b|explain (this|that)\b|(click|press|tap) )/.test(s)
   )
+}
+
+/** "Draft a document about…", "write me an essay plan in Claude Docs" (uses your connectors when allowed). */
+export function wantsDocument(t: string): boolean {
+  const s = t.toLowerCase()
+  return /\b(draft|write|make|create|start|put together)\b.{0,40}\b(doc|docs|document|essay|report|letter|cover letter|outline|plan|summary)\b/.test(s) || /\bin (claude )?docs\b/.test(s)
 }
 
 /** Is this asking Nova to do something in the app on screen ("click export", "type my name in the search box")? */

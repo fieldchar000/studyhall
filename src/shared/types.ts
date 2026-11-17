@@ -764,11 +764,13 @@ export type AiMessage = { role: 'system' | 'user' | 'assistant'; content: string
 /** A card Bauer puts beside your screen ("explain black holes", circle-and-ask answers). */
 export interface BauerCard {
   id: string
-  kind: 'summary' | 'photo' | 'points' | 'timeline' | 'answer'
+  kind: 'summary' | 'photo' | 'points' | 'timeline' | 'answer' | 'steps' | 'chart' | 'quiz'
   title: string
   body?: string
   image?: string // data: URL
-  items?: { label: string; detail?: string }[]
+  items?: { label: string; detail?: string; value?: number }[]
+  unit?: string // chart: what the numbers are (e.g. "°C", "% of energy")
+  quiz?: { q: string; options: string[]; answer: number; why?: string }[]
   source?: string // e.g. "Wikipedia"
   link?: string // https link to read more
 }
@@ -989,6 +991,8 @@ export interface Prefs {
   novaEyes?: 'off' | 'auto' // look at your screen when a request needs it (default auto)
   novaWalk?: boolean // walkthroughs wait for your click, then show the next step (default on)
   novaHands?: 'off' | 'ask' | 'allowed' // pressing buttons / filling fields in your apps (default off)
+  novaConnectors?: boolean // "draft a document…" may use your claude.ai connectors, asking first (default off)
+  novaShareStats?: boolean // let Claude Code send usage statistics and crash reports to Anthropic (default off)
   novaHandsApps?: string[] // apps Nova may use without asking (Windows process names), when novaHands is 'allowed'
 }
 
@@ -1194,6 +1198,10 @@ export interface Api {
     remove(): Promise<ClaudeStatus>
     refreshUsage(): Promise<ClaudeStatus>
     onStatus(cb: (s: ClaudeStatus) => void): () => void
+    /** Draft something with your claude.ai connectors (asks before each connector action). */
+    draft(text: string): Promise<string>
+    /** Which connectors your Claude account has (nothing is used). */
+    connectors(): Promise<string[]>
   }
   /** Bauer's local AI (PC only; on the pad these reject). */
   ai: {

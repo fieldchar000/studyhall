@@ -271,6 +271,8 @@ const api: Api = {
     signOut: () => ipcRenderer.invoke('claude:signOut'),
     remove: () => ipcRenderer.invoke('claude:remove'),
     refreshUsage: () => ipcRenderer.invoke('claude:refreshUsage'),
+    draft: (text) => ipcRenderer.invoke('claude:draft', text),
+    connectors: () => ipcRenderer.invoke('claude:connectors'),
     onStatus: (cb) => {
       const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
       ipcRenderer.on('claude:status', l)

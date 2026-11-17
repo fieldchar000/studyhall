@@ -169,7 +169,14 @@ export function PointWindow(): React.JSX.Element {
 
 export function CardsWindow(): React.JSX.Element {
   const [cards, setCards] = useState<BauerCard[]>([])
+  const [name, setName] = useState('nova')
   useEffect(() => api.bauer.onCards((c) => setCards(c ?? [])), [])
+  useEffect(() => {
+    void api.prefs
+      .get()
+      .then((p) => setName((p.novaName ?? 'Nova').toLowerCase()))
+      .catch(() => {})
+  }, [])
   const close = (id: string): void => {
     const next = cards.filter((c) => c.id !== id)
     setCards(next)
@@ -178,55 +185,168 @@ export function CardsWindow(): React.JSX.Element {
       void api.bauer.clearCards()
     }
   }
+  const clearAll = (): void => {
+    setCards([])
+    api.bauer.mouse(false)
+    void api.bauer.clearCards()
+  }
+  const kindLabel: Record<BauerCard['kind'], string> = {
+    summary: 'answer',
+    answer: 'answer',
+    photo: 'photo',
+    points: 'key points',
+    timeline: 'timeline',
+    steps: 'steps',
+    chart: 'in numbers',
+    quiz: 'quick check'
+  }
   return (
-    <div className="flex h-full flex-col gap-3 overflow-hidden p-1">
+    <div className="flex h-full flex-col gap-4 overflow-y-auto overflow-x-hidden p-2.5">
       {cards.map((c) => (
-        <article key={c.id} {...hover} className="bauer-card shrink-0">
-          <header className="flex items-center gap-2 px-3 py-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#39ff88] shadow-[0_0_6px_#39ff88]" />
-            <span className="min-w-0 flex-1 truncate font-mono text-[11px] tracking-wide text-[#9fe8c4] lowercase">{c.kind === 'photo' ? 'photo' : c.kind === 'timeline' ? 'timeline' : c.kind === 'points' ? 'key points' : c.kind === 'answer' ? 'bauer' : 'summary'}</span>
-            <button className="px-1 text-[15px] leading-none text-[#9fe8c4] hover:text-white" onClick={() => close(c.id)} aria-label="Close">
+        <article key={c.id} {...hover} className="px-card shrink-0">
+          <header className="px-bar">
+            <i />
+            <i />
+            <span>
+              {name} · {kindLabel[c.kind]}
+            </span>
+            <button onClick={() => close(c.id)} aria-label="Close">
               ×
             </button>
           </header>
-          <div className="px-4 pt-1 pb-3">
-            {c.kind !== 'photo' && <h3 className="mb-1.5 text-[15px] leading-snug font-semibold text-white">{c.title}</h3>}
-            {c.image && <img src={c.image} alt="" className={`mb-2 w-full rounded-lg object-contain ${c.kind === 'photo' ? 'max-h-64' : 'max-h-40'}`} />}
-            {c.body && <p className="text-[13px] leading-relaxed whitespace-pre-line text-[#d8dcf0]">{c.body}</p>}
-            {c.kind === 'timeline' && c.items && (
-              <ol className="relative mt-1 flex flex-col gap-3 border-l border-[#39ff88]/40 pl-4">
-                {c.items.map((it, i) => (
-                  <li key={i} className="relative">
-                    <span className="absolute top-1.5 -left-[21px] h-2.5 w-2.5 rounded-full border border-[#39ff88] bg-[#05110b] shadow-[0_0_8px_#39ff88]" />
-                    <div className="text-[13px] font-semibold text-white">{it.label}</div>
-                    {it.detail && <div className="text-[12px] text-[#b8bfdc]">{it.detail}</div>}
-                  </li>
-                ))}
-              </ol>
-            )}
+          <div className="px-body">
+            {c.kind !== 'photo' && <h3>{c.title}</h3>}
+            {c.image && <img src={c.image} alt="" className={`px-img ${c.kind === 'photo' ? 'max-h-64' : 'max-h-40'}`} />}
+            {c.body && <p className="whitespace-pre-line">{c.body}</p>}
             {c.kind === 'points' && c.items && (
-              <ul className="mt-1 flex flex-col gap-2">
+              <ul className="px-list">
                 {c.items.map((it, i) => (
-                  <li key={i} className="text-[13px] leading-snug">
-                    <span className="font-semibold text-white">{it.label}</span>
-                    {it.detail && <span className="text-[#b8bfdc]"> — {it.detail}</span>}
+                  <li key={i}>
+                    <b>{it.label}</b>
+                    {it.detail && <span> {it.detail}</span>}
                   </li>
                 ))}
               </ul>
             )}
+            {c.kind === 'timeline' && c.items && (
+              <ol className="px-timeline">
+                {c.items.map((it, i) => (
+                  <li key={i}>
+                    <b>{it.label}</b>
+                    {it.detail && <span>{it.detail}</span>}
+                  </li>
+                ))}
+              </ol>
+            )}
+            {c.kind === 'steps' && c.items && (
+              <ol className="px-steps">
+                {c.items.map((it, i) => (
+                  <li key={i}>
+                    <em>{i + 1}</em>
+                    <div>
+                      <b>{it.label}</b>
+                      {it.detail && <span>{it.detail}</span>}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+            {c.kind === 'chart' && c.items && <PixelChart items={c.items} unit={c.unit} />}
+            {c.kind === 'quiz' && c.quiz && <Quiz card={c} />}
             {(c.source || c.link) && (
-              <div className="mt-2 flex items-center justify-between text-[11px] text-[#8a90b0]">
+              <div className="px-foot">
                 <span>{c.source}</span>
-                {c.link && (
-                  <button className="underline hover:text-white" onClick={() => void api.app.openUrl(c.link!)}>
-                    Read more
-                  </button>
-                )}
+                {c.link && <button onClick={() => void api.app.openUrl(c.link!)}>read more</button>}
               </div>
             )}
           </div>
         </article>
       ))}
+      {cards.length > 1 && (
+        <button {...hover} className="px-clear" onClick={clearAll}>
+          CLEAR ALL · {cards.length}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Horizontal bars, one colour, each value written next to its bar. */
+function PixelChart({ items, unit }: { items: { label: string; detail?: string; value?: number }[]; unit?: string }): React.JSX.Element {
+  const max = Math.max(...items.map((i) => i.value ?? 0), 0) || 1
+  const fmt = (v: number): string => (Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : String(Math.round(v * 10) / 10))
+  return (
+    <div className="px-chart" role="table" aria-label={`Chart${unit ? ` (${unit})` : ''}`}>
+      {items.map((it, i) => (
+        <div key={i} className="px-chart-row" role="row" title={it.detail}>
+          <span role="cell" className="px-chart-label">
+            {it.label}
+          </span>
+          <span role="cell" className="px-chart-track">
+            <i style={{ width: `${Math.max(2, ((it.value ?? 0) / max) * 100)}%` }} />
+          </span>
+          <span role="cell" className="px-chart-value">
+            {fmt(it.value ?? 0)}
+            {unit && unit.length <= 3 ? unit : ''}
+          </span>
+        </div>
+      ))}
+      {unit && unit.length > 3 && <div className="px-chart-unit">{unit}</div>}
+    </div>
+  )
+}
+
+/** Multiple choice. Pick an answer to see if it's right; save them all as flashcards. */
+function Quiz({ card }: { card: BauerCard }): React.JSX.Element {
+  const [picked, setPicked] = useState<Record<number, number>>({})
+  const [saved, setSaved] = useState<'no' | 'saving' | 'yes'>('no')
+  const quiz = card.quiz ?? []
+  const save = async (): Promise<void> => {
+    setSaved('saving')
+    try {
+      const deck = await api.create('flashcard_decks', { name: `${card.title.replace(/^Quick check: /, '').slice(0, 60)} · Nova`, module_id: null })
+      for (const q of quiz)
+        await api.create('flashcards', {
+          deck_id: deck.id,
+          front: q.q,
+          back: `${q.options[q.answer]}${q.why ? ` (${q.why})` : ''}`,
+          ease: 2.5,
+          interval_days: 0,
+          repetitions: 0,
+          due_at: null
+        })
+      setSaved('yes')
+    } catch (e) {
+      console.warn('Nova: couldn’t save the quiz', e)
+      setSaved('no')
+    }
+  }
+  return (
+    <div className="px-quiz">
+      {quiz.map((q, qi) => {
+        const p = picked[qi]
+        return (
+          <div key={qi} className="px-q">
+            <p>{q.q}</p>
+            <div className="px-options">
+              {q.options.map((o, oi) => (
+                <button
+                  key={oi}
+                  disabled={p != null}
+                  className={p == null ? '' : oi === q.answer ? 'right' : oi === p ? 'wrong' : 'dim'}
+                  onClick={() => setPicked({ ...picked, [qi]: oi })}
+                >
+                  {o}
+                </button>
+              ))}
+            </div>
+            {p != null && <p className="px-why">{p === q.answer ? 'Right!' : `It’s ${q.options[q.answer]}.`} {q.why}</p>}
+          </div>
+        )
+      })}
+      <button className="px-save" disabled={saved !== 'no'} onClick={() => void save()}>
+        {saved === 'yes' ? 'SAVED TO FLASHCARDS ✓' : saved === 'saving' ? 'SAVING…' : 'SAVE AS FLASHCARDS'}
+      </button>
     </div>
   )
 }

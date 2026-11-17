@@ -27,7 +27,7 @@ import { loadWindowState, trackWindowState } from './windowState'
 import { aiChat, aiStatus, configureAi, downloadAi, downloadEyes, removeAi, removeEyes, stopAi, warmAi } from './ai'
 import { configureMouth, installMouth, mouthStatus, removeMouth, speakMouth, warmMouth } from './mouth'
 import { configureEars, earsStatus, feedEars, installEars, removeEars, transcribeEars } from './ears'
-import { claudeBlocked, claudeChat, claudeStatus, installClaude, refreshClaudeUsage, removeClaude, setClaudeWarm, signInClaude, signOutClaude, warmClaude } from './claude'
+import { claudeBlocked, claudeChat, claudeStatus, draftWithConnectors, installClaude, listConnectors, refreshClaudeUsage, removeClaude, setClaudeWarm, signInClaude, signOutClaude, warmClaude } from './claude'
 import type { AiMessage, AiPurpose } from '@shared/types'
 
 /** Nova's brain: Claude when it's connected and allowed, otherwise the model on this PC (if you allow that). */
@@ -462,6 +462,13 @@ if (!app.requestSingleInstanceLock()) {
         handle('claude:signOut', () => signOutClaude())
         handle('claude:remove', () => removeClaude())
         handle('claude:refreshUsage', () => refreshClaudeUsage(getPrefs()))
+        handle('claude:connectors', () => listConnectors().catch(() => []))
+        handle('claude:draft', async (_e, text: string) => {
+          const p = getPrefs()
+          if (!p.novaConnectors) return 'To draft that in your apps, switch on “Let Nova use my Claude connectors” on my page first.'
+          if (claudeBlocked(p)) return 'I need Claude connected for that. Connect it on my page in Studyhall.'
+          return draftWithConnectors(String(text).slice(0, 2000), p, voiceConfirm)
+        })
         handle('ai:downloadEyes', () => downloadEyes())
         handle('ai:removeEyes', () => removeEyes())
         handle('bauer:cards', (_e, cards) => showCards(Array.isArray(cards) ? cards : []))

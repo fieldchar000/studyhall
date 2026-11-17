@@ -30,6 +30,8 @@ const DEFAULTS: Prefs = {
   novaEyes: 'auto',
   novaWalk: true,
   novaHands: 'off',
+  novaConnectors: false,
+  novaShareStats: false,
   novaHandsApps: ['opera', 'explorer', 'Notion', 'Obsidian', 'EXCEL', 'WINWORD'],
   quickCaptureShortcut: 'CommandOrControl+Shift+Space',
   spotifyLinks: []

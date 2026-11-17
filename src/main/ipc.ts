@@ -305,7 +305,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('prefs:get', () => getPrefs())
   handle('prefs:set', (_e, patch: Record<string, unknown>) => {
     const clean: Partial<Prefs> = {}
-    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages', 'syncAllFiles', 'oculusDei', 'lanShare', 'lanAutoFetch', 'voiceWake', 'notifyBudgets', 'notifyPeople', 'notifyCheckin', 'bauerConfirm', 'bauerTalk', 'bauerOrb', 'bauerOnlyWhenOpen', 'novaOffline', 'novaNoExtra', 'novaDrift', 'novaWalk'] as const) {
+    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages', 'syncAllFiles', 'oculusDei', 'lanShare', 'lanAutoFetch', 'voiceWake', 'notifyBudgets', 'notifyPeople', 'notifyCheckin', 'bauerConfirm', 'bauerTalk', 'bauerOrb', 'bauerOnlyWhenOpen', 'novaOffline', 'novaNoExtra', 'novaDrift', 'novaWalk', 'novaConnectors', 'novaShareStats'] as const) {
       if (k in patch) clean[k] = !!patch[k]
     }
     if (typeof patch.quickCaptureShortcut === 'string' && SHORTCUTS.includes(patch.quickCaptureShortcut)) {

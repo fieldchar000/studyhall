@@ -238,6 +238,7 @@ export function NovaPage(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [cap, setCap] = useState<number | null>(null)
   const [confirm, setConfirm] = useState<'disconnect' | 'remove' | null>(null)
+  const [connectors, setConnectors] = useState<string[] | null>(null)
   const { data: log } = useLive(['bauer_log'], async () => (await api.list('bauer_log', {})).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5), [])
 
   // Fresh usage numbers when the page opens.
@@ -715,6 +716,36 @@ export function NovaPage(): React.JSX.Element {
               <p className="mt-2 text-xs text-muted">Anthropic doesn’t publish exact plan limits, so the estimate uses Claude’s API prices against about $20 (Pro), $100 (Max 5×) or $200 (Max 20×) a month.</p>
             </section>
           )}
+
+          {!phone && (
+            <section className="card rounded-2xl p-5">
+              <h2 className="flex items-center gap-2 font-semibold">
+                Claude extras <span className="nova-tag">Off unless you switch them on</span>
+              </h2>
+              <Row
+                title="Let Nova use my Claude connectors"
+                hint={`For “draft a document about…” only: ${name} may use the apps linked to your Claude account (like Claude Docs) and asks before every action. All other requests never see your connectors.`}
+              >
+                <input type="checkbox" checked={!!prefs?.novaConnectors} onChange={(e) => save({ novaConnectors: e.target.checked })} aria-label="Let Nova use my Claude connectors" />
+              </Row>
+              {prefs?.novaConnectors && (
+                <div className="pb-2 text-xs text-muted">
+                  {connectors === null ? (
+                    <button className="underline" onClick={() => void api.claude.connectors().then(setConnectors).catch(() => setConnectors([]))}>
+                      Show which connectors my account has
+                    </button>
+                  ) : connectors.length ? (
+                    <>Your connectors: {connectors.join(', ')}</>
+                  ) : (
+                    <>No connectors found on your Claude account.</>
+                  )}
+                </div>
+              )}
+              <Row title="Share usage statistics and crash reports with Anthropic" hint="Lets Claude Code send Anthropic the usage statistics and crash reports it normally sends, to help improve it. Changes nothing about how Nova works.">
+                <input type="checkbox" checked={!!prefs?.novaShareStats} onChange={(e) => save({ novaShareStats: e.target.checked })} aria-label="Share usage statistics" />
+              </Row>
+            </section>
+          )}
         </div>
 
         <aside className="flex min-w-0 flex-col gap-4">
@@ -734,11 +765,15 @@ export function NovaPage(): React.JSX.Element {
             </button>
           </section>
           <section className="card rounded-2xl p-5">
-            <h2 className="font-semibold">Coming next</h2>
-            <ul className="mt-2 flex flex-col gap-1.5 text-[13px] text-muted">
-              <li>
-                <b className="text-ink">Pixel cards</b>: answers, timelines, charts, step diagrams and quizzes beside what you’re reading
-              </li>
+            <h2 className="font-semibold">Try saying</h2>
+            <ul className="nova-try mt-2 flex flex-col gap-1.5 text-[13px] text-muted">
+              <li>“Add revise thermodynamics to my tasks for Thursday”</li>
+              <li>“Move my gym session to six”</li>
+              <li>“Explain integration by parts”</li>
+              <li>“Where’s the export button?”</li>
+              <li>“Walk me through making a chart in Excel”</li>
+              <li>“Click save for me” (with Hands on)</li>
+              <li>“Draft a revision plan for chemistry in Claude Docs” (with connectors on)</li>
             </ul>
           </section>
         </aside>

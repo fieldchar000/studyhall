@@ -2,7 +2,7 @@
 // a photo and the key points (or the steps, if it's a process). The facts come from Wikipedia
 // (free; only the topic is sent), and Bauer's brain on the PC turns them into points or a timeline.
 
-import type { BauerCard } from '@shared/types'
+import type { BauerCard, WikiSummary } from '@shared/types'
 import { api } from '@/lib/data'
 import { aiInstalled } from './agent'
 
@@ -18,9 +18,92 @@ const SCHEMA = {
   required: ['summary', 'style', 'items']
 }
 
+// With Claude connected, an explanation picks the layout that suits the topic and adds a short quiz.
+const RICH_SCHEMA = {
+  type: 'object',
+  properties: {
+    say: { type: 'string' },
+    summary: { type: 'string' },
+    style: { type: 'string', enum: ['points', 'timeline', 'steps', 'chart'] },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { label: { type: 'string' }, detail: { type: 'string' }, value: { type: 'number' } },
+        required: ['label', 'detail', 'value'],
+        additionalProperties: false
+      }
+    },
+    unit: { type: 'string' },
+    quiz: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { q: { type: 'string' }, options: { type: 'array', items: { type: 'string' } }, answer: { type: 'integer' }, why: { type: 'string' } },
+        required: ['q', 'options', 'answer', 'why'],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ['say', 'summary', 'style', 'items', 'unit', 'quiz'],
+  additionalProperties: false
+}
+
+const RICH_SYSTEM = `You explain a topic to a university student with small cards shown beside their work.
+- say: one or two short sentences Nova says out loud (plain speech).
+- summary: two or three plain sentences.
+- style: "timeline" for history or dates in order; "steps" for a process or method someone follows; "chart" only when the topic has real numbers worth comparing (sizes, amounts, percentages); otherwise "points".
+- items: 3 to 6. label: 2 to 5 words. detail: one short line. value: the number for a chart (in the same unit for every item), otherwise 0.
+- unit: the chart's unit (e.g. "°C", "% of the total", "km"), otherwise "".
+- quiz: 2 multiple-choice questions that check the key idea. options: 3 or 4 short answers. answer: the index (from 0) of the right one. why: one short line.
+Use the reference text when given and don't invent facts or numbers. If you aren't sure of a number, don't use a chart.`
+
+async function richExplain(topic: string, wiki: WikiSummary | null): Promise<{ cards: BauerCard[]; say: string } | null> {
+  try {
+    if (!(await api.claude.status()).signedIn) return null
+  } catch {
+    return null
+  }
+  const raw = await api.ai.chat(
+    [
+      { role: 'system', content: RICH_SYSTEM },
+      { role: 'user', content: `Topic: ${topic}${wiki ? `\n\nReference (Wikipedia, ${wiki.title}):\n${wiki.extract}` : ''}` }
+    ],
+    RICH_SCHEMA,
+    1400,
+    'explain'
+  )
+  const a = JSON.parse(raw) as {
+    say: string
+    summary: string
+    style: 'points' | 'timeline' | 'steps' | 'chart'
+    items: { label: string; detail: string; value: number }[]
+    unit: string
+    quiz: { q: string; options: string[]; answer: number; why: string }[]
+  }
+  const title = wiki?.title ?? topic
+  const cards: BauerCard[] = [{ id: uid(), kind: 'summary', title, body: a.summary, source: wiki ? 'Wikipedia + Claude' : 'Claude', link: wiki?.url }]
+  if (wiki?.image) cards.push({ id: uid(), kind: 'photo', title, image: wiki.image, source: 'Wikipedia' })
+  const items = (a.items ?? []).filter((i) => i.label).slice(0, 6)
+  const charted = a.style === 'chart' && items.filter((i) => Number.isFinite(i.value) && i.value > 0).length >= 2
+  if (items.length) {
+    const kind = charted ? 'chart' : a.style === 'chart' ? 'points' : a.style
+    const heading = { points: 'Key points', timeline: 'Timeline', steps: 'Step by step', chart: 'In numbers' }[kind]
+    cards.push({ id: uid(), kind, title: heading, items, unit: charted ? a.unit : undefined, source: 'Claude' })
+  }
+  const quiz = (a.quiz ?? []).filter((q) => q.q && q.options?.length >= 2 && q.answer >= 0 && q.answer < q.options.length).slice(0, 3)
+  if (quiz.length) cards.push({ id: uid(), kind: 'quiz', title: `Quick check: ${title}`, quiz, source: 'Claude' })
+  return { cards, say: a.say || firstSentences(a.summary, 1) }
+}
+
 /** Make the cards for a topic and show them. Returns what Bauer says out loud. */
 export async function explainTopic(topic: string): Promise<string> {
   const wiki = await api.bauer.wiki(topic).catch(() => null)
+  const rich = await richExplain(topic, wiki).catch((e) => (console.warn('Nova: rich explain failed', e), null))
+  if (rich) {
+    await api.bauer.cards(rich.cards)
+    return rich.say
+  }
   let ai: { summary: string; style: 'points' | 'timeline'; items: { label: string; detail: string }[] } | null = null
   const ready = await aiInstalled()
   if (ready) {

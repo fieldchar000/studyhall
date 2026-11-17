@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { QuickCapture } from './pages/QuickCapture'
 import '@fontsource-variable/instrument-sans'
+import '@fontsource/vt323/latin-400.css' // Nova's pixel cards
+import '@fontsource/silkscreen/latin-400.css'
 import '@fontsource-variable/eb-garamond'
 import '@fontsource-variable/eb-garamond/wght-italic.css'
 import './index.css'
