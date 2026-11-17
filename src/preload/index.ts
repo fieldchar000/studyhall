@@ -17,6 +17,7 @@ const api: Api = {
   create: (table, values) => ipcRenderer.invoke('db:create', table, values),
   update: (table, id, patch) => ipcRenderer.invoke('db:update', table, id, patch),
   remove: (table, id) => ipcRenderer.invoke('db:remove', table, id),
+  restore: (table, id) => ipcRenderer.invoke('db:restore', table, id),
 
   materials: {
     pickAndImport: (weekId) => ipcRenderer.invoke('materials:pick', weekId),
@@ -230,6 +231,20 @@ const api: Api = {
       const listener = (_e: unknown, page: string): void => cb(String(page))
       ipcRenderer.on('app:navigate', listener)
       return () => ipcRenderer.removeListener('app:navigate', listener)
+    },
+    goto: (page) => ipcRenderer.invoke('app:goto', page),
+    openUrl: (url) => ipcRenderer.invoke('app:openUrl', url)
+  },
+  ai: {
+    status: () => ipcRenderer.invoke('ai:status'),
+    download: () => ipcRenderer.invoke('ai:download'),
+    remove: () => ipcRenderer.invoke('ai:remove'),
+    warm: () => ipcRenderer.invoke('ai:warm'),
+    chat: (messages, schema) => ipcRenderer.invoke('ai:chat', messages, schema),
+    onStatus: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('ai:status', l)
+      return () => ipcRenderer.removeListener('ai:status', l)
     }
   }
 }

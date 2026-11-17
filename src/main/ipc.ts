@@ -1,7 +1,7 @@
 // IPC handlers: the only way the UI can reach the database, files and network.
 
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
-import { create, get, getDb, getProfileId, list, softDelete, update } from './db'
+import { create, get, getDb, getProfileId, list, restore, softDelete, update } from './db'
 import { importMaterials, importPapers, importPaths, openExternal, openPaperExternal, paperDoc, pickAndImport, pickMaterials, pickPapers, readMaterial, savePhoto, showInFolder } from './files'
 import { refreshSubscriptions } from './ics'
 import { getPrefs, setPrefs, SHORTCUTS } from './prefs'
@@ -140,6 +140,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     return row
   })
   handle('db:remove', (_e, table: string, id: string) => softDelete(table, id))
+  handle('db:restore', (_e, table: string, id: string) => restore(table, id))
 
   // Materials
   handle('materials:pick', (e, weekId: string) => {
@@ -304,7 +305,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('prefs:get', () => getPrefs())
   handle('prefs:set', (_e, patch: Record<string, unknown>) => {
     const clean: Partial<Prefs> = {}
-    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages', 'syncAllFiles', 'oculusDei', 'lanShare', 'lanAutoFetch', 'voiceWake', 'notifyBudgets', 'notifyPeople', 'notifyCheckin'] as const) {
+    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages', 'syncAllFiles', 'oculusDei', 'lanShare', 'lanAutoFetch', 'voiceWake', 'notifyBudgets', 'notifyPeople', 'notifyCheckin', 'bauerConfirm', 'bauerTalk'] as const) {
       if (k in patch) clean[k] = !!patch[k]
     }
     if (typeof patch.quickCaptureShortcut === 'string' && SHORTCUTS.includes(patch.quickCaptureShortcut)) {

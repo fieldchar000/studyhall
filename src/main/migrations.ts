@@ -723,5 +723,18 @@ export const migrations: Migration[] = [
     next_focus TEXT NOT NULL DEFAULT ''
   );
   CREATE INDEX idx_weekly_reviews_week ON weekly_reviews(week_start);
+  `,
+
+  // 14 — Bauer log: everything Bauer did on his own, and how to undo it (this device only)
+  `
+  CREATE TABLE bauer_log (${base},
+    said TEXT NOT NULL DEFAULT '',
+    reply TEXT NOT NULL DEFAULT '',
+    actions TEXT NOT NULL DEFAULT '[]',
+    undo TEXT NOT NULL DEFAULT '[]',
+    source TEXT NOT NULL DEFAULT 'voice',
+    brain TEXT NOT NULL DEFAULT 'rules',
+    undone_at TEXT
+  );
   `
 ]

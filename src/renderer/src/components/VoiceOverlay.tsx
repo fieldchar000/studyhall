@@ -1,16 +1,19 @@
 // The phone/tablet voice briefing sheet. Opens when you tap the mic, when the "Hey Bauer"
 // service hears you while Studyhall is open, or when you come back from a "Bauer heard you"
-// notification. Listens with Android's own recogniser, then shows the list to check.
+// notification. Listens with Android's own recogniser, then does it straight away (with Undo),
+// or shows the list to check first if "Ask before doing things" is on.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { parseBrief, type BriefAction } from '@/lib/brief'
+import { describe, parseBrief, type BriefAction } from '@/lib/brief'
+import { answerQuestion, isQuestion, runBauer, say, undoLog } from '@/lib/bauer/agent'
+import { navigate } from '@/lib/nav'
 import { applyBrief, loadBriefContext } from '@/lib/briefApply'
 import { api } from '@/lib/data'
 import { Bauer } from '@/lib/voice/phone'
 import { BriefReview } from './BriefReview'
 import { Icon } from './ui'
 
-type Phase = 'closed' | 'listening' | 'thinking' | 'review' | 'done' | 'nothing' | 'error'
+type Phase = 'closed' | 'listening' | 'thinking' | 'review' | 'done' | 'did' | 'nothing' | 'error'
 
 const symbol = (code: string): string => {
   try {
@@ -31,6 +34,7 @@ export function VoiceOverlay(): React.JSX.Element | null {
   const [count, setCount] = useState(0)
   const [currency, setCurrency] = useState('')
   const busy = useRef(false)
+  const [did, setDid] = useState<{ reply: string; actions: BriefAction[]; logId: string | null; undone: boolean } | null>(null)
 
   const read = useCallback(async (t: string): Promise<void> => {
     setActions(parseBrief(t, await loadBriefContext()))
@@ -41,8 +45,23 @@ export function VoiceOverlay(): React.JSX.Element | null {
     async (t: string): Promise<void> => {
       setText(t)
       setEdited(false)
-      await read(t)
-      setPhase('review')
+      const [prefs, profile] = await Promise.all([api.prefs.get(), api.profile.get()])
+      if (prefs.bauerConfirm) {
+        await read(t)
+        setPhase('review')
+        return
+      }
+      setPhase('thinking')
+      try {
+        const r = isQuestion(t) ? { reply: await answerQuestion(t, 'pad'), actions: [] as BriefAction[], logId: null } : await runBauer(t, { source: 'pad', mode: profile.mode })
+        setCurrency(symbol(profile.currency || ''))
+        setDid({ reply: r.reply, actions: r.actions, logId: r.logId, undone: false })
+        setPhase('did')
+        if (prefs.bauerTalk !== false) say(r.reply)
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : String(e))
+        setPhase('error')
+      }
     },
     [read]
   )
@@ -107,8 +126,8 @@ export function VoiceOverlay(): React.JSX.Element | null {
   }, [listen, takePending])
 
   useEffect(() => {
-    if (phase !== 'done' && phase !== 'nothing') return
-    const t = setTimeout(close, phase === 'done' ? 1600 : 2400)
+    if (phase !== 'done' && phase !== 'nothing' && phase !== 'did') return
+    const t = setTimeout(close, phase === 'done' ? 1600 : phase === 'did' ? 9000 : 2400)
     return () => clearTimeout(t)
   }, [phase, close])
 
@@ -124,7 +143,7 @@ export function VoiceOverlay(): React.JSX.Element | null {
 
   const apply = async (): Promise<void> => {
     const p = await api.profile.get()
-    setCount(await applyBrief(actions, p.mode))
+    setCount((await applyBrief(actions, p.mode)).count)
     setPhase('done')
   }
 
@@ -141,13 +160,14 @@ export function VoiceOverlay(): React.JSX.Element | null {
               style={{ transform: `scale(${phase === 'listening' ? 1 + Math.min(0.45, level * 0.6) : 1})`, transition: 'transform 90ms linear' }}
             />
             <span className={`relative grid size-10 place-items-center rounded-full ${phase === 'error' ? 'bg-danger' : 'bg-accent'} text-on-accent`}>
-              <Icon name={phase === 'done' ? 'check' : 'mic'} size={20} weight="fill" />
+              <Icon name={phase === 'done' || phase === 'did' ? 'check' : 'mic'} size={20} weight="fill" />
             </span>
           </div>
           <div className="min-w-0 flex-1">
             <div className="font-serif text-lg leading-tight">
               {phase === 'listening' && (partial ? 'Listening…' : 'Go ahead — I’m listening')}
-              {phase === 'thinking' && 'Writing it down…'}
+              {phase === 'thinking' && 'On it…'}
+              {phase === 'did' && (did?.undone ? 'Undone' : did?.actions.length ? 'Done' : 'Bauer says')}
               {phase === 'review' && 'Is this right?'}
               {phase === 'done' && `Done — ${count} change${count === 1 ? '' : 's'} made`}
               {phase === 'nothing' && 'Nothing heard'}
@@ -173,6 +193,54 @@ export function VoiceOverlay(): React.JSX.Element | null {
           <button className="self-start rounded-lg border border-line px-4 py-2 text-sm" onClick={() => void listen()}>
             Try again
           </button>
+        )}
+
+        {phase === 'did' && did && (
+          <>
+            <p className="text-[15px] leading-snug">{did.reply}</p>
+            {did.actions.length > 0 && (
+              <ul className="flex flex-col gap-1.5 rounded-lg border border-line bg-canvas px-3 py-2">
+                {did.actions.map((a) => {
+                  const d = describe(a, currency)
+                  return (
+                    <li key={a.key} className={`flex items-baseline gap-2 text-sm ${did.undone ? 'line-through opacity-60' : ''}`}>
+                      <span className="w-5 shrink-0 text-center">{d.icon}</span>
+                      <span className="font-semibold">{d.verb}</span>
+                      <span className="min-w-0 truncate">{d.text}</span>
+                      {d.detail && <span className="ml-auto shrink-0 text-xs text-muted">{d.detail}</span>}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            <div className="flex items-center gap-2">
+              {did.logId && did.actions.length > 0 && (
+                <button
+                  className="btn flex-1 justify-center py-2.5"
+                  disabled={did.undone}
+                  onClick={async () => {
+                    const e = did.logId ? await api.get('bauer_log', did.logId) : null
+                    if (e) await undoLog(e)
+                    setDid({ ...did, undone: true })
+                  }}
+                >
+                  <Icon name="reset" /> {did.undone ? 'Undone' : 'Undo'}
+                </button>
+              )}
+              <button
+                className="rounded-lg border border-line px-4 py-2.5 text-sm"
+                onClick={() => {
+                  close()
+                  navigate({ name: 'bauer' })
+                }}
+              >
+                Bauer log
+              </button>
+              <button className="rounded-lg border border-line px-4 py-2.5 text-sm" onClick={() => void listen()} aria-label="Say more">
+                <Icon name="mic" />
+              </button>
+            </div>
+          </>
         )}
 
         {phase === 'review' && (

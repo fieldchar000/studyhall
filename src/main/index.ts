@@ -24,6 +24,7 @@ import { checkLifeReminders } from './lifeReminders'
 import * as timer from './timer'
 import { createTray, updateTray } from './tray'
 import { loadWindowState, trackWindowState } from './windowState'
+import { aiChat, aiStatus, configureAi, downloadAi, removeAi, warmAi } from './ai'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
@@ -353,6 +354,13 @@ if (!app.requestSingleInstanceLock()) {
         handle('voice:status', () => voiceStatus())
         handle('voice:download', () => downloadVoice())
         handle('voice:brief', () => startBrief())
+        handle('ai:status', () => aiStatus())
+        handle('ai:download', () => downloadAi())
+        handle('ai:remove', () => removeAi())
+        handle('ai:warm', async () => void (await warmAi()))
+        handle('ai:chat', (_e, messages, schema) => aiChat(messages, schema))
+        handle('app:goto', (_e, page: string) => showWindow(String(page)))
+        handle('app:openUrl', (_e, url: string) => (/^https?:\/\//i.test(String(url)) ? shell.openExternal(String(url)) : undefined))
       },
       onPrefs: (patch) => {
         if ('voiceWake' in patch || 'voiceSensitivity' in patch) syncVoiceWindow()
@@ -362,6 +370,7 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on('voice:window', (e, msg) => {
       if (isVoiceContents(e.sender) && msg && typeof msg === 'object') voiceFromWindow(msg)
     })
+    configureAi((st) => broadcast('ai:status', st))
     configureVoice({ url: appUrl, webPreferences: SECURE_PREFS, onStatus: (st) => broadcast('voice:status', st) })
     // Tell every other window when data changes (e.g. quick capture -> inbox badge).
     onDbChange((table) => {

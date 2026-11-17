@@ -1,17 +1,18 @@
 // The Bauer panel (PC): a small always-on-top card in the corner of the screen.
 // Hidden while it waits for "Hey Bauer"; shows itself to listen, then to let you check
-// the list of changes before anything is saved.
+// what Bauer did (with Undo). With "Ask before doing things" on, the old checklist comes back.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { VoiceState } from '@shared/types'
-import { parseBrief, type BriefAction } from '@/lib/brief'
+import { describe, parseBrief, type BriefAction } from '@/lib/brief'
+import { answerQuestion, isQuestion, runBauer, say, undoLog } from '@/lib/bauer/agent'
 import { applyBrief, loadBriefContext } from '@/lib/briefApply'
 import { api } from '@/lib/data'
 import { chime, engine } from '@/lib/voice/engine'
 import { BriefReview } from '@/components/BriefReview'
 import { Icon } from '@/components/ui'
 
-type Phase = 'idle' | 'starting' | 'listening' | 'thinking' | 'review' | 'done' | 'nothing' | 'error'
+type Phase = 'idle' | 'starting' | 'listening' | 'thinking' | 'review' | 'done' | 'did' | 'nothing' | 'error'
 
 const currencySymbol = (code: string): string => {
   try {
@@ -31,6 +32,8 @@ export default function VoicePanel(): React.JSX.Element {
   const [message, setMessage] = useState('')
   const [count, setCount] = useState(0)
   const [currency, setCurrency] = useState('')
+  const [did, setDid] = useState<{ reply: string; actions: BriefAction[]; logId: string | null; undone: boolean } | null>(null)
+  const [hover, setHover] = useState(false)
   const card = useRef<HTMLDivElement>(null)
   const phaseRef = useRef<Phase>('idle')
   phaseRef.current = phase
@@ -45,11 +48,37 @@ export default function VoicePanel(): React.JSX.Element {
     setActions(parseBrief(t, ctx))
   }, [])
 
+  // Hands-free: do it now (or show the checklist if you asked for one).
+  const act = useCallback(
+    async (t: string): Promise<void> => {
+      const [prefs, profile] = await Promise.all([api.prefs.get(), api.profile.get()])
+      if (prefs.bauerConfirm) {
+        await read(t)
+        setPhase('review')
+        return
+      }
+      setPhase('thinking')
+      try {
+        const r = isQuestion(t) ? { reply: await answerQuestion(t, 'voice'), actions: [] as BriefAction[], logId: null } : await runBauer(t, { source: 'voice', mode: profile.mode })
+        setCurrency(currencySymbol(profile.currency || ''))
+        setDid({ reply: r.reply, actions: r.actions, logId: r.logId, undone: false })
+        setPhase('did')
+        chime(false)
+        if (prefs.bauerTalk !== false) say(r.reply)
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : String(e))
+        setPhase('error')
+      }
+    },
+    [read]
+  )
+
   // What the engine hears.
   useEffect(
     () =>
       engine.on((e) => {
         if (e.type === 'wake') {
+          void api.ai.warm().catch(() => {}) // wake the AI up while you talk
           chime()
           setHeard(false)
           setPhase('listening')
@@ -63,19 +92,20 @@ export default function VoicePanel(): React.JSX.Element {
         } else if (e.type === 'transcript') {
           setText(e.text)
           setEdited(false)
-          void read(e.text).then(() => setPhase('review'))
+          void act(e.text)
         } else if (e.type === 'error') {
           setMessage(e.message)
           setPhase('error')
         }
       }),
-    [read]
+    [act]
   )
 
   const listen = useCallback(async (): Promise<void> => {
     setHeard(false)
     setPhase('starting')
     try {
+      void api.ai.warm().catch(() => {})
       await engine.listen()
       chime()
       setPhase('listening')
@@ -112,6 +142,7 @@ export default function VoicePanel(): React.JSX.Element {
       thinking: 'thinking',
       review: 'review',
       done: 'review',
+      did: 'review',
       nothing: engine.wake ? 'armed' : 'off',
       error: 'error'
     }
@@ -134,12 +165,12 @@ export default function VoicePanel(): React.JSX.Element {
     return () => ro.disconnect()
   }, [phase])
 
-  // Little messages close themselves.
+  // Little messages close themselves (not while your mouse is on the card).
   useEffect(() => {
-    if (phase !== 'done' && phase !== 'nothing') return
-    const t = setTimeout(() => setPhase('idle'), phase === 'done' ? 1800 : 2600)
+    if ((phase !== 'done' && phase !== 'nothing' && phase !== 'did') || hover) return
+    const t = setTimeout(() => setPhase('idle'), phase === 'done' ? 1800 : phase === 'did' ? 9000 : 2600)
     return () => clearTimeout(t)
-  }, [phase])
+  }, [phase, hover])
 
   const close = useCallback((): void => {
     engine.cancel()
@@ -150,7 +181,7 @@ export default function VoicePanel(): React.JSX.Element {
 
   const apply = useCallback(async (): Promise<void> => {
     const p = await api.profile.get()
-    const n = await applyBrief(actions, p.mode)
+    const { count: n } = await applyBrief(actions, p.mode)
     setCount(n)
     setPhase('done')
     chime(false)
@@ -168,14 +199,15 @@ export default function VoicePanel(): React.JSX.Element {
   const ticked = actions.filter((a) => a.on).length
 
   return (
-    <div ref={card} className="flex flex-col gap-3 bg-panel p-4 text-ink select-none" style={{ minHeight: 0 }}>
+    <div ref={card} className="flex flex-col gap-3 bg-panel p-4 text-ink select-none" style={{ minHeight: 0 }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <div className="flex items-center gap-2.5">
         <Orb phase={phase} level={level} heard={heard} />
         <div className="min-w-0 flex-1">
           <div className="font-serif text-[17px] leading-tight">
             {phase === 'starting' && 'Getting ready…'}
             {phase === 'listening' && (heard ? 'Listening…' : 'Go ahead — I’m listening')}
-            {phase === 'thinking' && 'Writing it down…'}
+            {phase === 'thinking' && 'On it…'}
+            {phase === 'did' && (did?.undone ? 'Undone' : did?.actions.length ? 'Done' : 'Bauer says')}
             {phase === 'review' && 'Is this right?'}
             {phase === 'done' && `Done — ${count} change${count === 1 ? '' : 's'} made`}
             {(phase === 'nothing' || phase === 'error') && (phase === 'nothing' ? 'Nothing heard' : 'Something went wrong')}
@@ -183,6 +215,7 @@ export default function VoicePanel(): React.JSX.Element {
           <div className="truncate text-[12px] text-muted">
             {phase === 'listening' && 'Stop talking for a moment when you’re done.'}
             {phase === 'thinking' && 'On this PC — nothing is sent anywhere.'}
+            {phase === 'did' && (did?.actions.length ? 'Undo it here or in the Bauer log.' : '')}
             {phase === 'review' && 'Untick anything wrong, fix any words, then Apply.'}
             {(phase === 'nothing' || phase === 'error') && message}
           </div>
@@ -207,6 +240,48 @@ export default function VoicePanel(): React.JSX.Element {
         <button className="btn-ghost self-start rounded-lg border border-line px-3 py-1.5 text-sm" onClick={() => void listen()}>
           Try again
         </button>
+      )}
+
+      {phase === 'did' && did && (
+        <>
+          <p className="select-text text-[14px] leading-snug">{did.reply}</p>
+          {did.actions.length > 0 && (
+            <ul className="flex flex-col gap-1 rounded-lg border border-line bg-canvas px-3 py-2">
+              {did.actions.map((a) => {
+                const d = describe(a, currency)
+                return (
+                  <li key={a.key} className={`flex items-baseline gap-2 text-[13px] ${did.undone ? 'line-through opacity-60' : ''}`}>
+                    <span className="w-5 shrink-0 text-center">{d.icon}</span>
+                    <span className="font-semibold">{d.verb}</span>
+                    <span className="min-w-0 truncate">{d.text}</span>
+                    {d.detail && <span className="ml-auto shrink-0 text-[11px] text-muted">{d.detail}</span>}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          <div className="flex items-center gap-2">
+            {did.logId && did.actions.length > 0 && (
+              <button
+                className="btn px-3 py-1.5"
+                disabled={did.undone}
+                onClick={async () => {
+                  const e = did.logId ? await api.get('bauer_log', did.logId) : null
+                  if (e) await undoLog(e)
+                  setDid({ ...did, undone: true })
+                }}
+              >
+                <Icon name="reset" /> {did.undone ? 'Undone' : 'Undo'}
+              </button>
+            )}
+            <button className="btn-ghost rounded-lg px-3 py-1.5 text-sm" onClick={() => void api.app.goto('bauer')}>
+              Bauer log
+            </button>
+            <button className="btn-ghost ml-auto rounded-lg px-3 py-1.5 text-sm" onClick={() => void listen()}>
+              <Icon name="mic" /> More
+            </button>
+          </div>
+        </>
       )}
 
       {phase === 'review' && (
@@ -268,7 +343,7 @@ function Orb({ phase, level, heard }: { phase: Phase; level: number; heard: bool
         }}
       />
       <span className={`relative grid size-9 place-items-center rounded-full ${phase === 'error' ? 'bg-danger' : 'bg-accent'} text-on-accent`}>
-        <Icon name={phase === 'done' ? 'check' : 'mic'} size={18} weight="fill" />
+        <Icon name={phase === 'done' || phase === 'did' ? 'check' : 'mic'} size={18} weight="fill" />
       </span>
     </div>
   )

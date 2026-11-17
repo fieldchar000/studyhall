@@ -472,6 +472,7 @@ export interface TableMap {
   plans: Plan
   weekly_reviews: WeeklyReview
   devices: Device
+  bauer_log: BauerLogEntry
 }
 
 export type FeedTopic = 'ai' | 'geo' | 'politics' | 'philosophy' | 'tech' | 'games' | 'science' | 'other'
@@ -733,6 +734,29 @@ export interface WeeklyReview extends BaseRow {
   next_focus: string
 }
 
+/** One thing Bauer did on his own, with what's needed to undo it (this device only, not synced). */
+export interface BauerLogEntry extends BaseRow {
+  said: string // what you said (or typed)
+  reply: string // what Bauer answered
+  actions: string // JSON: { icon, verb, text, detail }[]
+  undo: string // JSON: UndoStep[]
+  source: string // 'voice' | 'typed' | 'pad'
+  brain: string // 'ai' (the local model understood it) | 'rules'
+  undone_at: string | null
+}
+export type UndoStep = { op: 'created'; table: TableName; id: string } | { op: 'updated'; table: TableName; id: string; before: Record<string, unknown> } | { op: 'deleted'; table: TableName; id: string }
+
+/** Bauer's brain on the PC (a local AI model). */
+export interface AiStatus {
+  installed: boolean
+  downloading: boolean
+  progress: number // 0..1
+  sizeMb: number
+  error: string | null
+  running: boolean
+}
+export type AiMessage = { role: 'system' | 'user' | 'assistant'; content: string }
+
 export type MediaKind = 'book' | 'film' | 'show' | 'anime' | 'game' | 'podcast'
 export type MediaStatus = 'want' | 'doing' | 'done' | 'dropped'
 
@@ -882,6 +906,8 @@ export interface Prefs {
   notifyCheckin?: boolean // evening check-in nudge and Sunday weekly review (default on)
   voiceWake?: boolean // listen for "Hey Bauer" (PC: while Studyhall runs, even in the tray)
   voiceSensitivity?: number // 0–100, how readily "Hey Bauer" is accepted (default 50)
+  bauerConfirm?: boolean // show the checklist before Bauer changes anything (default off: he just does it, with Undo)
+  bauerTalk?: boolean // Bauer says out loud what he did (default on)
 }
 
 /** The API the preload script exposes to the UI as window.api. */
@@ -891,6 +917,8 @@ export interface Api {
   create<T extends TableName>(table: T, values: Partial<TableMap[T]>): Promise<TableMap[T]>
   update<T extends TableName>(table: T, id: string, patch: Partial<TableMap[T]>): Promise<TableMap[T]>
   remove(table: TableName, id: string): Promise<void>
+  /** Bring back something that was removed (Bauer's Undo). */
+  restore(table: TableName, id: string): Promise<void>
 
   materials: {
     pickAndImport(weekId: string): Promise<Material[]>
@@ -1041,5 +1069,18 @@ export interface Api {
     onUpdate(cb: (s: UpdateState) => void): () => void
     /** Main asks the UI to open a page (e.g. from the tray menu). */
     onNavigate(cb: (page: string) => void): () => void
+    /** Open a page in the main window and bring it to the front (used by the Bauer panel). */
+    goto(page: string): Promise<void>
+    /** Open a website in the normal browser. */
+    openUrl(url: string): Promise<void>
+  }
+  /** Bauer's local AI (PC only; on the pad these reject). */
+  ai: {
+    status(): Promise<AiStatus>
+    download(): Promise<AiStatus>
+    remove(): Promise<AiStatus>
+    warm(): Promise<void>
+    chat(messages: AiMessage[], schema?: object): Promise<string>
+    onStatus(cb: (s: AiStatus) => void): () => void
   }
 }

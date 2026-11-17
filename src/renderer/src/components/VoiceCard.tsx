@@ -1,14 +1,20 @@
-// Settings → Voice: download the offline speech models, switch "Hey Bauer" on, sensitivity.
+// Settings → Voice: download the offline speech models, switch "Hey Bauer" on, sensitivity,
+// Bauer's brain (the local AI on the PC) and how hands-free he is.
 
 import { useEffect, useState } from 'react'
-import type { Prefs, VoiceStatus } from '@shared/types'
+import type { AiStatus, Prefs, VoiceStatus } from '@shared/types'
 import { api, notifyChanged, track, useLive } from '@/lib/data'
 import { isPhoneApp } from '@/lib/platform'
 import { startBrief } from '@/lib/voice'
+import { navigate } from '@/lib/nav'
 import { Bauer, type PhoneVoiceStatus } from '@/lib/voice/phone'
 import { Icon } from './ui'
 
 const EXAMPLES = [
+  'Move my gym on Thursday to 7 pm',
+  'I’ll send Sam the notes tomorrow morning',
+  'Pull up Khan Academy on entropy',
+  'Open my flashcards',
   'Add a task to finish the lab report by Friday',
   'Remind me to call Mum tomorrow at 5',
   'I studied anatomy for two hours',
@@ -102,7 +108,11 @@ export function VoiceCard(): React.JSX.Element {
         <Icon name="mic" /> Voice — “Hey Bauer”
       </h2>
       <p className="mb-3 text-sm text-muted">
-        Tell Studyhall what to add, cancel or log, in your own words. You always get a list to check before anything changes. {phone ? 'Speech is understood by Android on this device.' : 'Speech is understood on this PC — nothing you say is sent anywhere.'}
+        Tell Studyhall what to add, move, cancel or log, in your own words. Bauer does it straight away and writes everything in the{' '}
+        <button className="text-accent underline" onClick={() => navigate({ name: 'bauer' })}>
+          Bauer log
+        </button>
+        , where you can undo it. {phone ? 'Speech is understood by Android on this device.' : 'Speech is understood on this PC — nothing you say is sent anywhere.'}
       </p>
 
       {!st ? null : !st.installed ? (
@@ -173,6 +183,21 @@ export function VoiceCard(): React.JSX.Element {
               </button>
             </div>
           )}
+          <label className="flex items-start gap-3 py-1">
+            <input type="checkbox" className="mt-1" checked={prefs?.bauerTalk !== false} onChange={(e) => void savePrefs({ bauerTalk: e.target.checked })} />
+            <span>
+              <span className="block text-sm">Bauer talks back</span>
+              <span className="block text-xs text-muted">He says out loud what he did, with the voice built into {phone ? 'your tablet' : 'Windows'}.</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-3 py-1">
+            <input type="checkbox" className="mt-1" checked={!!prefs?.bauerConfirm} onChange={(e) => void savePrefs({ bauerConfirm: e.target.checked })} />
+            <span>
+              <span className="block text-sm">Ask before doing things</span>
+              <span className="block text-xs text-muted">Off: Bauer just does it (you can undo). On: you get a checklist to tick first.</span>
+            </span>
+          </label>
+          {!phone && <AiBrain />}
           {err && <p className="text-xs text-danger">{err}</p>}
           <details className="text-sm">
             <summary className="cursor-pointer text-muted">Things you can say</summary>
@@ -181,10 +206,61 @@ export function VoiceCard(): React.JSX.Element {
                 <li key={x}>“{x}”</li>
               ))}
             </ul>
-            <p className="mt-2 text-xs text-muted">Say several in one go. Anything Bauer can’t place goes to your Inbox.</p>
+            <p className="mt-2 text-xs text-muted">Say several in one go. Ask questions too: “when is my exam?”, “what does Alex like?”.</p>
           </details>
         </div>
       )}
     </section>
+  )
+}
+
+/** PC only: download Bauer's brain, a small AI that runs on this computer. */
+function AiBrain(): React.JSX.Element {
+  const [st, setSt] = useState<AiStatus | null>(null)
+  useEffect(() => {
+    void api.ai.status().then(setSt)
+    return api.ai.onStatus(setSt)
+  }, [])
+  if (!st) return <></>
+  const gb = (st.sizeMb / 1000).toFixed(1)
+  return (
+    <div className="rounded-lg border border-line bg-canvas p-3 text-sm">
+      <div className="mb-1 flex items-center gap-2 font-semibold">
+        <Icon name="spark" size={15} className="text-brass" /> Bauer’s brain
+        {st.installed && <span className="ml-auto text-xs font-normal text-muted">{st.running ? 'Awake' : 'Ready'}</span>}
+      </div>
+      {st.installed ? (
+        <>
+          <p className="text-xs text-muted">A small AI (Qwen3 4B) runs on this PC and understands how you normally talk. It wakes up when you say “Hey Bauer” and sleeps after 10 quiet minutes. Free, offline, nothing sent anywhere.</p>
+          <button
+            className="btn-ghost mt-2 -ml-2 text-xs"
+            onClick={() => {
+              if (confirm('Delete Bauer’s brain from this PC? He’ll go back to understanding only the usual phrases.')) void api.ai.remove()
+            }}
+          >
+            Remove ({gb} GB)
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="mb-2 text-xs text-muted">
+            Without it Bauer understands the usual phrases. With it he understands normal speech: “push gym back an hour”, “I promised Sam I’d send the notes tomorrow”. One-time download of {gb} GB (free AI model + the open-source llama.cpp program). It uses your graphics card.
+          </p>
+          {st.downloading ? (
+            <>
+              <div className="h-2 overflow-hidden rounded-full bg-line">
+                <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${Math.round(st.progress * 100)}%` }} />
+              </div>
+              <p className="mt-1 text-xs text-muted">{Math.round(st.progress * 100)}% · you can keep using Studyhall</p>
+            </>
+          ) : (
+            <button className="btn" onClick={() => void api.ai.download()}>
+              Download ({gb} GB)
+            </button>
+          )}
+          {st.error && <p className="mt-1 text-xs text-danger">{st.error}</p>}
+        </>
+      )}
+    </div>
   )
 }

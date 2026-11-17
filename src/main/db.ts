@@ -62,7 +62,8 @@ const TABLES: readonly TableName[] = [
   'moments',
   'plans',
   'weekly_reviews',
-  'devices'
+  'devices',
+  'bauer_log'
 ]
 
 /** When a parent is soft-deleted, these children are soft-deleted too. */
@@ -323,6 +324,15 @@ export function update<T>(table: string, id: string, patch: Record<string, unkno
   queueSync(table, id)
   changeListener(table)
   return get<T>(table, id)!
+}
+
+/** Undo a soft delete (only the row itself; Bauer only removes tasks and events). */
+export function restore(table: string, id: string): void {
+  assertTable(table)
+  const t = now()
+  db.prepare(`UPDATE ${table} SET deleted_at = NULL, updated_at = ? WHERE id = ?`).run(t, id)
+  queueSync(table, id)
+  changeListener(table)
 }
 
 /** Soft delete: mark deleted (so the deletion can sync), cascading to children. */

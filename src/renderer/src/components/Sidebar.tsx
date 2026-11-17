@@ -91,6 +91,7 @@ const groups: { title?: string; items: NavItem[] }[] = [
     title: 'You',
     items: [
       { label: 'Weekly review', icon: 'calendar', route: { name: 'review' }, match: ['review'], modes: ALL },
+      { label: 'Bauer log', icon: 'mic', route: { name: 'bauer' }, match: ['bauer'], modes: ALL },
       { label: 'Stats', icon: 'grades', route: { name: 'stats' }, match: ['stats'], modes: ALL },
       { label: 'Pixel Quest', icon: 'game', route: { name: 'game' }, match: ['game'], modes: ALL },
       { label: 'Settings', icon: 'settings', route: { name: 'settings' }, match: ['settings'], modes: ALL }
