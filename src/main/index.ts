@@ -25,7 +25,7 @@ import * as timer from './timer'
 import { createTray, updateTray } from './tray'
 import { loadWindowState, trackWindowState } from './windowState'
 import { aiChat, aiStatus, configureAi, downloadAi, downloadEyes, removeAi, removeEyes, stopAi, warmAi } from './ai'
-import { claudeBlocked, claudeChat, claudeStatus, installClaude, refreshClaudeUsage, signInClaude, signOutClaude } from './claude'
+import { claudeBlocked, claudeChat, claudeStatus, installClaude, refreshClaudeUsage, removeClaude, signInClaude, signOutClaude } from './claude'
 import type { AiMessage, AiPurpose } from '@shared/types'
 
 /** Nova's brain: Claude when it's connected and allowed, otherwise the model on this PC (if you allow that). */
@@ -405,6 +405,7 @@ if (!app.requestSingleInstanceLock()) {
         handle('claude:install', () => installClaude())
         handle('claude:signIn', () => signInClaude())
         handle('claude:signOut', () => signOutClaude())
+        handle('claude:remove', () => removeClaude())
         handle('claude:refreshUsage', () => refreshClaudeUsage(getPrefs()))
         handle('ai:downloadEyes', () => downloadEyes())
         handle('ai:removeEyes', () => removeEyes())

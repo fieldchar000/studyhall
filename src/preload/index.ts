@@ -240,6 +240,7 @@ const api: Api = {
     install: () => ipcRenderer.invoke('claude:install'),
     signIn: () => ipcRenderer.invoke('claude:signIn'),
     signOut: () => ipcRenderer.invoke('claude:signOut'),
+    remove: () => ipcRenderer.invoke('claude:remove'),
     refreshUsage: () => ipcRenderer.invoke('claude:refreshUsage'),
     onStatus: (cb) => {
       const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)

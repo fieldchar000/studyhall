@@ -1136,6 +1136,7 @@ export interface Api {
     install(): Promise<ClaudeStatus>
     signIn(): Promise<ClaudeStatus>
     signOut(): Promise<ClaudeStatus>
+    remove(): Promise<ClaudeStatus>
     refreshUsage(): Promise<ClaudeStatus>
     onStatus(cb: (s: ClaudeStatus) => void): () => void
   }

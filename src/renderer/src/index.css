@@ -1436,3 +1436,17 @@ body:has(.space-shell)::before { display: none; }
 .nova-bar.over i { background: #ffcf7a; }
 .nova-meter em { position: absolute; top: -4px; bottom: -4px; width: 2px; background: #a8c8ff; }
 .nova-page input[type='range'] { accent-color: #4f86f0; width: 150px; }
+.nova-room { margin-top: 10px; padding: 12px 14px; border-radius: 12px; border: 1px solid rgb(168 200 255 / .18); background: rgb(79 134 240 / .06); display: flex; flex-direction: column; gap: 6px; }
+.nova-room.warn { border-color: rgb(255 207 122 / .35); background: rgb(255 207 122 / .06); }
+.nova-room-bar { position: relative; height: 12px; border-radius: 6px; background: rgb(255 255 255 / .06); overflow: visible; }
+.nova-room-bar i { position: absolute; top: 0; bottom: 0; }
+.nova-room-bar i.used { left: 0; border-radius: 6px 0 0 6px; background: #4f86f0; }
+.nova-room-bar i.room { background: repeating-linear-gradient(135deg, rgb(168 200 255 / .45) 0 4px, rgb(168 200 255 / .18) 4px 8px); }
+.nova-room-bar i.extra { left: 100%; width: 14%; margin-left: -1px; border-radius: 0 6px 6px 0; background: repeating-linear-gradient(135deg, rgb(255 207 122 / .7) 0 4px, rgb(255 207 122 / .3) 4px 8px); }
+.nova-room.warn .nova-room-bar { margin-right: 14%; }
+.nova-room-bar em { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: #e6efff; }
+.nova-warn-text { color: #ffcf7a; }
+.nova-quiet { border-radius: 999px; padding: 5px 12px; border: 1px solid var(--color-line); color: var(--color-muted); background: rgb(255 255 255 / .03); }
+.nova-quiet:hover { color: var(--color-ink); }
+.nova-quiet.danger { color: #ff9b9b; border-color: rgb(255 120 120 / .35); }
+.nova-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; border: 1px solid rgb(255 120 120 / .25); background: rgb(255 120 120 / .05); }

@@ -73,6 +73,52 @@ function Row({ title, hint, children }: { title: React.ReactNode; hint?: React.R
   )
 }
 
+/** How much of this week Nova may still use, and what happens when the plan runs out. Changes with the switch. */
+function RoomLeft({ name, usage, cap, noExtra }: { name: string; usage: ClaudeStatus['usage']; cap: number; noExtra: boolean }): React.JSX.Element {
+  const week = usage?.sevenDay ?? null
+  const five = usage?.fiveHour ?? null
+  const used = Math.min(100, week ?? 0)
+  const room = Math.max(0, cap - used)
+  return (
+    <div className={`nova-room ${noExtra ? '' : 'warn'}`}>
+      <div className="nova-room-bar" role="img" aria-label={week == null ? 'Usage not known yet' : `${Math.round(used)}% of this week used, ${Math.round(room)}% left for ${name}`}>
+        <i className="used" style={{ width: `${used}%` }} />
+        {room > 0 && <i className="room" style={{ left: `${used}%`, width: `${room}%` }} />}
+        <em style={{ left: `${cap}%` }} />
+        {!noExtra && <i className="extra" />}
+      </div>
+      <div className="mt-1 flex justify-between text-[11px] text-muted">
+        <span>0%</span>
+        <span>{noExtra ? 'your plan ends at 100%' : '100%, then paid extra →'}</span>
+      </div>
+      {week == null ? (
+        <p className="text-[13px] text-muted">The bar fills in after {name}’s first answer (or press Refresh).</p>
+      ) : room > 0 ? (
+        <p className="text-[13px]">
+          <b>{name} can use about {Math.round(room)}% more of this week</b> before it pauses at {cap}%.{resetIn(usage?.sevenDayResets) && ` The week ${resetIn(usage?.sevenDayResets)}.`}
+        </p>
+      ) : (
+        <p className="text-[13px]">
+          <b>{name} is paused for Claude this week</b> ({Math.round(used)}% used, your cap is {cap}%). It uses the offline brain until the week {resetIn(usage?.sevenDayResets) || 'resets'}.
+        </p>
+      )}
+      {five != null && (
+        <p className="text-xs text-muted">
+          This 5-hour window: {Math.round(five)}% used{five >= 100 ? `, so ${name} waits until it ${resetIn(usage?.fiveHourResets) || 'resets'}` : ''}.
+        </p>
+      )}
+      {noExtra ? (
+        <p className="text-xs text-muted">If your plan runs out completely, {name} stops using Claude and switches to the offline brain. It never adds charges.</p>
+      ) : (
+        <p className="nova-warn-text text-[13px]">
+          Paid extra usage is allowed. Once your plan runs out, {name} keeps going on extra usage, which costs money.{' '}
+          {cap < 100 ? `Your ${cap}% cap still pauses ${name} first; set it to 100% to let it run into paid usage.` : 'Your cap is 100%, so nothing stops it before paid usage.'}
+        </p>
+      )}
+    </div>
+  )
+}
+
 /** The orb: a hollow sphere of fine blue strands with three orbits. Ripples while `busy`. */
 export function NovaOrb({ size = 200, busy = false }: { size?: number; busy?: boolean }): React.JSX.Element {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -185,6 +231,7 @@ export function NovaPage(): React.JSX.Element {
   const planUsd = PLANS.find((p) => p.key === planKey)?.usd ?? 20
   const [busy, setBusy] = useState(false)
   const [cap, setCap] = useState<number | null>(null)
+  const [confirm, setConfirm] = useState<'disconnect' | 'remove' | null>(null)
   const { data: log } = useLive(['bauer_log'], async () => (await api.list('bauer_log', {})).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5), [])
 
   // Fresh usage numbers when the page opens.
@@ -257,6 +304,44 @@ export function NovaPage(): React.JSX.Element {
             )}
           </div>
           {claude?.error && <p className="mt-2 text-sm text-danger">{claude.error}</p>}
+          {!phone && claude?.installed && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
+              {confirm === null && (
+                <>
+                  {claude.signedIn && (
+                    <button className="nova-quiet" onClick={() => setConfirm('disconnect')}>
+                      Disconnect Claude
+                    </button>
+                  )}
+                  <button className="nova-quiet" onClick={() => setConfirm('remove')}>
+                    Remove Claude from Studyhall
+                  </button>
+                </>
+              )}
+              {confirm && (
+                <div className="nova-confirm">
+                  <span>
+                    {confirm === 'disconnect'
+                      ? `Sign Studyhall out of Claude? ${name} uses the offline brain until you connect again.`
+                      : `Sign out and delete Claude Code (${claude.sizeMb} MB) and everything it stored from this PC?`}
+                  </span>
+                  <button
+                    className="nova-quiet danger"
+                    onClick={() => {
+                      const which = confirm
+                      setConfirm(null)
+                      void (which === 'disconnect' ? api.claude.signOut() : api.claude.remove())
+                    }}
+                  >
+                    {confirm === 'disconnect' ? 'Disconnect' : 'Remove'}
+                  </button>
+                  <button className="nova-quiet" onClick={() => setConfirm(null)}>
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {!phone && claude && !claude.signedIn && (
             <p className="mt-2 max-w-[70ch] text-xs text-muted">
               Connecting downloads Anthropic’s own Claude Code program and opens Claude’s sign-in page in your browser. You sign in there, so Studyhall never sees your password. Until you connect, {name} uses the model on this PC.
@@ -351,13 +436,14 @@ export function NovaPage(): React.JSX.Element {
               ) : (
                 <p className="text-sm text-muted">Connect Claude to see your plan’s usage here.</p>
               )}
-              <Row title="Never use paid extra usage" hint={`If your plan runs out, ${name} switches to the offline brain instead of adding charges.`}>
+              <Row title="Never use paid extra usage" hint={`Your Claude account has extra usage switched on. With this on, ${name} stays inside your plan.`}>
                 <input type="checkbox" checked={prefs?.novaNoExtra ?? true} onChange={(e) => save({ novaNoExtra: e.target.checked })} aria-label="Never use paid extra usage" />
               </Row>
               <Row title={`Pause ${name} at`} hint="When your weekly Claude usage reaches this, so you keep plenty for chatting with Claude">
                 <input type="range" min={10} max={100} step={5} value={capNow} onChange={(e) => setCap(Number(e.target.value))} onPointerUp={() => save({ novaCap: capNow })} onKeyUp={() => save({ novaCap: capNow })} aria-label="Weekly cap" />
                 <span className="w-10 text-right tabular-nums">{capNow}%</span>
               </Row>
+              {claude?.signedIn && <RoomLeft name={name} usage={claude.usage} cap={capNow} noExtra={prefs?.novaNoExtra ?? true} />}
 
               <h3 className="mt-4 text-[13.5px] font-medium">Estimate by brain setting</h3>
               <Row title="Your plan" hint="Pick yours to see the percentages">

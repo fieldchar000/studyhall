@@ -31,7 +31,38 @@ const MODEL_ID = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus:
 type ModelKey = keyof typeof MODEL_ID
 
 const exists = async (p: string): Promise<boolean> => !!(await stat(p).catch(() => null))
-const env = (): Record<string, string | undefined> => ({ ...process.env, CLAUDE_CONFIG_DIR: CONFIG(), CLAUDE_AGENT_SDK_CLIENT_APP: 'studyhall', DISABLE_AUTOUPDATER: '1' })
+// Privacy: no claude.ai connectors (your linked apps), no telemetry, no error reports, no auto-updates.
+const env = (): Record<string, string | undefined> => ({
+  ...process.env,
+  CLAUDE_CONFIG_DIR: CONFIG(),
+  CLAUDE_AGENT_SDK_CLIENT_APP: 'studyhall',
+  DISABLE_AUTOUPDATER: '1',
+  DISABLE_TELEMETRY: '1',
+  DISABLE_ERROR_REPORTING: '1',
+  ENABLE_CLAUDEAI_MCP_SERVERS: 'false'
+})
+/** Options every Nova request shares: answer only. No tools, no connectors, no files, nothing saved. */
+const LOCKED = (): {
+  pathToClaudeCodeExecutable: string
+  cwd: string
+  env: Record<string, string | undefined>
+  tools: string[]
+  settingSources: []
+  mcpServers: Record<string, never>
+  strictMcpConfig: boolean
+  settings: { disableClaudeAiConnectors: boolean }
+  persistSession: boolean
+} => ({
+  pathToClaudeCodeExecutable: EXE(),
+  cwd: WORK(),
+  env: env(),
+  tools: [],
+  settingSources: [],
+  mcpServers: {},
+  strictMcpConfig: true,
+  settings: { disableClaudeAiConnectors: true },
+  persistSession: false
+})
 
 let state: ClaudeStatus = {
   installed: false,
@@ -180,9 +211,22 @@ export async function signInClaude(): Promise<ClaudeStatus> {
   return state
 }
 
+/** Disconnect (only when you press the button): sign Studyhall's copy of Claude Code out and delete its sign-in from this PC. */
 export async function signOutClaude(): Promise<ClaudeStatus> {
   if (await exists(EXE())) await run(['auth', 'logout'])
-  return set({ signedIn: false, plan: null, usage: null })
+  // Belt and braces: the sign-in file goes too, even if logout couldn't reach Anthropic.
+  await rm(join(CONFIG(), '.credentials.json'), { force: true }).catch(() => {})
+  setSetting('nova_usage', null)
+  return set({ signedIn: false, plan: null, usage: null, paused: null, last: null })
+}
+
+/** Remove Claude from Studyhall completely (only when you press the button): sign out, then delete Claude Code and everything it stored. */
+export async function removeClaude(): Promise<ClaudeStatus> {
+  await signOutClaude()
+  await rm(join(DIR(), 'claude'), { recursive: true, force: true }).catch(() => {})
+  await rm(CONFIG(), { recursive: true, force: true }).catch(() => {})
+  await rm(WORK(), { recursive: true, force: true }).catch(() => {})
+  return set({ installed: false, signedIn: false, progress: 0 })
 }
 
 /** Is Claude usable right now, under your settings? (null = yes, otherwise why not) */
@@ -248,15 +292,10 @@ export async function claudeChat(messages: AiMessage[], schema: object | undefin
   const q = query({
     prompt: prompt() as never,
     options: {
-      pathToClaudeCodeExecutable: EXE(),
-      cwd: WORK(),
-      env: env(),
+      ...LOCKED(),
       model: MODEL_ID[model],
       effort,
       systemPrompt: examples ? `${system}\n\nWorked examples of good answers:\n${examples}` : system,
-      tools: [],
-      settingSources: [],
-      persistSession: false,
       maxTurns: 4,
       ...(schema ? { outputFormat: { type: 'json_schema' as const, schema: schema as Record<string, unknown> } } : {})
     }
@@ -326,7 +365,7 @@ export async function refreshClaudeUsage(prefs: Prefs): Promise<ClaudeStatus> {
   if (!state.signedIn) return state
   try {
     const { query } = await import('@anthropic-ai/claude-agent-sdk')
-    const q = query({ prompt: (async function* () {})() as never, options: { pathToClaudeCodeExecutable: EXE(), cwd: WORK(), env: env(), tools: [], settingSources: [], persistSession: false } })
+    const q = query({ prompt: (async function* () {})() as never, options: LOCKED() })
     const r = await (q as unknown as { usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(o: { skipBehaviors: boolean }): Promise<{ subscription_type: string | null; rate_limits: { five_hour?: { utilization: number | null; resets_at: string | null } | null; seven_day?: { utilization: number | null; resets_at: string | null } | null } | null }> }).usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
     q.close?.()
     const rl = r.rate_limits
