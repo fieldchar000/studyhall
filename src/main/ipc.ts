@@ -326,6 +326,8 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     if ('novaBrain' in patch && ['auto', 'haiku', 'sonnet', 'opus'].includes(String(patch.novaBrain))) clean.novaBrain = String(patch.novaBrain) as Prefs['novaBrain']
     if ('novaEffort' in patch && ['low', 'medium', 'high'].includes(String(patch.novaEffort))) clean.novaEffort = String(patch.novaEffort) as Prefs['novaEffort']
     if ('novaCap' in patch && Number.isFinite(Number(patch.novaCap))) clean.novaCap = Math.min(100, Math.max(10, Math.round(Number(patch.novaCap))))
+    if (typeof patch.novaVoice === 'string' && /^[a-z]{2}_[a-z]+$/.test(patch.novaVoice)) clean.novaVoice = patch.novaVoice
+    if ('novaSpeed' in patch && Number.isFinite(Number(patch.novaSpeed))) clean.novaSpeed = Math.min(1.3, Math.max(0.8, Number(patch.novaSpeed)))
     if ('sky' in patch && ['nebula', 'blackhole', 'galaxy', 'off'].includes(String(patch.sky))) clean.sky = String(patch.sky) as Prefs['sky']
     const saved = setPrefs(clean)
     deps.onPrefs?.(clean)

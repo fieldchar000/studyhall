@@ -980,6 +980,8 @@ export interface Prefs {
   novaOffline?: boolean // fall back to the model on this PC when Claude can't answer (default on)
   novaNoExtra?: boolean // never use paid extra usage on your Claude account (default on)
   novaCap?: number // pause Claude when your weekly Claude usage reaches this % (default 80)
+  novaVoice?: string // Kokoro voice (default af_heart)
+  novaSpeed?: number // how fast Nova talks, 0.8–1.3 (default 1.05)
 }
 
 /** The API the preload script exposes to the UI as window.api. */
@@ -1156,6 +1158,16 @@ export interface Api {
     feed(samples: Float32Array): void
     /** (listening window) write down a recording */
     transcribe(samples: Float32Array): Promise<string>
+  }
+  /** Nova's voice (Kokoro, offline; PC only). */
+  mouth: {
+    status(): Promise<EarsStatus>
+    install(): Promise<EarsStatus>
+    remove(): Promise<EarsStatus>
+    onStatus(cb: (s: EarsStatus) => void): () => void
+    /** Speak a short piece of text: returns the audio to play. */
+    speak(text: string, voice?: string, speed?: number): Promise<{ samples: Float32Array; sampleRate: number }>
+    warm(): Promise<void>
   }
   /** Nova's Claude brain (PC only). */
   claude: {

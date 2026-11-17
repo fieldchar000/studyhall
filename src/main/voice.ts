@@ -13,6 +13,7 @@ import JSZip from 'jszip'
 import type { NovaName, VoiceCommand, VoiceState, VoiceStatus } from '@shared/types'
 import { getPrefs } from './prefs'
 import { earsStatus, unloadEars, warmEars } from './ears'
+import { unloadMouth } from './mouth'
 
 export const VOICE_DIR = (): string => join(app.getPath('userData'), 'voice')
 export const VOSK_FILE = 'vosk-small-en.tar.gz'
@@ -258,6 +259,7 @@ export function setVoiceSuspended(on: boolean): void {
   if (on) {
     stopKeys()
     unloadEars() // frees Parakeet's memory while Studyhall is closed
+    unloadMouth()
   } else startKeys()
   syncVoiceWindow()
 }

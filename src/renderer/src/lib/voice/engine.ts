@@ -6,6 +6,7 @@
 
 import type { KaldiRecognizer, Model } from 'vosk-browser'
 import { api } from '@/lib/data'
+import { isSpeaking, stopSpeaking } from './speak'
 // ONNX Runtime's WebAssembly ships inside the app (Vite copies these next to the bundle).
 import ortMjs from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url'
 import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url'
@@ -169,6 +170,7 @@ class Engine {
   private onWake(): void {
     if (this.mode !== 'wake' || this.held || Date.now() - this.lastWake < 2500) return
     this.lastWake = Date.now()
+    stopSpeaking()
     if (!this.ears) this.newRecognizer() // forget what was heard so far
     this.emit({ type: 'wake' })
     this.startRecording(true)
@@ -196,6 +198,8 @@ class Engine {
       this.preroll.push(f)
       if (this.preroll.length > 12) this.preroll.shift()
       this.noise = this.noise * 0.97 + Math.min(rms, this.noise * 3) * 0.03
+      // While Nova is talking, the wake word doesn't listen (so it never wakes itself).
+      if (isSpeaking()) return
       if (this.ears) api.ears.feed(f)
       else this.kws?.acceptWaveformFloat(f, RATE)
       return
@@ -339,6 +343,7 @@ class Engine {
 
   /** Start listening for a briefing now (no wake word needed). */
   async listen(pushToTalk = false): Promise<void> {
+    stopSpeaking() // talking to Nova interrupts it
     if (this.mode === 'record' || this.mode === 'busy') return
     await this.openMic()
     this.startRecording(false)

@@ -9,6 +9,7 @@ import { navigate } from '@/lib/nav'
 import { isPhoneApp } from '@/lib/platform'
 import { startBrief } from '@/lib/voice'
 import { VoiceCard } from '@/components/VoiceCard'
+import { speak } from '@/lib/voice/speak'
 
 const NAMES: { n: NovaName; hint: string }[] = [
   { n: 'Nova', hint: 'Default · clear, 2 syllables' },
@@ -208,6 +209,33 @@ function useClaude(): ClaudeStatus | null {
   return s
 }
 
+function useMouth(): EarsStatus | null {
+  const [s, setS] = useState<EarsStatus | null>(null)
+  useEffect(() => {
+    let off = (): void => {}
+    try {
+      void api.mouth.status().then(setS).catch(() => setS(null))
+      off = api.mouth.onStatus(setS)
+    } catch {
+      /* the pad has no Kokoro voice yet */
+    }
+    return off
+  }, [])
+  return s
+}
+
+const VOICES: { id: string; name: string; hint: string; line: string }[] = [
+  { id: 'af_heart', name: 'Heart', hint: 'Warm · US', line: 'Hi! I’m ready when you are.' },
+  { id: 'af_nova', name: 'Nova', hint: 'Clear · US', line: 'Hi, I’m Nova. Your next lecture is at nine.' },
+  { id: 'af_bella', name: 'Bella', hint: 'Bright · US', line: 'Done! I added that to your tasks.' },
+  { id: 'bf_emma', name: 'Emma', hint: 'Calm · UK', line: 'Your revision session starts in ten minutes.' },
+  { id: 'bf_isabella', name: 'Isabella', hint: 'Soft · UK', line: 'I’ve moved your gym session to six.' },
+  { id: 'bm_george', name: 'George', hint: 'Deep · UK', line: 'Right, three tasks are due tomorrow.' },
+  { id: 'bm_daniel', name: 'Daniel', hint: 'Steady · UK', line: 'Your focus timer is running.' },
+  { id: 'am_michael', name: 'Michael', hint: 'Even · US', line: 'Got it. I logged forty minutes of chemistry.' },
+  { id: 'am_onyx', name: 'Onyx', hint: 'Low · US', line: 'I’m Onyx. What do you need?' }
+]
+
 function useEars(): EarsStatus | null {
   const [s, setS] = useState<EarsStatus | null>(null)
   useEffect(() => {
@@ -237,6 +265,17 @@ export function NovaPage(): React.JSX.Element {
   const prefs = usePrefs()
   const claude = useClaude()
   const ears = useEars()
+  const mouth = useMouth()
+  const [speed, setSpeed] = useState<number | null>(null)
+  const [previewing, setPreviewing] = useState<string | null>(null)
+  const preview = async (id: string, line: string): Promise<void> => {
+    setPreviewing(id)
+    try {
+      await speak(line, id, speed ?? prefs?.novaSpeed ?? 1.05)
+    } finally {
+      setPreviewing(null)
+    }
+  }
   const [earsConfirm, setEarsConfirm] = useState(false)
   const name = prefs?.novaName ?? 'Nova'
   const brain = prefs?.novaBrain ?? 'auto'
@@ -443,6 +482,65 @@ export function NovaPage(): React.JSX.Element {
             </section>
           )}
 
+          {!phone && mouth && (
+            <section className="card rounded-2xl p-5">
+              <h2 className="flex items-center gap-2 font-semibold">
+                Voice <span className="nova-tag free">Free · on this PC</span>
+              </h2>
+              <p className="mb-3 text-[13px] text-muted">How {name} talks back. Kokoro, a free voice model, speaks on this PC, starting while the rest of the answer is still being made.</p>
+              <Row title={`${name} talks back`} hint="Off: answers are shown, not spoken">
+                <input type="checkbox" checked={prefs?.bauerTalk !== false} onChange={(e) => save({ bauerTalk: e.target.checked })} aria-label="Talks back" />
+              </Row>
+              {mouth.installed ? (
+                <>
+                  <div className="grid grid-cols-1 gap-2 py-2 sm:grid-cols-3">
+                    {VOICES.map((v) => (
+                      <div key={v.id} className="nova-voice" aria-pressed={(prefs?.novaVoice ?? 'af_heart') === v.id}>
+                        <button className="nova-play" aria-label={`Hear ${v.name}`} disabled={!!previewing} onClick={() => void preview(v.id, v.line)}>
+                          {previewing === v.id ? '…' : '▶'}
+                        </button>
+                        <button className="min-w-0 flex-1 text-left" onClick={() => save({ novaVoice: v.id })}>
+                          <b className="block text-[13px]">{v.name}</b>
+                          <span className="block text-[11px] text-muted">{v.hint}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <Row title="Speed">
+                    <input
+                      type="range"
+                      min={0.8}
+                      max={1.3}
+                      step={0.05}
+                      value={speed ?? prefs?.novaSpeed ?? 1.05}
+                      onChange={(e) => setSpeed(Number(e.target.value))}
+                      onPointerUp={() => speed != null && save({ novaSpeed: speed })}
+                      onKeyUp={() => speed != null && save({ novaSpeed: speed })}
+                      aria-label="Speaking speed"
+                    />
+                    <span className="w-12 text-right tabular-nums">{(speed ?? prefs?.novaSpeed ?? 1.05).toFixed(2)}×</span>
+                  </Row>
+                  <Row title="Voice model" hint="Kokoro, ready">
+                    <button className="nova-quiet" onClick={() => void api.mouth.remove()}>
+                      Remove
+                    </button>
+                  </Row>
+                </>
+              ) : (
+                <Row title="Voice model" hint={`Kokoro: ${mouth.sizeMb} MB, downloaded once. Until then ${name} uses the voice built into Windows.`}>
+                  {mouth.downloading ? (
+                    <span className="tabular-nums text-[13px] text-muted">Downloading… {Math.round(mouth.progress * 100)}%</span>
+                  ) : (
+                    <button className="btn-primary rounded-full px-4 py-1.5 text-sm font-semibold" onClick={() => void api.mouth.install()}>
+                      Download ({mouth.sizeMb} MB)
+                    </button>
+                  )}
+                </Row>
+              )}
+              {mouth.error && <p className="text-sm text-danger">{mouth.error}</p>}
+            </section>
+          )}
+
           <section className="card rounded-2xl p-5">
             <h2 className="flex items-center gap-2 font-semibold">
               Brain <span className="nova-tag">Your Claude plan</span>
@@ -580,9 +678,6 @@ export function NovaPage(): React.JSX.Element {
           <section className="card rounded-2xl p-5">
             <h2 className="font-semibold">Coming next</h2>
             <ul className="mt-2 flex flex-col gap-1.5 text-[13px] text-muted">
-              <li>
-                <b className="text-ink">Voice:</b> a natural free voice that runs on this PC
-              </li>
               <li>
                 <b className="text-ink">Look:</b> the new floating orb
               </li>

@@ -13,6 +13,7 @@ import { isPhoneApp } from '@/lib/platform'
 import { explainTopic, explainTopicFrom } from './explain'
 import { grounded, isChitChat, stripWake } from './heard'
 import { readCheckin } from '@/lib/brief'
+import { speak } from '@/lib/voice/speak'
 
 /** Cards, circling and apps exist only on the PC. */
 const onPc = (): boolean => !isPhoneApp()
@@ -530,8 +531,16 @@ export async function logAnswer(said: string, reply: string, source: 'voice' | '
   await writeLog(said, reply, [], [], source, 'rules')
 }
 
-/** Bauer talks back (offline voices built into Windows / Android). */
+/** Nova talks back: its own voice (Kokoro) when installed, otherwise the voice built into Windows / Android. */
 export function say(text: string): void {
+  void speak(text)
+    .then((ok) => {
+      if (!ok) sayWithSystemVoice(text)
+    })
+    .catch(() => sayWithSystemVoice(text))
+}
+
+function sayWithSystemVoice(text: string): void {
   try {
     if (!('speechSynthesis' in window) || !text) return
     speechSynthesis.cancel()

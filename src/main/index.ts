@@ -25,6 +25,7 @@ import * as timer from './timer'
 import { createTray, updateTray } from './tray'
 import { loadWindowState, trackWindowState } from './windowState'
 import { aiChat, aiStatus, configureAi, downloadAi, downloadEyes, removeAi, removeEyes, stopAi, warmAi } from './ai'
+import { configureMouth, installMouth, mouthStatus, removeMouth, speakMouth, warmMouth } from './mouth'
 import { configureEars, earsStatus, feedEars, installEars, removeEars, transcribeEars } from './ears'
 import { claudeBlocked, claudeChat, claudeStatus, installClaude, refreshClaudeUsage, removeClaude, signInClaude, signOutClaude } from './claude'
 import type { AiMessage, AiPurpose } from '@shared/types'
@@ -418,6 +419,14 @@ if (!app.requestSingleInstanceLock()) {
           if (!isVoiceContents(e.sender) || !(samples instanceof Float32Array)) throw new Error('Not allowed')
           return transcribeEars(samples)
         })
+        handle('mouth:status', () => mouthStatus())
+        handle('mouth:install', () => installMouth())
+        handle('mouth:remove', () => removeMouth())
+        handle('mouth:warm', () => warmMouth())
+        handle('mouth:speak', (_e, text, voice, speed) => {
+          const p = getPrefs()
+          return speakMouth(String(text ?? ''), typeof voice === 'string' ? voice : (p.novaVoice ?? 'af_heart'), typeof speed === 'number' ? speed : (p.novaSpeed ?? 1.05))
+        })
         handle('claude:status', () => claudeStatus())
         handle('claude:install', () => installClaude())
         handle('claude:signIn', () => signInClaude())
@@ -454,6 +463,7 @@ if (!app.requestSingleInstanceLock()) {
       voiceFromWindow(msg)
     })
     configureEars((st) => broadcast('ears:status', st))
+    configureMouth((st) => broadcast('mouth:status', st))
     configureAi((st) => broadcast('ai:status', st))
     configureVoice({
       url: appUrl,

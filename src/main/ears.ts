@@ -71,7 +71,8 @@ export async function earsStatus(): Promise<EarsStatus> {
   return state
 }
 
-async function fetchChecked(url: string, file: string, hash: string, bytes: number, done: number, total: number): Promise<void> {
+/** A download that must match its published fingerprint ("sha256:hex" or npm's "sha512-base64"). */
+export async function fetchChecked(url: string, file: string, hash: string, bytes: number, done: number, total: number, onProgress: (p: number) => void): Promise<void> {
   const res = await fetch(url)
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status})`)
   const [algo, want] = hash.split(/[-:]/, 2) as ['sha256' | 'sha512', string]
@@ -85,7 +86,7 @@ async function fetchChecked(url: string, file: string, hash: string, bytes: numb
     if (!ws.write(chunk)) await new Promise<void>((r) => ws.once('drain', () => r()))
     if (Date.now() - last > 300) {
       last = Date.now()
-      set({ progress: Math.min(0.99, (done + Math.min(got, bytes)) / total) })
+      onProgress(Math.min(0.99, (done + Math.min(got, bytes)) / total))
     }
   }
   await new Promise<void>((r, j) => ws.end((e?: Error | null) => (e ? j(e) : r())))
@@ -100,29 +101,57 @@ const untar = (args: readonly string[], file: string, to: string): Promise<void>
     t.on('error', reject)
   })
 
+export interface Part {
+  key: string
+  url: string
+  hash: string
+  bytes: number
+  unpack: readonly string[]
+  inside: string
+  dest: () => string
+}
+
+/** The speech toolkit itself, shared by the ears and the voice. */
+export const SHERPA_DIR = (): string => join(app.getPath('userData'), 'nova', 'sherpa')
+export const ADDON_PART: Part = { ...PARTS[0], dest: SHERPA_DIR }
+
+/** Download, check and unpack the parts that aren't there yet. */
+export async function installParts(parts: Part[], tmp: string, onProgress: (p: number) => void): Promise<void> {
+  await rm(tmp, { recursive: true, force: true })
+  await mkdir(tmp, { recursive: true })
+  try {
+    const total = parts.reduce((n, p) => n + p.bytes, 0)
+    let done = 0
+    for (const p of parts) {
+      const dest = p.dest()
+      if (!(await exists(dest))) {
+        const file = join(tmp, `${p.key}.download`)
+        await fetchChecked(p.url, file, p.hash, p.bytes, done, total, onProgress)
+        const out = join(tmp, p.key)
+        await mkdir(out, { recursive: true })
+        await untar(p.unpack, file, out)
+        await rm(file, { force: true })
+        await mkdir(join(dest, '..'), { recursive: true })
+        await rename(join(out, p.inside), dest)
+      }
+      done += p.bytes
+    }
+  } finally {
+    await rm(tmp, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
 /** Download the ears (once). */
 export async function installEars(): Promise<EarsStatus> {
   if (state.downloading || (await exists(READY()))) return earsStatus()
   set({ downloading: true, progress: 0, error: null })
   const tmp = join(DIR(), 'download')
   try {
-    await rm(tmp, { recursive: true, force: true })
-    await mkdir(tmp, { recursive: true })
-    const total = PARTS.reduce((n, p) => n + p.bytes, 0)
-    let done = 0
-    for (const p of PARTS) {
-      const dest = partDir(p.key)
-      if (!(await exists(dest))) {
-        const file = join(tmp, `${p.key}.download`)
-        await fetchChecked(p.url, file, p.hash, p.bytes, done, total)
-        const out = join(tmp, p.key)
-        await mkdir(out, { recursive: true })
-        await untar(p.unpack, file, out)
-        await rm(file, { force: true })
-        await rename(join(out, p.inside), dest)
-      }
-      done += p.bytes
-    }
+    await installParts(
+      [ADDON_PART, ...PARTS.slice(1).map((p) => ({ ...p, dest: () => partDir(p.key) }))],
+      tmp,
+      (progress) => set({ progress })
+    )
     // The model's own test recordings aren't needed.
     await rm(join(partDir('parakeet'), 'test_wavs'), { recursive: true, force: true }).catch(() => {})
     await rm(join(partDir('kws'), 'test_wavs'), { recursive: true, force: true }).catch(() => {})
@@ -151,8 +180,16 @@ let spotKey = ''
 let recognizer: unknown = null
 let recognizerLoading: Promise<unknown> | null = null
 
-function loadAddon(): Addon {
-  if (!addon) addon = createRequire(__filename)(join(partDir('addon'), 'sherpa-onnx.node')) as Addon
+/** The speech toolkit (in nova/sherpa; v0.31.0 kept it inside the ears folder). */
+export function loadAddon(): Addon {
+  if (!addon) {
+    const req = createRequire(__filename)
+    try {
+      addon = req(join(SHERPA_DIR(), 'sherpa-onnx.node')) as Addon
+    } catch {
+      addon = req(join(partDir('addon'), 'sherpa-onnx.node')) as Addon
+    }
+  }
   return addon
 }
 

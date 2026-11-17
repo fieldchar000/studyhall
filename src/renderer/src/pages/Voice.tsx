@@ -10,6 +10,7 @@ import { wakeWordHeard } from '@/lib/bauer/heard'
 import { applyBrief, loadBriefContext } from '@/lib/briefApply'
 import { api } from '@/lib/data'
 import { chime, engine } from '@/lib/voice/engine'
+import { stopSpeaking } from '@/lib/voice/speak'
 import { BriefReview } from '@/components/BriefReview'
 import { Icon } from '@/components/ui'
 
@@ -98,7 +99,14 @@ export default function VoicePanel(): React.JSX.Element {
           setPhase('listening')
         } else if (e.type === 'heard') setHeard(true)
         else if (e.type === 'level') setLevel((l) => l * 0.5 + e.value * 0.5)
-        else if (e.type === 'recorded') setPhase('thinking')
+        else if (e.type === 'recorded') {
+          setPhase('thinking')
+          try {
+            void api.mouth.warm().catch(() => {}) // get the voice ready while Nova thinks
+          } catch {
+            /* no voice model on this device */
+          }
+        }
         else if (e.type === 'nothing') {
           if (phaseRef.current === 'review') return
           setMessage('I didn’t catch anything.')
@@ -218,7 +226,10 @@ export default function VoicePanel(): React.JSX.Element {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') close()
+      if (e.key === 'Escape') {
+        stopSpeaking()
+        close()
+      }
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && phaseRef.current === 'review') void apply()
     }
     window.addEventListener('keydown', onKey)

@@ -247,6 +247,18 @@ const api: Api = {
     feed: (samples) => ipcRenderer.send('voice:window', { type: 'feed', samples }),
     transcribe: (samples) => ipcRenderer.invoke('ears:transcribe', samples)
   },
+  mouth: {
+    status: () => ipcRenderer.invoke('mouth:status'),
+    install: () => ipcRenderer.invoke('mouth:install'),
+    remove: () => ipcRenderer.invoke('mouth:remove'),
+    onStatus: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('mouth:status', l)
+      return () => ipcRenderer.removeListener('mouth:status', l)
+    },
+    speak: (text, voice, speed) => ipcRenderer.invoke('mouth:speak', text, voice, speed),
+    warm: () => ipcRenderer.invoke('mouth:warm')
+  },
   claude: {
     status: () => ipcRenderer.invoke('claude:status'),
     install: () => ipcRenderer.invoke('claude:install'),
