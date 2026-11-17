@@ -1,113 +1,67 @@
-// The Brain: everything you've put into Studyhall as one living web of dots. Ask it things in
-// plain words, or wander: hover a dot to see what it's tied to, click to look, double-click to open.
+// The Brain: everything you've saved as stars in four galaxies. Scroll up from Home and they fold
+// into a see-through brain. Ask it things in plain words; hover a star to see what it is, click to
+// look, double-click to open. Lives at the top of Home (pages/Home.tsx), sharing its sky.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY, type Simulation, type SimulationLinkDatum, type SimulationNodeDatum } from 'd3-force'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Material } from '@shared/types'
-import { buildBrain, KIND_LABEL, readNewFiles, type BNode, type Brain, type Kind } from '@/lib/brain'
+import { KIND_LABEL, type BNode, type Brain } from '@/lib/brain'
 import { ask, EXAMPLES, type Answer } from '@/lib/brainAsk'
+import { CAT_INFO, type Cat, type GalaxyScene } from '@/lib/galaxy/scene'
+import { examGaps, fadingStars, hiddenLinks } from '@/lib/galaxy/stars'
 import { navigate } from '@/lib/nav'
 import { setMode, useMode } from '@/lib/profile'
-import { isNarrow } from '@/lib/platform'
 import { openTask } from '@/lib/tasks'
 import { MaterialViewer, openMaterial } from '@/components/MaterialViewer'
 import { Icon } from '@/components/ui'
 
-type SimNode = SimulationNodeDatum & { id: string; n: BNode; r: number }
-type SimLink = SimulationLinkDatum<SimNode> & { why: string }
-type View = 'all' | 'study' | 'life'
+type Fn = 'fading' | 'gaps' | 'links' | 'time' | null
 
-const BASE_R: Partial<Record<Kind, number>> = { module: 9, person: 9, week: 5, idea: 4, fact: 2.6, task: 3, moment: 3.4, plan: 3.2, journal: 3.6 }
-const radius = (n: BNode): number => (BASE_R[n.kind] ?? 3.8) + Math.min(9, Math.sqrt(n.degree) * 1.1)
-
-const HIDEABLE: { kind: Kind[]; label: string }[] = [
-  { kind: ['idea'], label: 'Ideas' },
-  { kind: ['material'], label: 'Files' },
-  { kind: ['fact'], label: 'Details' },
-  { kind: ['task'], label: 'Tasks' },
-  { kind: ['journal', 'moment', 'plan'], label: 'Journal & memories' }
+const FNS: { id: Exclude<Fn, null>; label: string; icon: string }[] = [
+  { id: 'fading', label: 'Fading stars', icon: 'star' },
+  { id: 'gaps', label: 'Exam gaps', icon: 'target' },
+  { id: 'links', label: 'Hidden links', icon: 'link' },
+  { id: 'time', label: 'Time-lapse', icon: 'focus' }
 ]
 
-const store = {
-  get<T>(k: string, d: T): T {
-    try {
-      const v = localStorage.getItem(k)
-      return v ? (JSON.parse(v) as T) : d
-    } catch {
-      return d
-    }
-  },
-  set(k: string, v: unknown): void {
-    try {
-      localStorage.setItem(k, JSON.stringify(v))
-    } catch {
-      /* optional */
-    }
-  }
-}
-
-function themeColors(): { ink: string; muted: string; line: string; panel: string; canvas: string; accent: string; brass: string; dark: boolean } {
-  const cs = getComputedStyle(document.documentElement)
-  const v = (n: string): string => cs.getPropertyValue(n).trim()
-  const canvas = v('--color-canvas') || '#f3f0e8'
-  const dark = (() => {
-    const m = /^#([0-9a-f]{6})$/i.exec(canvas)
-    if (!m) return false
-    const x = parseInt(m[1], 16)
-    return ((x >> 16) & 255) * 0.3 + ((x >> 8) & 255) * 0.59 + (x & 255) * 0.11 < 110
-  })()
-  return { ink: v('--color-ink'), muted: v('--color-muted'), line: v('--color-line'), panel: v('--color-panel'), canvas, accent: v('--color-accent'), brass: v('--color-brass'), dark }
-}
-
-/** Dots in dark mode get lifted so deep heritage colours still read. */
-function lift(hex: string, dark: boolean): string {
-  if (!dark) return hex
-  const m = /^#([0-9a-f]{6})$/i.exec(hex)
-  if (!m) return hex
-  const x = parseInt(m[1], 16)
-  const mix = (c: number): number => Math.round(c + (255 - c) * 0.38)
-  return `rgb(${mix((x >> 16) & 255)} ${mix((x >> 8) & 255)} ${mix(x & 255)})`
-}
-
-export function BrainPage({ q: initialQ }: { q?: string }): React.JSX.Element {
-  const [brain, setBrain] = useState<Brain | null>(null)
-  const [reading, setReading] = useState<{ done: number; total: number } | null>(null)
-  const [view, setView] = useState<View>(() => store.get('brain.view', 'all'))
-  const [hidden, setHidden] = useState<string[]>(() => store.get('brain.hidden', [] as string[]))
+export function BrainSection({
+  brain,
+  scene,
+  catCounts,
+  reading,
+  onRebuild,
+  initialQ,
+  active,
+  onGoHome
+}: {
+  brain: Brain | null
+  scene: GalaxyScene | null
+  catCounts: Record<Cat, number>
+  reading: { done: number; total: number } | null
+  onRebuild: () => void
+  initialQ?: string
+  active: boolean
+  onGoHome: () => void
+}): React.JSX.Element {
   const [query, setQuery] = useState(initialQ ?? '')
   const [answer, setAnswer] = useState<Answer | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  const [fn, setFn] = useState<Fn>(null)
+  const [spread, setSpread] = useState(false)
+  const [timeT, setTimeT] = useState(1)
+  const [playing, setPlaying] = useState(false)
   const [viewing, setViewing] = useState<Material | null>(null)
   const mode = useMode()
 
-  const rebuild = useCallback(async () => setBrain(await buildBrain()), [])
-
-  // Build, then read any new files in the background and rebuild once they're in.
   useEffect(() => {
-    let stop = false
-    void (async () => {
-      const b = await buildBrain()
-      if (stop) return
-      setBrain(b)
-      const read = await readNewFiles((done, total) => !stop && setReading(total ? { done, total } : null), () => stop)
-      if (stop) return
-      setReading(null)
-      if (read > 0) setBrain(await buildBrain())
-    })()
-    return () => {
-      stop = true
-    }
-  }, [])
-
-  useEffect(() => store.set('brain.view', view), [view])
-  useEffect(() => store.set('brain.hidden', hidden), [hidden])
+    if (initialQ != null) setQuery(initialQ)
+  }, [initialQ])
 
   // Answer as you type (a moment after you stop).
   useEffect(() => {
     if (!brain) return
-    const t = setTimeout(() => setAnswer(query.trim() ? ask(brain, query) : null), query === initialQ ? 0 : 220)
+    const t = setTimeout(() => setAnswer(query.trim() ? ask(brain, query) : null), 220)
     return () => clearTimeout(t)
-  }, [query, brain]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [query, brain])
 
   const open = useCallback(
     (n: BNode) => {
@@ -123,145 +77,296 @@ export function BrainPage({ q: initialQ }: { q?: string }): React.JSX.Element {
     [mode]
   )
 
-  const hiddenKinds = useMemo(() => new Set(HIDEABLE.filter((h) => hidden.includes(h.label)).flatMap((h) => h.kind)), [hidden])
+  const fading = useMemo(() => (brain && fn === 'fading' ? fadingStars(brain) : []), [brain, fn])
+  const gaps = useMemo(() => (brain && fn === 'gaps' ? examGaps(brain) : []), [brain, fn])
+  const hidden = useMemo(() => (brain && fn === 'links' ? hiddenLinks(brain) : []), [brain, fn])
   const examples = useMemo(() => (brain ? EXAMPLES(brain) : []), [brain])
-  const sel = selected && brain ? brain.nodes.get(selected) ?? null : null
+
+  // What lights up in the sky
+  const hi = useMemo(() => {
+    const s = new Set<string>()
+    answer?.focus.forEach((id) => s.add(id))
+    if (fn === 'fading') fading.forEach((n) => s.add(n.id))
+    if (fn === 'gaps')
+      gaps.forEach((g) => {
+        s.add(g.exam.id)
+        s.add(g.module.id)
+        g.weeks.forEach((w) => s.add(w.id))
+      })
+    if (fn === 'links')
+      hidden.forEach((h) => {
+        s.add(h.a.id)
+        s.add(h.b.id)
+      })
+    if (selected && brain) {
+      s.add(selected)
+      brain.adj.get(selected)?.forEach((id) => s.add(id))
+    }
+    return s
+  }, [answer, fn, fading, gaps, hidden, selected, brain])
+
+  const formed = !spread || !!query.trim() || !!selected || fn === 'fading' || fn === 'gaps' || fn === 'links'
+  useEffect(() => {
+    scene?.set({ hi: hi.size ? hi : null, focus: selected, brain: formed, timeT: fn === 'time' ? timeT : 1, dashed: fn === 'links' ? hidden.map((h) => [h.a.id, h.b.id]) : [] })
+  }, [scene, hi, selected, formed, fn, timeT, hidden])
+
+  useEffect(() => {
+    if (!scene || !brain) return
+    scene.onSelect = (id) => setSelected(id)
+    scene.onOpen = (id) => {
+      const n = brain.nodes.get(id)
+      if (n) open(n)
+    }
+  }, [scene, brain, open])
+
+  // Time-lapse playback
+  useEffect(() => {
+    if (!playing) return
+    const t = setInterval(() => setTimeT((x) => (x >= 1 ? (setPlaying(false), 1) : Math.min(1, x + 0.008))), 50)
+    return () => clearInterval(t)
+  }, [playing])
+
+  const pickFn = (f: Exclude<Fn, null>): void => {
+    const next = fn === f ? null : f
+    setFn(next)
+    setSelected(null)
+    if (next === 'time') {
+      setTimeT(0)
+      setPlaying(true)
+    } else setPlaying(false)
+  }
+
+  // Escape clears everything
+  useEffect(() => {
+    if (!active) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && !document.querySelector('[data-modal]')) {
+        setQuery('')
+        setSelected(null)
+        setFn(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active])
+
+  const sel = selected && brain ? (brain.nodes.get(selected) ?? null) : null
+  const week = Math.max(1, Math.round(timeT * 12))
 
   return (
-    <div className="relative flex h-full flex-col">
-      <header className="flex flex-wrap items-center gap-3 border-b border-line px-6 pt-5 pb-4">
-        <div className="mr-2">
-          <div className="label-caps">Your second brain</div>
-          <h1 className="font-display text-3xl leading-tight font-semibold">Brain</h1>
-        </div>
-        <label className="relative min-w-72 flex-1">
-          <Icon name="search" size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
+    <div className="relative flex h-full flex-col items-center px-4 pt-5">
+      <div className="flex w-full max-w-2xl flex-col items-center gap-3 text-center">
+        <div className="label-caps text-muted">Your second brain</div>
+        <h2 className="font-display text-3xl leading-tight font-semibold">{formed ? 'Your galaxies formed a brain' : 'Four galaxies, one brain'}</h2>
+        <label data-ui className="relative w-full">
+          <Icon name="search" size={17} className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-muted" />
           <input
-            autoFocus={!isNarrow()}
+            id="brain-q"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setQuery('')
-                setSelected(null)
-              }
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setFn(null)
+              setSelected(null)
             }}
-            placeholder="Ask anything — “what does Alex like?”, “when is my exam?”, “what is elasticity?”"
-            className="field-boxed w-full py-2.5 pr-3 pl-9 text-[15px]"
+            placeholder="Search or ask: “what does Alex like?”, “when is my exam?”, “elasticity”"
+            className="space-search w-full py-3 pr-4 pl-11 text-[15px]"
           />
         </label>
-        <div className="flex items-center gap-1 rounded-lg border border-line p-0.5 text-xs">
-          {(['all', 'study', 'life'] as View[]).map((v) => (
-            <button key={v} onClick={() => setView(v)} className={`rounded-md px-2.5 py-1 font-semibold ${view === v ? 'bg-panel text-accent shadow-sm' : 'text-muted hover:text-ink'}`}>
-              {v === 'all' ? 'Everything' : v === 'study' ? 'Study' : 'Life'}
+        <div data-ui className="flex flex-wrap justify-center gap-2">
+          {FNS.map((f) => (
+            <button key={f.id} className={`space-chip ${fn === f.id ? 'on' : ''}`} onClick={() => pickFn(f.id)}>
+              <Icon name={f.icon as never} size={14} /> {f.label}
             </button>
           ))}
+          <button className="space-chip border-dashed" onClick={() => (formed ? (setSpread(true), setQuery(''), setFn(null), setSelected(null)) : setSpread(false))}>
+            {formed ? 'Spread into galaxies' : 'Form the brain'}
+          </button>
         </div>
-      </header>
+      </div>
 
-      <div className="relative min-h-0 flex-1">
-        {brain ? (
-          <Graph brain={brain} view={view} hiddenKinds={hiddenKinds} focus={answer?.focus ?? null} selected={selected} onSelect={setSelected} onOpen={open} />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted">Gathering everything you’ve saved…</div>
-        )}
-
-        {/* Answer card */}
-        <div className="pointer-events-none absolute top-4 left-4 flex max-h-[calc(100%-2rem)] w-[400px] max-w-[calc(100%-2rem)] flex-col gap-3">
-          {answer && answer.title && (
-            <div className="card pointer-events-auto flex min-h-0 flex-col overflow-hidden shadow-xl">
-              <div className="flex items-start gap-2 border-b border-line/70 px-4 pt-3 pb-2.5">
-                <div className="min-w-0 flex-1">
-                  <div className="label-caps">Brain says</div>
-                  <div className="font-display text-lg leading-snug font-semibold">{answer.title}</div>
-                </div>
-                <button className="btn-ghost px-1.5" onClick={() => setQuery('')} title="Clear">
-                  <Icon name="x" size={14} />
-                </button>
+      {/* Left: answer, or the chosen view */}
+      <div data-ui className="pointer-events-none absolute top-56 left-4 flex max-h-[calc(100%-18rem)] w-[360px] max-w-[calc(100%-2rem)] flex-col gap-3 max-lg:top-auto max-lg:bottom-16 max-lg:max-h-[38%]">
+        {answer && answer.title && (
+          <Card>
+            <div className="flex items-start gap-2 border-b border-line px-4 pt-3 pb-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="label-caps">Brain says</div>
+                <div className="font-display text-lg leading-snug font-semibold">{answer.title}</div>
               </div>
-              <div className="min-h-0 overflow-auto px-2 py-2">
-                {answer.lines.length === 0 ? (
-                  <p className="px-2 py-1.5 text-sm text-muted">{answer.empty ?? 'Nothing found.'}</p>
-                ) : (
-                  answer.lines.map((l, i) => (
-                    <button
-                      key={i}
-                      disabled={!l.node}
-                      onClick={() => l.node && setSelected(l.node)}
-                      className={`flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left ${l.node ? 'hover:bg-line/40' : ''} ${selected && l.node === selected ? 'bg-accent-soft' : ''}`}
-                    >
-                      <span className="text-[13.5px] leading-snug">{l.text}</span>
-                      {l.sub && <span className="mt-0.5 text-[11px] text-muted">{l.sub}</span>}
-                    </button>
-                  ))
-                )}
-                {answer.hint && <p className="px-2 pt-1 text-[11px] text-muted">{answer.hint}</p>}
-              </div>
+              <button className="btn-ghost px-1.5" onClick={() => setQuery('')} title="Clear">
+                <Icon name="x" size={14} />
+              </button>
             </div>
-          )}
-          {!query && brain && (
-            <div className="card pointer-events-auto px-4 py-3 shadow-lg">
-              <div className="label-caps mb-1.5">Try asking</div>
-              <div className="flex flex-wrap gap-1.5">
-                {examples.map((e) => (
-                  <button key={e} className="chip hover:border-brass/60" onClick={() => setQuery(e)}>
-                    {e}
+            <div className="min-h-0 overflow-auto px-2 py-2">
+              {answer.lines.length === 0 ? (
+                <p className="px-2 py-1.5 text-sm text-muted">{answer.empty ?? 'Nothing found.'}</p>
+              ) : (
+                answer.lines.map((l, i) => (
+                  <button
+                    key={i}
+                    disabled={!l.node}
+                    onClick={() => l.node && setSelected(l.node)}
+                    className={`flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left ${l.node ? 'hover:bg-line/40' : ''} ${selected && l.node === selected ? 'bg-accent-soft' : ''}`}
+                  >
+                    <span className="text-[13.5px] leading-snug">{l.text}</span>
+                    {l.sub && <span className="mt-0.5 text-[11px] text-muted">{l.sub}</span>}
                   </button>
-                ))}
-              </div>
-              <p className="mt-2.5 text-[11.5px] leading-relaxed text-muted">
-                Things link up by themselves — notes in a week, names you mention, headings and slide titles that show up in more than one place. To link on purpose, type <span className="font-mono text-ink">[[Name]]</span> in any note or journal.
-              </p>
+                ))
+              )}
+              {answer.hint && <p className="px-2 pt-1 text-[11px] text-muted">{answer.hint}</p>}
             </div>
-          )}
-        </div>
-
-        {/* Selected dot */}
-        {sel && brain && <NodePanel brain={brain} node={sel} onSelect={setSelected} onOpen={open} onClose={() => setSelected(null)} />}
-
-        {/* Legend and filters */}
-        {brain && (
-          <div className="absolute bottom-4 left-4 flex flex-wrap items-center gap-1.5 text-[11px]">
-            {HIDEABLE.map((h) => {
-              const on = !hidden.includes(h.label)
-              return (
-                <button
-                  key={h.label}
-                  onClick={() => setHidden((x) => (on ? [...x, h.label] : x.filter((y) => y !== h.label)))}
-                  className={`rounded-full border px-2.5 py-1 backdrop-blur ${on ? 'border-line bg-panel/80 text-ink' : 'border-dashed border-line bg-panel/40 text-muted line-through'}`}
-                >
-                  {h.label}
-                </button>
-              )
-            })}
-            <span className="ml-2 text-muted tabular-nums">
-              {brain.nodes.size} dots · {brain.edges.length} links
-            </span>
-            {reading && (
-              <span className="ml-2 text-muted">
-                Reading your files… {reading.done}/{reading.total}
-              </span>
+          </Card>
+        )}
+        {!query && fn === 'fading' && (
+          <Card title="Fading stars" heading={fading.length ? `${fading.length} things you haven’t looked at in a while` : 'Nothing is fading'}>
+            {fading.map((n) => (
+              <Row key={n.id} node={n} right={n.date ? ago(n.date) : ''} onClick={() => setSelected(n.id)} />
+            ))}
+            {fading.length > 0 && (
+              <button className="btn-primary mx-2 mt-2 mb-1 justify-center" onClick={() => navigate({ name: 'recall' })}>
+                Quiz me on them
+              </button>
             )}
-            <button className="btn-ghost ml-1 px-1.5 text-[11px]" onClick={() => void rebuild()} title="Rebuild with your latest changes">
-              <Icon name="refresh" size={12} /> Refresh
-            </button>
-          </div>
+          </Card>
+        )}
+        {!query && fn === 'gaps' && (
+          <Card title="Exam gaps" heading={gaps.length ? 'Weeks with nothing saved before your next exams' : 'No gaps before your next exams'}>
+            {gaps.length === 0 && <p className="px-2 pb-2 text-[12.5px] text-muted">Every week of a module with an exam in the next 45 days has notes or files. Nice.</p>}
+            {gaps.map((g) => (
+              <div key={g.exam.id} className="px-2 pb-2">
+                <button className="text-left text-[13px] font-semibold hover:text-accent" onClick={() => setSelected(g.exam.id)}>
+                  {g.exam.label} · in {g.daysLeft} day{g.daysLeft === 1 ? '' : 's'}
+                </button>
+                <div className="text-[11px] text-muted">{g.module.label}</div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {g.weeks.map((w) => (
+                    <button key={w.id} className="rounded-full border border-dashed border-line px-2 py-0.5 text-[11.5px] hover:bg-line/40" onClick={() => open(w)} title={w.sub}>
+                      {w.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </Card>
+        )}
+        {!query && fn === 'links' && (
+          <Card title="Hidden links" heading={hidden.length ? 'Things that belong together' : 'No hidden links yet'}>
+            {hidden.length === 0 && <p className="px-2 pb-2 text-[12.5px] text-muted">When two notes or files share ideas but aren’t linked, they show up here.</p>}
+            {hidden.map((h) => (
+              <div key={h.a.id + h.b.id} className="mx-2 mb-2 rounded-lg border border-line px-3 py-2">
+                <button className="block text-left text-[13px] font-semibold hover:text-accent" onClick={() => setSelected(h.a.id)}>
+                  {h.a.label}
+                </button>
+                <button className="block text-left text-[13px] font-semibold hover:text-accent" onClick={() => setSelected(h.b.id)}>
+                  ↔ {h.b.label}
+                </button>
+                <div className="mt-0.5 text-[11px] text-muted">both cover {h.via.slice(0, 3).join(', ')}</div>
+              </div>
+            ))}
+          </Card>
+        )}
+        {!query && fn === 'time' && (
+          <Card title="Time-lapse" heading={timeT >= 1 ? 'Everything, up to today' : `Growing… ${Math.round(timeT * 100)}%`}>
+            <div className="px-2 pb-2">
+              <input type="range" min={0} max={100} value={Math.round(timeT * 100)} onChange={(e) => (setPlaying(false), setTimeT(Number(e.target.value) / 100))} className="w-full" aria-label="How far through" />
+              <div className="mt-1 flex items-center justify-between text-[11px] text-muted">
+                <span>Your first things</span>
+                <span>Step {week} of 12</span>
+                <span>Today</span>
+              </div>
+              <button className="btn-primary mt-2 w-full justify-center" onClick={() => (timeT >= 1 && setTimeT(0), setPlaying((p) => !p))}>
+                {playing ? 'Pause' : 'Play'}
+              </button>
+            </div>
+          </Card>
+        )}
+        {!query && !fn && !sel && brain && (
+          <Card title="Try asking">
+            <div className="flex flex-wrap gap-1.5 px-2 pb-1">
+              {examples.map((e) => (
+                <button key={e} className="space-chip text-[12px]" onClick={() => setQuery(e)}>
+                  {e}
+                </button>
+              ))}
+            </div>
+            <p className="px-2 pt-2 pb-1 text-[11.5px] leading-relaxed text-muted">
+              Each part of the brain holds one kind of thing. Drag sideways to turn it. To link things on purpose, type <span className="font-mono text-ink">[[Name]]</span> in any note.
+            </p>
+          </Card>
         )}
       </div>
+
+      {sel && brain && (
+        <div data-ui>
+          <NodePanel brain={brain} node={sel} onSelect={setSelected} onOpen={open} onClose={() => setSelected(null)} />
+        </div>
+      )}
+
+      {/* Legend */}
+      <div data-ui className="absolute bottom-4 left-4 flex flex-col gap-1 text-[12px] text-muted max-lg:hidden">
+        {(Object.keys(CAT_INFO) as Cat[]).map((c) => (
+          <div key={c} className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full" style={{ background: CAT_INFO[c].hex, boxShadow: `0 0 8px ${CAT_INFO[c].hex}` }} />
+            {CAT_INFO[c].label} · {catCounts[c]}
+          </div>
+        ))}
+        <div className="mt-1 flex items-center gap-2">
+          {reading ? (
+            <span>
+              Reading your files… {reading.done}/{reading.total}
+            </span>
+          ) : null}
+          <button className="btn-ghost -ml-2 px-1.5 text-[11px]" onClick={onRebuild} title="Rebuild with your latest changes">
+            <Icon name="refresh" size={12} /> Refresh
+          </button>
+        </div>
+      </div>
+
+      <button data-ui className="space-chip absolute bottom-4 left-1/2 -translate-x-1/2" onClick={onGoHome}>
+        <Icon name="chevron" size={14} className="rotate-90" /> Back to your week
+      </button>
       {viewing && <MaterialViewer material={viewing} onClose={() => setViewing(null)} />}
     </div>
   )
 }
 
-// ---------- The selected dot ----------
+const ago = (d: string): string => {
+  const n = Math.round((Date.now() - Date.parse(d.length === 10 ? d + 'T00:00' : d)) / 86400000)
+  return n < 1 ? 'today' : `${n}d`
+}
+
+function Card({ title, heading, children }: { title?: string; heading?: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div className="card pointer-events-auto flex min-h-0 flex-col overflow-hidden">
+      {title && (
+        <div className="px-4 pt-3 pb-2">
+          <div className="label-caps">{title}</div>
+          {heading && <div className="font-display text-lg leading-snug font-semibold">{heading}</div>}
+        </div>
+      )}
+      <div className="min-h-0 overflow-auto px-2 pb-2">{children}</div>
+    </div>
+  )
+}
+
+function Row({ node, right, onClick }: { node: BNode; right?: string; onClick: () => void }): React.JSX.Element {
+  return (
+    <button onClick={onClick} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-line/40">
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: node.color }} />
+      <span className="min-w-0 flex-1 truncate">{node.label}</span>
+      {right && <span className="shrink-0 text-[11px] text-muted tabular-nums">{right}</span>}
+    </button>
+  )
+}
+
+// ---------- The selected star ----------
 
 function NodePanel({ brain, node, onSelect, onOpen, onClose }: { brain: Brain; node: BNode; onSelect: (id: string) => void; onOpen: (n: BNode) => void; onClose: () => void }): React.JSX.Element {
   const neighbours = [...(brain.adj.get(node.id) ?? [])].map((id) => brain.nodes.get(id)!).filter(Boolean)
   const groups = new Map<string, BNode[]>()
   for (const n of neighbours.sort((a, b) => b.degree - a.degree)) groups.set(KIND_LABEL[n.kind], [...(groups.get(KIND_LABEL[n.kind]) ?? []), n])
   const text = (brain.docText.get(node.id) ?? '').replace(/\s+/g, ' ').trim()
-  // Why things are linked: the other notes and files that share this one's ideas, and which ones.
-  // the most telling shared ideas first: multi-word, and found in fewer places
+  // Why things are linked: the other notes and files that share this one's ideas, most telling first.
   const ideaIds = neighbours
     .filter((n) => n.kind === 'idea')
     .sort((a, b) => Number(b.label.includes(' ')) - Number(a.label.includes(' ')) || a.degree - b.degree)
@@ -282,8 +387,8 @@ function NodePanel({ brain, node, onSelect, onOpen, onClose }: { brain: Brain; n
   const ideaByLabel = new Map(neighbours.filter((n) => n.kind === 'idea').map((n) => [n.label.toLowerCase(), n.id]))
   const preview = node.kind === 'fact' ? '' : text.slice(node.label.length, node.label.length + 320).trim()
   return (
-    <aside className="card absolute top-4 right-4 flex max-h-[calc(100%-2rem)] w-[320px] flex-col overflow-hidden shadow-xl">
-      <div className="flex items-start gap-2.5 border-b border-line/70 px-4 pt-3 pb-3">
+    <aside className="card absolute top-56 right-4 flex max-h-[calc(100%-16rem)] w-[320px] flex-col overflow-hidden max-lg:top-auto max-lg:bottom-16 max-lg:max-h-[45%]">
+      <div className="flex items-start gap-2.5 border-b border-line px-4 pt-3 pb-3">
         <span className="mt-1.5 h-3 w-3 shrink-0 rounded-full" style={{ background: node.color }} />
         <div className="min-w-0 flex-1">
           <div className="label-caps">{KIND_LABEL[node.kind]}</div>
@@ -333,7 +438,10 @@ function NodePanel({ brain, node, onSelect, onOpen, onClose }: { brain: Brain; n
                     <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: n.color }} />
                     <span className="truncate">{n.label}</span>
                   </span>
-                  <span className="truncate pl-4 text-[11px] text-muted">both cover {via.slice(0, 3).join(', ')}{via.length > 3 ? ` +${via.length - 3}` : ''}</span>
+                  <span className="truncate pl-4 text-[11px] text-muted">
+                    both cover {via.slice(0, 3).join(', ')}
+                    {via.length > 3 ? ` +${via.length - 3}` : ''}
+                  </span>
                 </button>
               )
             })}
@@ -356,403 +464,5 @@ function NodePanel({ brain, node, onSelect, onOpen, onClose }: { brain: Brain; n
         ))}
       </div>
     </aside>
-  )
-}
-
-// ---------- The web itself (canvas + d3-force) ----------
-
-function Graph({
-  brain,
-  view,
-  hiddenKinds,
-  focus,
-  selected,
-  onSelect,
-  onOpen
-}: {
-  brain: Brain
-  view: View
-  hiddenKinds: Set<Kind>
-  focus: string[] | null
-  selected: string | null
-  onSelect: (id: string | null) => void
-  onOpen: (n: BNode) => void
-}): React.JSX.Element {
-  const wrap = useRef<HTMLDivElement>(null)
-  const canvas = useRef<HTMLCanvasElement>(null)
-  const sim = useRef<Simulation<SimNode, SimLink> | null>(null)
-  const nodesRef = useRef<SimNode[]>([])
-  const linksRef = useRef<SimLink[]>([])
-  const byId = useRef(new Map<string, SimNode>())
-  const positions = useRef(new Map<string, { x: number; y: number }>())
-  const t = useRef({ x: 0, y: 0, k: 0.9 })
-  const hover = useRef<SimNode | null>(null)
-  const dirty = useRef(true)
-  const state = useRef({ focus: null as Set<string> | null, selected: null as string | null })
-  const size = useRef({ w: 800, h: 600 })
-  const anim = useRef<{ from: { x: number; y: number; k: number }; to: { x: number; y: number; k: number }; start: number } | null>(null)
-  // Dots an answer mentions stay visible even if their kind is filtered out.
-  const revealKey = useMemo(() => {
-    if (!focus) return ''
-    return focus
-      .filter((id) => {
-        const n = brain.nodes.get(id)
-        return n && (hiddenKinds.has(n.kind) || (view !== 'all' && n.side !== view))
-      })
-      .sort()
-      .join(',')
-  }, [focus, brain, hiddenKinds, view])
-  const onOpenRef = useRef(onOpen)
-  onOpenRef.current = onOpen
-  const onSelectRef = useRef(onSelect)
-  onSelectRef.current = onSelect
-
-  // (Re)start the layout whenever what's shown changes, keeping dots where they were.
-  useEffect(() => {
-    const reveal = new Set(revealKey ? revealKey.split(',') : [])
-    const keep = (n: BNode): boolean => reveal.has(n.id) || (!hiddenKinds.has(n.kind) && (view === 'all' || n.side === view || (n.side === 'other' && n.kind !== 'idea')))
-    for (const n of nodesRef.current) positions.current.set(n.id, { x: n.x ?? 0, y: n.y ?? 0 })
-    const nodes: SimNode[] = []
-    const map = new Map<string, SimNode>()
-    let i = 0
-    for (const n of brain.nodes.values()) {
-      if (!keep(n)) continue
-      const p = positions.current.get(n.id)
-      const side = view === 'all' ? (n.side === 'study' ? -1 : n.side === 'life' ? 1 : 0) : 0
-      const a = i++ * 2.399963 // golden-angle spiral start
-      const r = 12 * Math.sqrt(i)
-      const s: SimNode = { id: n.id, n, r: radius(n), x: p?.x ?? side * 260 + Math.cos(a) * r, y: p?.y ?? Math.sin(a) * r }
-      nodes.push(s)
-      map.set(n.id, s)
-    }
-    const links: SimLink[] = brain.edges.filter((e) => map.has(e.a) && map.has(e.b)).map((e) => ({ source: e.a, target: e.b, why: e.why }))
-    nodesRef.current = nodes
-    linksRef.current = links
-    byId.current = map
-
-    sim.current?.stop()
-    const s = forceSimulation<SimNode, SimLink>(nodes)
-      .force(
-        'link',
-        forceLink<SimNode, SimLink>(links)
-          .id((d) => d.id)
-          .distance((l) => (l.why === 'part' ? 34 : l.why === 'idea' ? 70 : 90))
-          .strength((l) => (l.why === 'part' ? 0.7 : l.why === 'idea' ? 0.12 : 0.2))
-      )
-      .force('charge', forceManyBody<SimNode>().strength((d) => -24 - Math.min(d.n.degree, 40) * 3).distanceMax(520))
-      .force('collide', forceCollide<SimNode>((d) => d.r + 2.5))
-      // Study gathers on the left, life on the right — two halves of one brain.
-      .force('x', forceX<SimNode>((d) => (view === 'all' ? (d.n.side === 'study' ? -240 : d.n.side === 'life' ? 240 : 0) : 0)).strength(0.045))
-      .force('y', forceY<SimNode>(0).strength(0.05))
-      .alphaDecay(0.028)
-      .on('tick', () => (dirty.current = true))
-    if (positions.current.size === 0) s.tick(60) // a head start so it doesn't open as a tangle
-    sim.current = s
-    dirty.current = true
-    return () => {
-      s.stop()
-    }
-  }, [brain, view, hiddenKinds, revealKey])
-
-  // Fit the view the first time.
-  const fitted = useRef(false)
-  const zoomTo = useCallback((ids: string[] | null, maxK = 2.2) => {
-    const pts = (ids ? ids.map((id) => byId.current.get(id)).filter((n): n is SimNode => !!n) : nodesRef.current).filter((n) => n.x != null)
-    if (!pts.length) return
-    let x0 = Infinity,
-      y0 = Infinity,
-      x1 = -Infinity,
-      y1 = -Infinity
-    for (const p of pts) {
-      x0 = Math.min(x0, p.x!)
-      y0 = Math.min(y0, p.y!)
-      x1 = Math.max(x1, p.x!)
-      y1 = Math.max(y1, p.y!)
-    }
-    const { w, h } = size.current
-    const pad = 120
-    const k = Math.min(maxK, Math.max(0.15, Math.min((w - pad * 2) / Math.max(1, x1 - x0), (h - pad * 2) / Math.max(1, y1 - y0))))
-    const to = { k, x: w / 2 - ((x0 + x1) / 2) * k + (ids ? 130 : 0), y: h / 2 - ((y0 + y1) / 2) * k }
-    anim.current = { from: { ...t.current }, to, start: performance.now() }
-  }, [])
-
-  useEffect(() => {
-    if (fitted.current || !nodesRef.current.length) return
-    fitted.current = true
-    const id = setTimeout(() => zoomTo(null, 1.4), 60)
-    return () => clearTimeout(id)
-  }, [brain, zoomTo])
-
-  // Focus from an answer: light those dots up and fly to them.
-  useEffect(() => {
-    state.current.focus = focus && focus.length ? new Set(focus) : null
-    dirty.current = true
-    if (focus && focus.length) {
-      const id = setTimeout(() => zoomTo(focus.slice(0, 40)), 120)
-      return () => clearTimeout(id)
-    }
-    return undefined
-  }, [focus, zoomTo])
-
-  useEffect(() => {
-    state.current.selected = selected
-    dirty.current = true
-    if (selected && byId.current.has(selected) && !state.current.focus?.has(selected)) {
-      const n = byId.current.get(selected)!
-      const { w, h } = size.current
-      const k = Math.max(t.current.k, 1.2)
-      anim.current = { from: { ...t.current }, to: { k, x: w / 2 - n.x! * k - 120, y: h / 2 - n.y! * k }, start: performance.now() }
-    }
-  }, [selected])
-
-  // Size the canvas to its box.
-  useEffect(() => {
-    const el = wrap.current
-    if (!el) return
-    const ro = new ResizeObserver(() => {
-      const c = canvas.current!
-      const dpr = window.devicePixelRatio || 1
-      size.current = { w: el.clientWidth, h: el.clientHeight }
-      c.width = el.clientWidth * dpr
-      c.height = el.clientHeight * dpr
-      c.style.width = `${el.clientWidth}px`
-      c.style.height = `${el.clientHeight}px`
-      if (!fitted.current) t.current = { x: el.clientWidth / 2, y: el.clientHeight / 2, k: 0.8 }
-      dirty.current = true
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  // Draw loop.
-  useEffect(() => {
-    let raf = 0
-    let colors = themeColors()
-    const themeTimer = setInterval(() => {
-      const c = themeColors()
-      if (c.canvas !== colors.canvas) {
-        colors = c
-        dirty.current = true
-      }
-    }, 1000)
-    const draw = (now: number): void => {
-      raf = requestAnimationFrame(draw)
-      if (anim.current) {
-        const p = Math.min(1, (now - anim.current.start) / 450)
-        const e = 1 - Math.pow(1 - p, 3)
-        const { from, to } = anim.current
-        t.current = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e, k: from.k + (to.k - from.k) * e }
-        dirty.current = true
-        if (p >= 1) anim.current = null
-      }
-      if (!dirty.current) return
-      dirty.current = false
-      const c = canvas.current
-      if (!c) return
-      const g = c.getContext('2d')!
-      const dpr = window.devicePixelRatio || 1
-      const { x, y, k } = t.current
-      g.setTransform(dpr, 0, 0, dpr, 0, 0)
-      g.clearRect(0, 0, c.width, c.height)
-      g.setTransform(dpr * k, 0, 0, dpr * k, dpr * x, dpr * y)
-
-      const focus = state.current.focus
-      const sel = state.current.selected
-      const hov = hover.current?.id ?? null
-      const lit = new Set<string>()
-      const centre = hov ?? sel
-      if (centre) {
-        lit.add(centre)
-        for (const id of brain.adj.get(centre) ?? []) lit.add(id)
-      }
-      const dimming = !!focus || !!centre
-      const isLit = (id: string): boolean => (focus ? focus.has(id) : false) || lit.has(id)
-
-      // Links
-      g.lineWidth = 1 / k
-      for (const l of linksRef.current) {
-        const a = l.source as SimNode
-        const b = l.target as SimNode
-        const on = centre ? (a.id === centre || b.id === centre) : focus ? focus.has(a.id) && focus.has(b.id) : false
-        g.strokeStyle = on ? colors.brass : colors.ink
-        g.globalAlpha = on ? 0.75 : dimming ? 0.035 : l.why === 'part' ? 0.16 : 0.09
-        g.beginPath()
-        g.moveTo(a.x!, a.y!)
-        g.lineTo(b.x!, b.y!)
-        g.stroke()
-      }
-      // Dots
-      for (const n of nodesRef.current) {
-        const on = isLit(n.id)
-        g.globalAlpha = dimming && !on ? 0.16 : 1
-        g.fillStyle = lift(n.n.color, colors.dark)
-        g.beginPath()
-        if (n.n.kind === 'idea') {
-          // ideas are diamonds
-          g.moveTo(n.x!, n.y! - n.r * 1.2)
-          g.lineTo(n.x! + n.r * 1.2, n.y!)
-          g.lineTo(n.x!, n.y! + n.r * 1.2)
-          g.lineTo(n.x! - n.r * 1.2, n.y!)
-          g.closePath()
-        } else g.arc(n.x!, n.y!, n.r, 0, Math.PI * 2)
-        g.fill()
-        if (n.n.kind === 'module' || n.n.kind === 'person') {
-          g.lineWidth = 1.6 / k
-          g.strokeStyle = colors.canvas
-          g.stroke()
-        }
-        if (n.id === sel || n.id === hov) {
-          g.globalAlpha = 1
-          g.lineWidth = 2 / k
-          g.strokeStyle = colors.brass
-          g.beginPath()
-          g.arc(n.x!, n.y!, n.r + 3 / k, 0, Math.PI * 2)
-          g.stroke()
-        }
-      }
-      // Labels: big dots always, the rest when zoomed in or lit up
-      g.textAlign = 'center'
-      g.textBaseline = 'top'
-      const fontPx = 11.5 / k
-      const big = (n: SimNode): boolean => n.n.kind === 'module' || n.n.kind === 'person' || n.n.degree >= 12
-      const rank = (n: SimNode): number => (n.id === hov || n.id === sel ? 1e6 : 0) + (isLit(n.id) ? 1e5 : 0) + (big(n) ? 1e4 : 0) + n.n.degree * 10 + n.r
-      const candidates = nodesRef.current
-        .filter((n) => n.id === hov || n.id === sel || isLit(n.id) || (!dimming && (big(n) ? k > 0.3 : k * n.r > 5 || (n.n.kind === 'idea' && n.n.degree >= 3 && k > 0.6))))
-        .sort((a, b) => rank(b) - rank(a))
-        .slice(0, 160)
-      const placed: [number, number, number, number][] = []
-      for (const n of candidates) {
-        const on = isLit(n.id)
-        const strong = n.id === hov || n.id === sel || big(n)
-        const label0 = n.n.label.length > 34 ? `${n.n.label.slice(0, 33)}…` : n.n.label
-        g.font = `${strong ? 600 : 450} ${fontPx}px 'Instrument Sans Variable', system-ui, sans-serif`
-        const w = g.measureText(label0).width
-        const box: [number, number, number, number] = [n.x! - w / 2 - 2 / k, n.y! + n.r + 2 / k, n.x! + w / 2 + 2 / k, n.y! + n.r + 3 / k + fontPx * 1.15]
-        const must = n.id === hov || n.id === sel
-        if (!must && placed.some((p) => box[0] < p[2] && box[2] > p[0] && box[1] < p[3] && box[3] > p[1])) continue
-        placed.push(box)
-        g.globalAlpha = dimming && !on && n.id !== hov ? 0.25 : 1
-        const label = label0
-        g.lineWidth = 3 / k
-        g.strokeStyle = colors.canvas
-        g.strokeText(label, n.x!, n.y! + n.r + 3 / k)
-        g.fillStyle = strong ? colors.ink : colors.muted
-        g.fillText(label, n.x!, n.y! + n.r + 3 / k)
-      }
-      g.globalAlpha = 1
-    }
-    raf = requestAnimationFrame(draw)
-    return () => {
-      cancelAnimationFrame(raf)
-      clearInterval(themeTimer)
-    }
-  }, [brain])
-
-  // Mouse: pan, zoom, hover, drag dots, click, double-click.
-  useEffect(() => {
-    const c = canvas.current!
-    const toWorld = (e: MouseEvent): [number, number] => {
-      const r = c.getBoundingClientRect()
-      return [(e.clientX - r.left - t.current.x) / t.current.k, (e.clientY - r.top - t.current.y) / t.current.k]
-    }
-    const pick = (e: MouseEvent): SimNode | null => {
-      const [wx, wy] = toWorld(e)
-      let best: SimNode | null = null
-      let bd = Infinity
-      for (const n of nodesRef.current) {
-        const d = Math.hypot(n.x! - wx, n.y! - wy)
-        if (d < n.r + 4 / t.current.k && d < bd) {
-          best = n
-          bd = d
-        }
-      }
-      return best
-    }
-    let drag: { node: SimNode | null; sx: number; sy: number; tx: number; ty: number; moved: boolean } | null = null
-    const down = (e: MouseEvent): void => {
-      if (e.button !== 0) return
-      const node = pick(e)
-      drag = { node, sx: e.clientX, sy: e.clientY, tx: t.current.x, ty: t.current.y, moved: false }
-      anim.current = null
-      if (node) {
-        node.fx = node.x
-        node.fy = node.y
-      }
-    }
-    const move = (e: MouseEvent): void => {
-      if (drag) {
-        if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 3) drag.moved = true
-        if (drag.node) {
-          const [wx, wy] = toWorld(e)
-          drag.node.fx = wx
-          drag.node.fy = wy
-          if (drag.moved) sim.current?.alphaTarget(0.25).restart()
-        } else {
-          t.current = { ...t.current, x: drag.tx + e.clientX - drag.sx, y: drag.ty + e.clientY - drag.sy }
-        }
-        dirty.current = true
-        return
-      }
-      const h = pick(e)
-      if (h !== hover.current) {
-        hover.current = h
-        c.style.cursor = h ? 'pointer' : 'grab'
-        dirty.current = true
-      }
-    }
-    const up = (): void => {
-      if (!drag) return
-      if (drag.node) {
-        drag.node.fx = null
-        drag.node.fy = null
-        sim.current?.alphaTarget(0)
-        if (!drag.moved) onSelectRef.current(drag.node.id)
-      } else if (!drag.moved) onSelectRef.current(null)
-      drag = null
-    }
-    const dbl = (e: MouseEvent): void => {
-      const n = pick(e)
-      if (n) onOpenRef.current(n.n)
-    }
-    const wheel = (e: WheelEvent): void => {
-      e.preventDefault()
-      anim.current = null
-      const r = c.getBoundingClientRect()
-      const mx = e.clientX - r.left
-      const my = e.clientY - r.top
-      const k = Math.min(6, Math.max(0.08, t.current.k * Math.exp(-e.deltaY * 0.0015)))
-      const f = k / t.current.k
-      t.current = { k, x: mx - (mx - t.current.x) * f, y: my - (my - t.current.y) * f }
-      dirty.current = true
-    }
-    const leave = (): void => {
-      hover.current = null
-      dirty.current = true
-    }
-    c.addEventListener('mousedown', down)
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-    c.addEventListener('dblclick', dbl)
-    c.addEventListener('wheel', wheel, { passive: false })
-    c.addEventListener('mouseleave', leave)
-    return () => {
-      c.removeEventListener('mousedown', down)
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-      c.removeEventListener('dblclick', dbl)
-      c.removeEventListener('wheel', wheel)
-      c.removeEventListener('mouseleave', leave)
-    }
-  }, [])
-
-  return (
-    <div ref={wrap} className="absolute inset-0 overflow-hidden" style={{ cursor: 'grab' }}>
-      <canvas ref={canvas} className="block" />
-      <div className="absolute right-4 bottom-4 flex gap-1">
-        <button className="btn px-2 py-1 text-xs" onClick={() => zoomTo(null, 1.4)} title="Show everything">
-          <Icon name="brain" size={13} /> Fit
-        </button>
-      </div>
-    </div>
   )
 }

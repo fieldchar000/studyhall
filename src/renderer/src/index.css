@@ -605,7 +605,7 @@ progress {
 }
 
 /* Home: a compact week calendar */
-.home-cal .fc-daygrid-day-frame {
+.home-cal .fc-dayGridMonth-view .fc-daygrid-day-frame {
   min-height: 92px;
 }
 .home-cal .fc .fc-toolbar.fc-header-toolbar {
@@ -919,4 +919,200 @@ main h1.text-2xl {
   100% {
     transform: translateX(300%);
   }
+}
+
+/* ---------- Space: Home + Brain share a galaxy sky (pages/Home.tsx, lib/galaxy) ----------
+   A deliberately dark world in every theme: deep space, glass panels, neon galaxies
+   (green = study, pink = life, violet = projects, red = deadlines). The sidebar joins in
+   while you're on Home or the Brain. */
+.space,
+.space-shell {
+  --color-canvas: #070912;
+  --color-panel: rgb(10 12 24 / 0.6);
+  --color-sidebar: rgb(6 7 14 / 0.94);
+  --color-line: rgb(160 170 255 / 0.14);
+  --color-ink: #eef0ff;
+  --color-muted: #a3a8c6;
+  --color-accent: #eef0ff;
+  --color-on-accent: #05060c;
+  --color-accent-soft: rgb(255 255 255 / 0.08);
+  --color-brass: #ffc94d;
+  --color-accent-2: #ffc94d;
+  --color-danger: #ff6b6b;
+  --color-ok: #39ff88;
+  color-scheme: dark;
+  color: var(--color-ink);
+}
+.space-shell {
+  background: #04050a;
+}
+.space {
+  background: #04050a;
+}
+.space .card {
+  background: rgb(9 11 22 / 0.58);
+  border-color: var(--color-line);
+  box-shadow: none;
+  backdrop-filter: blur(16px) saturate(1.15);
+}
+.space .btn {
+  background: rgb(9 11 22 / 0.6);
+  backdrop-filter: blur(10px);
+}
+.space-veil {
+  background: linear-gradient(180deg, transparent 0 20%, rgb(4 5 10 / 0.45) 40%, rgb(4 5 10 / 0.6));
+}
+.space-search {
+  background: rgb(14 17 32 / 0.82);
+  border: 1px solid rgb(160 170 255 / 0.22);
+  border-radius: 999px;
+  color: var(--color-ink);
+  outline: none;
+  box-shadow: 0 0 40px -14px rgb(57 255 136 / 0.35);
+}
+.space-search::placeholder {
+  color: var(--color-muted);
+}
+.space-search:focus-visible {
+  border-color: rgb(238 240 255 / 0.6);
+}
+.space-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-line);
+  background: rgb(9 11 22 / 0.62);
+  color: var(--color-muted);
+  font-weight: 600;
+  font-size: 12.5px;
+  backdrop-filter: blur(10px);
+  transition: color 0.15s, border-color 0.15s;
+}
+.space-chip:hover {
+  color: var(--color-ink);
+  border-color: rgb(160 170 255 / 0.3);
+}
+.space-chip.on {
+  background: var(--color-ink);
+  color: #05060c;
+  border-color: var(--color-ink);
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.galaxy-lbl {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  text-align: center;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  text-shadow: 0 0 12px #000, 0 0 3px #000;
+  transition: opacity 0.3s;
+}
+.galaxy-lbl b {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: #eef0ff;
+}
+.galaxy-lbl span {
+  font-size: 10.5px;
+  color: #a3a8c6;
+}
+.galaxy-lbl.cl b {
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-weight: 600;
+}
+.galaxy-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  max-width: 260px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: rgb(14 17 32 / 0.88);
+  border: 1px solid rgb(160 170 255 / 0.22);
+  backdrop-filter: blur(10px);
+  color: #eef0ff;
+}
+.galaxy-tip b {
+  display: block;
+  font-size: 12.5px;
+}
+.galaxy-tip span {
+  font-size: 11px;
+  color: #a3a8c6;
+}
+/* The week calendar on the sky */
+.space .fc {
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: rgb(255 255 255 / 0.03);
+  --fc-today-bg-color: rgb(255 255 255 / 0.045);
+  --fc-now-indicator-color: #ffffff;
+  --fc-border-color: rgb(160 170 255 / 0.12);
+  --fc-button-bg-color: rgb(255 255 255 / 0.04);
+  --fc-button-border-color: rgb(160 170 255 / 0.18);
+  --fc-button-hover-bg-color: rgb(255 255 255 / 0.09);
+  --fc-button-hover-border-color: rgb(160 170 255 / 0.3);
+  --fc-button-active-bg-color: rgb(255 255 255 / 0.15);
+  --fc-button-active-border-color: rgb(255 255 255 / 0.35);
+  --fc-button-text-color: #eef0ff;
+}
+.space .fc .fc-timegrid-event,
+.space .fc .fc-daygrid-block-event {
+  background: color-mix(in oklab, var(--c, #7aa2ff) 18%, rgb(8 10 20 / 0.85)) !important;
+  border: 1px solid color-mix(in oklab, var(--c, #7aa2ff) 62%, transparent) !important;
+  box-shadow: 0 0 14px -6px var(--c, #7aa2ff);
+  border-radius: 7px;
+}
+.space .fc .fc-event-main,
+.space .fc .fc-event-title,
+.space .fc .fc-event-time {
+  color: #eef0ff !important;
+}
+.space .fc .fc-timegrid-event .fc-event-title {
+  font-weight: 600;
+}
+.space .fc .fc-timegrid-slot-label-cushion,
+.space .fc .fc-col-header-cell-cushion {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #a3a8c6;
+}
+.space .fc .fc-day-today .fc-col-header-cell-cushion {
+  color: #fff;
+  font-weight: 700;
+}
+.space .fc .fc-timegrid-now-indicator-line {
+  border-width: 2px 0 0;
+  box-shadow: 0 0 8px #fff;
+}
+.space .fc .fc-toolbar-title {
+  font-size: 1.05rem;
+}
+.space .fc .fc-toolbar.fc-header-toolbar {
+  margin-bottom: 0.6em;
+}
+.space .fc .fc-night-button {
+  border-style: dashed;
+}
+.space-shell .spine {
+  --spine: #06070e;
+  background:
+    radial-gradient(120% 40% at 0% 0%, rgb(57 255 136 / 0.06), transparent 60%),
+    linear-gradient(180deg, #080a14, #04050a);
+  border-color: rgb(160 170 255 / 0.12) !important;
 }

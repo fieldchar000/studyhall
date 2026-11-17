@@ -66,6 +66,13 @@ export function navigate(route: Route): void {
   listeners.forEach((l) => l())
 }
 
+/** Change the current page without adding a step to Back (e.g. scrolling Home up into the Brain). */
+export function replaceRoute(route: Route): void {
+  if (JSON.stringify(route) === JSON.stringify(current)) return
+  current = route
+  listeners.forEach((l) => l())
+}
+
 /** Back to the previous page; false when there's nowhere to go back to. */
 export function goBack(): boolean {
   const prev = history.pop()

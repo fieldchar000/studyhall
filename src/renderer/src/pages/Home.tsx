@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
@@ -9,7 +9,7 @@ import { AutoText } from '@/components/AutoField'
 import { ColorPicker, Icon, Modal, PALETTE } from '@/components/ui'
 import { api, db, useLive, useRows } from '@/lib/data'
 import { addDays, formatDateTime, isoToLocalInput, localDate, localInputToIso, relativeDue } from '@/lib/dates'
-import { navigate } from '@/lib/nav'
+import { navigate, replaceRoute } from '@/lib/nav'
 import { useMode, useProfile } from '@/lib/profile'
 import { addToTop3, isOverdue, openTask, removeFromTop3, setDone, todayStr } from '@/lib/tasks'
 import { ExamCountdownPanel } from '@/components/RevisionPlanner'
@@ -19,11 +19,33 @@ import { LifeTodayCard } from './Habits'
 import { BudgetAlerts, CheckinCard, OccasionsCard } from '@/components/LifeCards'
 import { useRecallToday } from './Recall'
 import { doneToday } from '@/lib/recall'
+import { buildBrain, readNewFiles, type Brain } from '@/lib/brain'
+import { GalaxyScene, type Cat } from '@/lib/galaxy/scene'
+import { starsFromBrain } from '@/lib/galaxy/stars'
+import { isPhoneApp, useNarrow } from '@/lib/platform'
+import { BrainSection } from './Brain'
 
-export function HomePage(): React.JSX.Element {
+const clamp = (x: number): number => Math.min(1, Math.max(0, x))
+
+/** Home and the Brain share one page: your week first, and above it the galaxies. Scroll up
+ *  and they fold into a brain. The `brain` route just opens this page scrolled to the top. */
+export function HomePage({ view, q }: { view: 'home' | 'brain'; q?: string }): React.JSX.Element {
   const mode = useMode()
-  // Task rows can be dragged onto the calendar to block out time.
   const pageRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const brainRef = useRef<HTMLElement>(null)
+  const bandRef = useRef<HTMLDivElement>(null)
+  const veilRef = useRef<HTMLDivElement>(null)
+  const [scene, setScene] = useState<GalaxyScene | null>(null)
+  const [brain, setBrain] = useState<Brain | null>(null)
+  const [reading, setReading] = useState<{ done: number; total: number } | null>(null)
+  const [inBrain, setInBrain] = useState(view === 'brain')
+  const [brainQ, setBrainQ] = useState<string | undefined>(q)
+  const readStarted = useRef(false)
+
+  // Task rows can be dragged onto the calendar to block out time.
   useEffect(() => {
     if (!pageRef.current) return
     const d = new Draggable(pageRef.current, {
@@ -38,38 +60,182 @@ export function HomePage(): React.JSX.Element {
     return () => d.destroy()
   }, [])
 
+  // The sky (WebGL). If the device can't do it, the page still works on a plain dark background.
+  useEffect(() => {
+    let sc: GalaxyScene | null = null
+    try {
+      sc = new GalaxyScene(canvasRef.current!, { lowPower: isPhoneApp(), overlay: overlayRef.current! })
+      sc.bindPointer(scrollRef.current!)
+      setScene(sc)
+    } catch (e) {
+      console.warn('Galaxy sky unavailable', e)
+    }
+    return () => sc?.dispose()
+  }, [])
+
+  const rebuild = useCallback(async () => setBrain(await buildBrain()), [])
+  useEffect(() => {
+    let stop = false
+    void buildBrain().then((b) => !stop && setBrain(b))
+    return () => {
+      stop = true
+    }
+  }, [])
+  // Reading new files is slow, so only once you've been up to the Brain.
+  useEffect(() => {
+    if (!inBrain || readStarted.current) return
+    readStarted.current = true
+    void (async () => {
+      const read = await readNewFiles((done, total) => alive.current && setReading(total ? { done, total } : null), () => !alive.current)
+      if (!alive.current) return
+      setReading(null)
+      if (read > 0) setBrain(await buildBrain())
+    })()
+  }, [inBrain])
+  const alive = useRef(true)
+  useEffect(
+    () => () => {
+      alive.current = false
+    },
+    []
+  )
+
+  const catCounts = useMemo(() => {
+    const c: Record<Cat, number> = { study: 0, life: 0, proj: 0, due: 0 }
+    if (!brain) return c
+    const { stars } = starsFromBrain(brain)
+    stars.forEach((s) => c[s.cat]++)
+    return c
+  }, [brain])
+  useEffect(() => {
+    if (!scene || !brain) return
+    const { stars, links } = starsFromBrain(brain)
+    scene.setStars(stars, links)
+  }, [scene, brain])
+
+  // Scrolling between the week (bottom) and the brain (top)
+  const onScroll = useCallback(() => {
+    const s = scrollRef.current, br = brainRef.current
+    if (!s || !br) return
+    const b = clamp(1 - s.scrollTop / Math.max(1, br.offsetHeight))
+    scene?.set({ b })
+    if (veilRef.current) veilRef.current.style.opacity = String(1 - b)
+    if (overlayRef.current) overlayRef.current.style.opacity = String(b)
+    setInBrain(b > 0.5)
+  }, [scene])
+  useEffect(onScroll, [onScroll])
+
+  // Scrolling up into the Brain (or back) updates the sidebar without adding a Back step.
+  const fromScroll = useRef(false)
+  useEffect(() => {
+    const want = inBrain ? 'brain' : 'home'
+    if (want !== view) {
+      fromScroll.current = true
+      replaceRoute({ name: want })
+    }
+  }, [inBrain]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const first = useRef(true)
+  useLayoutEffect(() => {
+    const s = scrollRef.current, br = brainRef.current
+    if (!s || !br) return
+    if (fromScroll.current) {
+      fromScroll.current = false
+      return
+    }
+    s.scrollTo({ top: view === 'brain' ? 0 : br.offsetHeight, behavior: first.current ? 'auto' : 'smooth' })
+    first.current = false
+    onScroll()
+    if (view === 'brain' && q != null) setBrainQ(q)
+  }, [view, q]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the galaxies centred in the open band above the calendar.
+  useEffect(() => {
+    const s = scrollRef.current, band = bandRef.current
+    if (!s || !band || !scene) return
+    const measure = (): void => scene.set({ band: (band.offsetTop + band.offsetHeight / 2) / Math.max(1, s.clientHeight) }) // offsetTop is within the week section
+    const ro = new ResizeObserver(measure)
+    ro.observe(s)
+    ro.observe(band)
+    measure()
+    return () => ro.disconnect()
+  }, [scene])
+  // Stay on the week when the window changes size.
+  useEffect(() => {
+    const s = scrollRef.current
+    if (!s) return
+    const ro = new ResizeObserver(() => {
+      if (!inBrain && brainRef.current && s.scrollTop < brainRef.current.offsetHeight * 1.2) s.scrollTop = brainRef.current.offsetHeight
+    })
+    ro.observe(s)
+    return () => ro.disconnect()
+  }, [inBrain])
+
+  const goBrain = (): void => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  const goHome = (): void => scrollRef.current?.scrollTo({ top: brainRef.current?.offsetHeight ?? 0, behavior: 'smooth' })
+  const searchFromHome = (v: string): void => {
+    setBrainQ(v)
+    goBrain()
+    setTimeout(() => (document.getElementById('brain-q') as HTMLInputElement | null)?.focus({ preventScroll: true }), 50)
+  }
+
   return (
-    <div ref={pageRef} className="h-full overflow-auto">
-      <div className="mx-auto flex max-w-6xl flex-col gap-5 px-8 py-7">
-        <Greeting />
-        <StarredStrip title="Starred — keep handy" />
-        <BudgetAlerts />
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="flex min-w-0 flex-col gap-5">
-            {mode === 'study' && <RecallHomeCard />}
-            {mode === 'life' && <LifeTodayCard />}
-            <div className="grid gap-5 md:grid-cols-2">
+    <div ref={pageRef} className="space relative h-full overflow-hidden">
+      <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" aria-hidden />
+      <div ref={veilRef} className="space-veil pointer-events-none absolute inset-0" />
+      <div ref={overlayRef} className="pointer-events-none absolute inset-0 z-[1] overflow-hidden" />
+      <div ref={scrollRef} onScroll={onScroll} className="no-scrollbar absolute inset-0 z-[2] snap-y snap-proximity overflow-x-hidden overflow-y-auto">
+        <section ref={brainRef} className="relative h-full min-h-[560px] snap-start" style={{ touchAction: 'pan-y' }}>
+          <BrainSection brain={brain} scene={scene} catCounts={catCounts} reading={reading} onRebuild={() => void rebuild()} initialQ={brainQ} active={inBrain} onGoHome={goHome} />
+        </section>
+
+        <section className="relative flex min-h-[640px] snap-start flex-col px-4 pb-4 sm:px-6 lg:h-full">
+          <div ref={bandRef} className="flex shrink-0 flex-col items-center pt-3" style={{ height: 'clamp(84px, 21vh, 230px)' }}>
+            <button data-ui className="space-chip" onClick={goBrain}>
+              <span className="flex gap-1">
+                <i className="h-1.5 w-1.5 rounded-full bg-[#39ff88] shadow-[0_0_8px_#39ff88]" />
+                <i className="h-1.5 w-1.5 rounded-full bg-[#ff3ea5]" />
+                <i className="h-1.5 w-1.5 rounded-full bg-[#ff3b3b]" />
+              </span>
+              <Icon name="chevron" size={13} className="-rotate-90" /> Scroll up to form your brain
+            </button>
+          </div>
+          <Greeting onSearch={searchFromHome} />
+          <div className="mt-3 flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
+            <section className="card flex h-[74vh] min-w-0 flex-col p-3 lg:h-auto lg:min-h-0 lg:flex-1">
+              <CalendarView />
+            </section>
+            <aside className="no-scrollbar flex w-full shrink-0 flex-col gap-4 lg:w-[300px] lg:overflow-y-auto">
               <Top3Panel />
               <PlanPanel />
-            </div>
-            <ResizableCalendar />
+              <DeadlinesPanel />
+            </aside>
           </div>
+        </section>
+
+        <section className="snap-start px-4 pt-2 pb-12 sm:px-6">
+          <div className="label-caps mb-3">More for today</div>
           <div className="flex flex-col gap-5">
-            <CheckinCard />
-            <ExamCountdownPanel />
-            <OccasionsCard />
-            <DeadlinesPanel />
-            <SpotifyPanel />
-            <SubscriptionsPanel />
+            <StarredStrip title="Starred — keep handy" />
+            <BudgetAlerts />
+            <div className="columns-1 gap-5 md:columns-2 xl:columns-3 [&>*]:mb-5 [&>*]:break-inside-avoid">
+              {mode === 'study' && <RecallHomeCard />}
+              {mode === 'life' && <LifeTodayCard />}
+              <CheckinCard />
+              <ExamCountdownPanel />
+              <OccasionsCard />
+              <SpotifyPanel />
+              <SubscriptionsPanel />
+            </div>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   )
 }
 
-/** "Good evening" and a one-line summary of the day. */
-function Greeting(): React.JSX.Element {
+/** The date, "Good evening" and a one-line summary of the day. */
+function Greeting({ onSearch }: { onSearch: (q: string) => void }): React.JSX.Element {
   const mode = useMode()
   const profile = useProfile()
   const { data } = useLive(
@@ -85,6 +251,7 @@ function Greeting(): React.JSX.Element {
     },
     [mode]
   )
+  const [q, setQ] = useState('')
   const h = new Date().getHours()
   const hello = h < 5 ? 'Burning the midnight oil' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
   const name = profile?.display_name?.split(' ')[0]
@@ -96,15 +263,27 @@ function Greeting(): React.JSX.Element {
       ].filter(Boolean)
     : []
   return (
-    <header className="masthead flex flex-wrap items-end gap-3">
-      <div className="mr-auto">
+    <header className="flex flex-wrap items-end gap-3">
+      <div className="mr-auto [text-shadow:0_0_14px_#04050a]">
         <div className="label-caps">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-        <h1 className="text-3xl">
+        <h1 className="font-display text-3xl leading-tight font-semibold">
           {hello}
           {name ? `, ${name}` : ''}.
         </h1>
         <p className="mt-0.5 text-sm text-muted">{bits.length ? `${bits.join(' · ').replace(/^./, (c) => c.toUpperCase())}.` : ' '}</p>
       </div>
+      <label data-ui className="relative">
+        <Icon name="search" size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
+        <input
+          value={q}
+          onChange={(e) => {
+            setQ('')
+            onSearch(e.target.value)
+          }}
+          placeholder="Search everything"
+          className="space-search w-56 py-2 pr-3 pl-9 text-sm max-sm:w-40"
+        />
+      </label>
       <button className="btn" onClick={() => navigate({ name: 'focus' })}>
         <Icon name="focus" /> Focus
       </button>
@@ -124,7 +303,7 @@ function RecallHomeCard(): React.JSX.Element | null {
   const all = rows.flatMap((r) => r.cards)
   const done = all.filter(doneToday).length
   return (
-    <section className="card-feature on-dark overflow-hidden">
+    <section className="card overflow-hidden">
       <div className="flex items-center gap-3 px-5 pt-4 pb-3">
         <Icon name="recall" size={22} className="text-brass" />
         <div className="flex-1">
@@ -156,79 +335,6 @@ function RecallHomeCard(): React.JSX.Element | null {
           })}
         </div>
       )}
-    </section>
-  )
-}
-
-/** The calendar card, with a handle at the bottom to drag it taller or shorter (remembered on this PC). */
-function ResizableCalendar(): React.JSX.Element {
-  const KEY = 'home.calendarHeight'
-  const [height, setHeight] = useState(() => {
-    try {
-      return Number(localStorage.getItem(KEY)) || 340
-    } catch {
-      return 340
-    }
-  })
-  const save = (h: number): void => {
-    try {
-      localStorage.setItem(KEY, String(h))
-    } catch {
-      /* optional */
-    }
-  }
-  const startDrag = (e: React.PointerEvent): void => {
-    e.preventDefault()
-    const startY = e.clientY
-    const startH = height
-    let h = startH
-    const move = (ev: PointerEvent): void => {
-      h = Math.min(1100, Math.max(220, startH + ev.clientY - startY))
-      setHeight(h)
-    }
-    const up = (): void => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      save(h)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }
-  const preset = (h: number): void => {
-    setHeight(h)
-    save(h)
-  }
-  return (
-    <section className="card relative p-4 pb-5">
-      <div style={{ height }}>
-        <CalendarView />
-      </div>
-      <div
-        className="group absolute inset-x-0 bottom-0 flex h-4 cursor-ns-resize items-center justify-center"
-        onPointerDown={startDrag}
-        onDoubleClick={() => preset(340)}
-        title="Drag to resize · double-click to reset"
-      >
-        <span className="h-1 w-12 rounded-full bg-line transition-colors group-hover:bg-brass" />
-      </div>
-      <div className="absolute right-3 bottom-0 flex translate-y-1/2 gap-1 rounded-full border border-line bg-panel px-1 py-0.5 text-[10px] text-muted shadow-sm">
-        {(
-          [
-            ['S', 260],
-            ['M', 420],
-            ['L', 680]
-          ] as [string, number][]
-        ).map(([l, h]) => (
-          <button
-            key={l}
-            className={`rounded-full px-1.5 ${Math.abs(height - h) < 20 ? 'bg-accent-soft text-accent' : 'hover:text-ink'}`}
-            onClick={() => preset(h)}
-            title={`Calendar size ${l}`}
-          >
-            {l}
-          </button>
-        ))}
-      </div>
     </section>
   )
 }
@@ -365,6 +471,22 @@ function CalendarView(): React.JSX.Element {
   const ref = useRef<FullCalendar>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [external, setExternal] = useState<ExternalInfo | null>(null)
+  const narrow = useNarrow()
+  const [night, setNightState] = useState(() => {
+    try {
+      return localStorage.getItem('home.nightHours') === '1'
+    } catch {
+      return false
+    }
+  })
+  const setNight = (v: boolean): void => {
+    setNightState(v)
+    try {
+      localStorage.setItem('home.nightHours', v ? '1' : '0')
+    } catch {
+      /* optional */
+    }
+  }
 
   // Reload calendar data when events/assessments/tasks/feeds change.
   useLive(
@@ -489,17 +611,19 @@ function CalendarView(): React.JSX.Element {
   }
 
   return (
-    <div className="home-cal h-full">
+    <div className="home-cal min-h-0 flex-1">
       <FullCalendar
         ref={ref}
         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-        initialView="dayGridWeek"
-        headerToolbar={{ left: 'title', center: '', right: 'prev,today,next dayGridWeek,timeGridWeek,dayGridMonth,timeGridDay' }}
-        views={{ dayGridWeek: { buttonText: 'Week' }, timeGridWeek: { buttonText: 'Hours' } }}
+        initialView={narrow ? 'timeGrid3' : 'timeGridWeek'}
+        headerToolbar={{ left: 'title', center: '', right: narrow ? 'night prev,next timeGrid3,dayGridMonth' : 'night prev,today,next timeGridWeek,dayGridMonth,timeGridDay' }}
+        customButtons={{ night: { text: night ? 'Hide night hours' : 'Show night hours', click: () => setNight(!night) } }}
+        views={{ timeGridWeek: { buttonText: 'Week' }, timeGrid3: { type: 'timeGrid', duration: { days: 3 }, buttonText: '3 days' } }}
         buttonText={{ today: 'Today', day: 'Day', month: 'Month' }}
         titleFormat={{ month: 'long', day: 'numeric' }}
         height="100%"
         dayHeaderFormat={{ weekday: 'short', day: 'numeric' }}
+        slotLabelFormat={{ hour: 'numeric', meridiem: 'short' }}
         firstDay={1}
         nowIndicator
         selectable
@@ -508,7 +632,14 @@ function CalendarView(): React.JSX.Element {
         droppable
         eventReceive={(info) => void onReceive(info)}
         dayMaxEvents
+        // Your day is 8 am to 11 pm; night hours fold away until you ask for them.
+        slotMinTime={night ? '00:00:00' : '08:00:00'}
+        slotMaxTime={night ? '24:00:00' : '23:00:00'}
+        expandRows={!night}
+        slotDuration="01:00:00"
+        snapDuration="00:15:00"
         scrollTime="08:00:00"
+        eventDidMount={(info) => info.el.style.setProperty('--c', info.event.backgroundColor || '#7aa2ff')}
         events={(info, ok, fail) => void loadEvents(info).then(ok, fail)}
         select={(s) => void onSelect(s)}
         eventDrop={onMove}

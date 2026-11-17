@@ -7,7 +7,6 @@ import { useRoute } from './lib/nav'
 import { ClientDetailPage, ClientsPage } from './pages/Clients'
 import { FocusPage } from './pages/Focus'
 import { HomePage } from './pages/Home'
-import { BrainPage } from './pages/Brain'
 import { OculusPage } from './pages/Oculus'
 import { ModuleDetailPage } from './pages/ModuleDetail'
 import { ModulesPage } from './pages/Modules'
@@ -66,12 +65,11 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener('studyhall:back', onBack)
   }, [route.name])
   return (
-    <div className="app-shell flex h-full">
+    <div className={`app-shell flex h-full ${route.name === 'home' || route.name === 'brain' ? 'space-shell' : ''}`}>
       <MobileBar />
       <Sidebar />
       <main className="min-w-0 flex-1 overflow-auto">
-        {route.name === 'home' && <HomePage />}
-        {route.name === 'brain' && <BrainPage key={route.q ?? ''} q={route.q} />}
+        {(route.name === 'home' || route.name === 'brain') && <HomePage key="home" view={route.name} q={route.name === 'brain' ? route.q : undefined} />}
         {route.name === 'oculus' && <OculusPage />}
         {route.name === 'tasks' && <TasksPage />}
         {route.name === 'projects' && <ProjectsPage />}
