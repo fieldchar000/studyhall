@@ -6,6 +6,7 @@ import type { BauerCard, OrbState } from '@shared/types'
 import { api } from '@/lib/data'
 import { lookAt, type LookKind } from '@/lib/bauer/look'
 import { say } from '@/lib/bauer/agent'
+import { NovaOrb, type OrbMode } from '@/components/NovaOrb'
 
 const hover = {
   onMouseEnter: () => api.bauer.mouse(true),
@@ -18,6 +19,40 @@ export function OrbWindow(): React.JSX.Element {
   const [state, setState] = useState<OrbState>('idle')
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)
+  const [cfg, setCfg] = useState({ px: 76, follow: false, drift: true })
+  useEffect(() => api.bauer.onOrbConfig(setCfg), [])
+  // Loudness for the ripples: Nova's voice (a list every 40 ms, from when it arrives) or the microphone.
+  const voice = useRef<{ env: number[]; at: number }>({ env: [], at: 0 })
+  const mic = useRef({ v: 0, at: 0 })
+  const [talking, setTalking] = useState(false)
+  useEffect(
+    () =>
+      api.bauer.onLevels((l) => {
+        if (l.kind === 'voice') {
+          voice.current = { env: l.env, at: performance.now() }
+          setTalking(l.env.length > 0)
+        } else mic.current = { v: l.v, at: performance.now() }
+      }),
+    []
+  )
+  useEffect(() => {
+    if (!talking) return
+    const t = setInterval(() => {
+      const v = voice.current
+      if (performance.now() - v.at > v.env.length * 40 + 400) setTalking(false)
+    }, 250)
+    return () => clearInterval(t)
+  }, [talking])
+  const level = useRef({
+    get current(): number {
+      const now = performance.now()
+      const v = voice.current
+      const i = Math.floor((now - v.at) / 40)
+      if (i >= 0 && i < v.env.length) return v.env[i]
+      return now - mic.current.at < 400 ? mic.current.v : 0
+    }
+  }).current
+  const mode: OrbMode = talking ? 'speaking' : state === 'listening' || state === 'thinking' || state === 'error' ? state : 'idle'
   // Press and drag to move Bauer; a plain click talks to him.
   const press = useRef<{ x: number; y: number; moved: boolean } | null>(null)
   const down = (e: React.PointerEvent): void => {
@@ -72,38 +107,37 @@ export function OrbWindow(): React.JSX.Element {
       <div
         className="flex items-center gap-2"
         onMouseLeave={() => {
-          if (press.current) return // mid-drag: keep the mouse
+          if (press.current || cfg.follow) return // mid-drag: keep the mouse
           setOpen(false)
           api.bauer.mouse(false)
         }}
-        onMouseEnter={() => (setOpen(true), api.bauer.mouse(true))}
+        onMouseEnter={() => {
+          if (cfg.follow) return // riding along with the cursor: never catch clicks
+          setOpen(true)
+          api.bauer.mouse(true)
+        }}
       >
         {open && (
           <div className="orb-menu flex gap-1 rounded-full p-1">
             <button className="orb-btn" title="Circle something on screen and ask (Ctrl+Alt+B)" onClick={() => void api.bauer.circle()}>
               ⭕ Circle
             </button>
-            <button className="orb-btn" title="Hide Bauer (Settings → Voice brings him back)" onClick={() => api.bauer.hideOrb()}>
+            <button className="orb-btn" title="Hide Nova (Ctrl+Alt+N brings it back)" onClick={() => api.bauer.hideOrb()}>
               Hide
             </button>
           </div>
         )}
         <button
-          className={`orb orb-${state}`}
-          title="Click to talk · drag to move"
-          aria-label="Talk to Bauer"
+          className="nova-orb-btn"
+          title="Click to talk (or hold Ctrl+Alt) · drag to move"
+          aria-label="Talk to Nova"
           onPointerDown={down}
           onPointerMove={moveDrag}
           onPointerUp={up}
           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && api.bauer.listen()}
           style={{ touchAction: 'none' }}
         >
-          <span className="orb-core" />
-          <span className="orb-swirl" />
-          <span className="orb-orbit" style={{ ['--a' as string]: '0deg', animationDuration: '5s' }} />
-          <span className="orb-orbit" style={{ ['--a' as string]: '60deg', animationDuration: '7s' }} />
-          <span className="orb-orbit" style={{ ['--a' as string]: '-60deg', animationDuration: '6s' }} />
-          <span className="orb-ring" />
+          <NovaOrb size={cfg.px} mode={mode} level={level} drift={cfg.drift && !cfg.follow} solid />
         </button>
       </div>
     </div>

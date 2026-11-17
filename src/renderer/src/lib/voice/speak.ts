@@ -9,6 +9,32 @@ let ctx: AudioContext | null = null
 let current: AudioBufferSourceNode | null = null
 let speaking = false
 const listeners = new Set<(on: boolean) => void>()
+// Loudness of what's playing, every 40 ms (for the orb's ripples).
+const STEP_MS = 40
+let envelope: number[] = []
+let envelopeStart = 0
+/** How loud Nova is right now (0..1). */
+export function voiceLevelNow(): number {
+  if (!speaking) return 0
+  return envelope[Math.floor((performance.now() - envelopeStart) / STEP_MS)] ?? 0
+}
+/** The same, shaped like a React ref for <NovaOrb level={…} />. */
+export const voiceLevelRef = {
+  get current(): number {
+    return voiceLevelNow()
+  }
+}
+function loudness(samples: Float32Array, sampleRate: number): number[] {
+  const n = Math.max(1, Math.round((sampleRate * STEP_MS) / 1000))
+  const out: number[] = []
+  for (let i = 0; i < samples.length; i += n) {
+    let sum = 0
+    const end = Math.min(samples.length, i + n)
+    for (let j = i; j < end; j++) sum += samples[j] * samples[j]
+    out.push(Math.min(1, Math.sqrt(sum / (end - i)) * 5))
+  }
+  return out
+}
 
 /** Is Nova talking right now? (The wake word ignores the microphone meanwhile, so Nova never wakes itself.) */
 export const isSpeaking = (): boolean => speaking
@@ -72,6 +98,13 @@ function play(samples: Float32Array, sampleRate: number, gen: number): Promise<v
     src.connect(ctx.destination)
     src.onended = () => resolve()
     current = src
+    envelope = loudness(samples, sampleRate)
+    envelopeStart = performance.now()
+    try {
+      api.bauer.voiceLevels(envelope) // the floating orb ripples along
+    } catch {
+      /* no floating orb here (the pad) */
+    }
     src.start()
   })
 }
@@ -114,5 +147,11 @@ export function stopSpeaking(): void {
     /* already stopped */
   }
   current = null
+  envelope = []
+  try {
+    api.bauer.voiceLevels([])
+  } catch {
+    /* no floating orb here */
+  }
   setSpeaking(false)
 }

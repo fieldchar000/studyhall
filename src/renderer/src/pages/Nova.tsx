@@ -9,7 +9,8 @@ import { navigate } from '@/lib/nav'
 import { isPhoneApp } from '@/lib/platform'
 import { startBrief } from '@/lib/voice'
 import { VoiceCard } from '@/components/VoiceCard'
-import { speak } from '@/lib/voice/speak'
+import { onSpeaking, speak, voiceLevelRef } from '@/lib/voice/speak'
+import { NovaOrb } from '@/components/NovaOrb'
 
 const NAMES: { n: NovaName; hint: string }[] = [
   { n: 'Nova', hint: 'Default · clear, 2 syllables' },
@@ -120,80 +121,6 @@ function RoomLeft({ name, usage, cap, noExtra }: { name: string; usage: ClaudeSt
   )
 }
 
-/** The orb: a hollow sphere of fine blue strands with three orbits. Ripples while `busy`. */
-export function NovaOrb({ size = 200, busy = false }: { size?: number; busy?: boolean }): React.JSX.Element {
-  const ref = useRef<HTMLCanvasElement>(null)
-  const busyRef = useRef(busy)
-  busyRef.current = busy
-  useEffect(() => {
-    const c = ref.current!
-    const x = c.getContext('2d')!
-    const d = Math.min(devicePixelRatio || 1, 2)
-    c.width = size * d
-    c.height = size * d
-    x.setTransform(d, 0, 0, d, 0, 0)
-    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
-    let amp = 0
-    let raf = 0
-    const draw = (t: number): void => {
-      const cx = size / 2, R = size * 0.3
-      amp += ((busyRef.current ? 0.6 + 0.4 * Math.abs(Math.sin(t * 0.013)) : 0) - amp) * 0.2
-      x.clearRect(0, 0, size, size)
-      x.globalCompositeOperation = 'lighter'
-      const g = x.createRadialGradient(cx, cx, 0, cx, cx, R * 0.32)
-      g.addColorStop(0, 'rgba(225,236,255,.95)')
-      g.addColorStop(0.35, 'rgba(110,160,255,.35)')
-      g.addColorStop(1, 'rgba(60,110,240,0)')
-      x.fillStyle = g
-      x.beginPath()
-      x.arc(cx, cx, R * 0.32, 0, 6.283)
-      x.fill()
-      x.lineWidth = 0.8
-      const spin = t * 0.00035
-      for (let i = 0; i < 16; i++) {
-        const a = spin + (i / 16) * Math.PI, wob = 1 + amp * 0.08 * Math.sin(t * 0.01 + i)
-        x.strokeStyle = `rgba(${110 + i * 4},${150 + i * 3},255,${0.12 + 0.22 * Math.abs(Math.sin(a))})`
-        x.beginPath()
-        x.ellipse(cx, cx, Math.max(0.5, Math.abs(Math.cos(a)) * R * wob), R * wob, 0, 0, 6.283)
-        x.stroke()
-      }
-      for (let k = 0; k < 3; k++) {
-        const a = t * 0.0012 * (k % 2 ? -1 : 1) + k
-        x.save()
-        x.translate(cx, cx)
-        x.rotate(k * 2.094 + 0.4)
-        x.strokeStyle = 'rgba(168,200,255,.45)'
-        x.lineWidth = 1
-        x.beginPath()
-        x.ellipse(0, 0, R * 1.18, R * 0.38, 0, 0, 6.283)
-        x.stroke()
-        x.fillStyle = '#e6efff'
-        x.beginPath()
-        x.arc(Math.cos(a) * R * 1.18, Math.sin(a) * R * 0.38, 2.2, 0, 6.283)
-        x.fill()
-        x.restore()
-      }
-      for (let j = 0; j < 3 && amp > 0.03; j++) {
-        const p = (t * 0.0011 + j / 3) % 1
-        x.strokeStyle = `rgba(140,185,255,${(1 - p) * 0.55 * amp})`
-        x.lineWidth = 1.2
-        x.beginPath()
-        x.arc(cx, cx, R * (1.05 + p * 0.55), 0, 6.283)
-        x.stroke()
-      }
-      x.globalCompositeOperation = 'source-over'
-      if (!reduce && !document.hidden) raf = requestAnimationFrame(draw)
-      else if (!reduce) raf = window.setTimeout(() => (raf = requestAnimationFrame(draw)), 500) as unknown as number
-    }
-    raf = requestAnimationFrame(draw)
-    return () => {
-      cancelAnimationFrame(raf)
-      clearTimeout(raf)
-    }
-  }, [size])
-  return <canvas ref={ref} style={{ width: size, height: size }} aria-hidden="true" />
-}
-
 function useClaude(): ClaudeStatus | null {
   const [s, setS] = useState<ClaudeStatus | null>(null)
   useEffect(() => {
@@ -268,6 +195,9 @@ export function NovaPage(): React.JSX.Element {
   const mouth = useMouth()
   const [speed, setSpeed] = useState<number | null>(null)
   const [previewing, setPreviewing] = useState<string | null>(null)
+  // The orb on this page ripples while a voice preview plays.
+  const [talking, setTalking] = useState(false)
+  useEffect(() => onSpeaking(setTalking), [])
   const preview = async (id: string, line: string): Promise<void> => {
     setPreviewing(id)
     try {
@@ -320,7 +250,7 @@ export function NovaPage(): React.JSX.Element {
   return (
     <div className="nova-page mx-auto max-w-[1180px] px-6 pb-16 pt-2">
       <section className="flex flex-wrap items-center gap-6 py-4">
-        <NovaOrb size={phone ? 150 : 200} busy={busy || !!claude?.signingIn || !!claude?.downloading} />
+        <NovaOrb size={phone ? 150 : 200} mode={talking ? 'speaking' : busy || !!claude?.signingIn || !!claude?.downloading ? 'thinking' : 'idle'} level={voiceLevelRef} drift={prefs?.novaDrift !== false} />
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-5xl font-semibold leading-none">{name}</h1>
           <p className="mt-2 max-w-[62ch] text-[15px] text-muted">
@@ -541,6 +471,37 @@ export function NovaPage(): React.JSX.Element {
             </section>
           )}
 
+          {!phone && (
+            <section className="card rounded-2xl p-5">
+              <h2 className="font-semibold">Look</h2>
+              <p className="mb-3 text-[13px] text-muted">The floating orb. It ripples with {name}’s voice, breathes with yours while listening, and spins faster while thinking. It never shows up in screenshots or screen recordings.</p>
+              <div className="mb-2 flex flex-wrap items-center gap-4">
+                <div className="nova-orb-preview">
+                  <NovaOrb size={prefs?.novaOrbSize === 'small' ? 52 : prefs?.novaOrbSize === 'cursor' ? 40 : 76} mode={talking ? 'speaking' : 'idle'} level={voiceLevelRef} drift={prefs?.novaDrift !== false && prefs?.novaOrbSize !== 'cursor'} solid />
+                </div>
+                <span className="text-xs text-muted">Actual size</span>
+              </div>
+              <Row title={`Show ${name}`} hint="Ctrl + Alt + N also shows or hides it">
+                <input type="checkbox" checked={prefs?.bauerOrb ?? true} onChange={(e) => save({ bauerOrb: e.target.checked })} aria-label="Show the orb" />
+              </Row>
+              <Row title="Size">
+                <Seg
+                  value={prefs?.novaOrbSize ?? 'default'}
+                  options={[
+                    ['small', 'Small'],
+                    ['default', 'Default'],
+                    ['cursor', 'Follows my cursor']
+                  ]}
+                  onChange={(v) => save({ novaOrbSize: v as Prefs['novaOrbSize'] })}
+                />
+              </Row>
+              <Row title="Float gently while idle" hint="A slow bob, inside its own spot (it doesn’t wander around your screen)">
+                <input type="checkbox" checked={prefs?.novaDrift !== false} onChange={(e) => save({ novaDrift: e.target.checked })} aria-label="Float gently" />
+              </Row>
+              <p className="text-xs text-muted">Drag the orb to move it; click it to talk. In “follows my cursor” mode it rides beside your mouse and lets every click through.</p>
+            </section>
+          )}
+
           <section className="card rounded-2xl p-5">
             <h2 className="flex items-center gap-2 font-semibold">
               Brain <span className="nova-tag">Your Claude plan</span>
@@ -678,9 +639,6 @@ export function NovaPage(): React.JSX.Element {
           <section className="card rounded-2xl p-5">
             <h2 className="font-semibold">Coming next</h2>
             <ul className="mt-2 flex flex-col gap-1.5 text-[13px] text-muted">
-              <li>
-                <b className="text-ink">Look:</b> the new floating orb
-              </li>
               <li>
                 <b className="text-ink">Eyes &amp; pointing</b>, then <b className="text-ink">hands</b> (clicking and typing in your apps), then <b className="text-ink">pixel cards</b>
               </li>

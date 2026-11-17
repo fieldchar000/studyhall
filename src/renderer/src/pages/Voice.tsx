@@ -98,7 +98,14 @@ export default function VoicePanel(): React.JSX.Element {
           setHeard(false)
           setPhase('listening')
         } else if (e.type === 'heard') setHeard(true)
-        else if (e.type === 'level') setLevel((l) => l * 0.5 + e.value * 0.5)
+        else if (e.type === 'level') {
+          setLevel((l) => l * 0.5 + e.value * 0.5)
+          try {
+            api.bauer.micLevel(e.value) // the floating orb breathes with your voice
+          } catch {
+            /* no floating orb */
+          }
+        }
         else if (e.type === 'recorded') {
           setPhase('thinking')
           try {

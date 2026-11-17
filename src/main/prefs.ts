@@ -25,6 +25,8 @@ const DEFAULTS: Prefs = {
   novaCap: 80,
   novaVoice: 'af_heart',
   novaSpeed: 1.05,
+  novaOrbSize: 'default',
+  novaDrift: true,
   quickCaptureShortcut: 'CommandOrControl+Shift+Space',
   spotifyLinks: []
 }

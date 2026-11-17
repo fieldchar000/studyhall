@@ -1459,3 +1459,8 @@ body:has(.space-shell)::before { display: none; }
 .nova-voice[aria-pressed='true'] { border-color: rgb(169 188 255 / .55); background: rgb(79 134 240 / .12); }
 .nova-play { width: 28px; height: 28px; flex: none; border-radius: 50%; border: 1px solid rgb(169 188 255 / .4); color: #a8c8ff; font-size: 11px; display: grid; place-items: center; }
 .nova-play:disabled { opacity: .5; }
+
+/* The floating Nova (v0.33): the canvas orb inside a plain round button */
+.nova-orb-btn { display: grid; place-items: center; border-radius: 50%; background: transparent; padding: 0; cursor: pointer; }
+.nova-orb-btn:focus-visible { outline: 2px solid #a8c8ff; outline-offset: 2px; }
+.nova-orb-preview { width: 92px; height: 92px; display: grid; place-items: center; border-radius: 16px; border: 1px dashed rgb(168 200 255 / .25); }

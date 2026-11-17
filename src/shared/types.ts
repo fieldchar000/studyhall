@@ -982,6 +982,8 @@ export interface Prefs {
   novaCap?: number // pause Claude when your weekly Claude usage reaches this % (default 80)
   novaVoice?: string // Kokoro voice (default af_heart)
   novaSpeed?: number // how fast Nova talks, 0.8–1.3 (default 1.05)
+  novaOrbSize?: 'small' | 'default' | 'cursor' // the floating orb (default default)
+  novaDrift?: boolean // the orb bobs gently while idle (default on)
 }
 
 /** The API the preload script exposes to the UI as window.api. */
@@ -1200,6 +1202,12 @@ export interface Api {
     // Used by the floating Bauer, the cards and the circle windows themselves:
     onCards(cb: (cards: BauerCard[] | null) => void): () => void
     onOrb(cb: (s: { state: OrbState; text?: string }) => void): () => void
+    /** (orb window) size and behaviour from the Nova page */
+    onOrbConfig(cb: (c: { px: number; follow: boolean; drift: boolean }) => void): () => void
+    /** (orb window) loudness to ripple with: Nova's voice (every 40 ms) or your microphone */
+    onLevels(cb: (l: { kind: 'voice'; env: number[] } | { kind: 'mic'; v: number }) => void): () => void
+    voiceLevels(env: number[]): void
+    micLevel(v: number): void
     orb(state: OrbState, text?: string): void
     mouse(over: boolean): void
     shot(): Promise<{ image: string; width: number; height: number } | null>

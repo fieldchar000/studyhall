@@ -21,6 +21,7 @@ let startBrief: () => void = () => {}
 let shot: { image: string; width: number; height: number } | null = null
 let suspended = false // Studyhall is closed to the tray: Bauer stays off the screen
 export const CIRCLE_SHORTCUT = 'CommandOrControl+Alt+B'
+export const ORB_SHORTCUT = 'CommandOrControl+Alt+N' // show / hide Nova
 /** Automated tests: windows live far off-screen, nothing is captured, nothing takes focus. */
 const OFFSCREEN = process.env.STUDYHALL_OFFSCREEN === '1'
 
@@ -38,9 +39,13 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
     if (msg.type === 'ready' && from === cardsWin) cardsWin?.webContents.send('bauer:cards', cards)
     else if (msg.type === 'mouse' && from && (from === orbWin || from === cardsWin)) from.setIgnoreMouseEvents(!msg.over, { forward: true })
     else if (msg.type === 'orb') sendOrb(String(msg.state) as OrbState, typeof msg.text === 'string' ? msg.text : undefined)
+    // Loudness for the orb's ripples: Nova's voice (a list, every 40 ms) or your microphone (one number).
+    else if (msg.type === 'voice' && Array.isArray(msg.env)) orbWin?.webContents.send('bauer:levels', { kind: 'voice', env: msg.env.slice(0, 3000).map((v: unknown) => Math.max(0, Math.min(1, Number(v) || 0))) })
+    else if (msg.type === 'mic') orbWin?.webContents.send('bauer:levels', { kind: 'mic', v: Math.max(0, Math.min(1, Number(msg.v) || 0)) })
     else if (msg.type === 'closeCircle' && from === circleWin) closeCircle()
     else if (msg.type === 'listen' && from === orbWin) startBrief()
     else if (msg.type === 'hideOrb' && from === orbWin) orbWin?.hide()
+    else if (msg.type === 'ready' && from === orbWin) sendOrbConfig()
     else if (from === orbWin && orbWin && (msg.type === 'dragStart' || msg.type === 'dragMove' || msg.type === 'dragEnd')) dragOrb(msg.type, Number(msg.x), Number(msg.y))
   })
   setShortcut(true)
@@ -51,6 +56,63 @@ function setShortcut(on: boolean): void {
   if (OFFSCREEN) return
   if (on && !globalShortcut.isRegistered(CIRCLE_SHORTCUT)) globalShortcut.register(CIRCLE_SHORTCUT, () => void startCircle())
   else if (!on && globalShortcut.isRegistered(CIRCLE_SHORTCUT)) globalShortcut.unregister(CIRCLE_SHORTCUT)
+  if (on && !globalShortcut.isRegistered(ORB_SHORTCUT)) globalShortcut.register(ORB_SHORTCUT, toggleOrb)
+  else if (!on && globalShortcut.isRegistered(ORB_SHORTCUT)) globalShortcut.unregister(ORB_SHORTCUT)
+}
+
+/** Ctrl + Alt + N: show or hide Nova for now (the Nova page's switch decides at start-up). */
+function toggleOrb(): void {
+  if (suspended) return
+  if (orbWin && !orbWin.isDestroyed() && orbWin.isVisible()) orbWin.hide()
+  else {
+    if (!orbWin || orbWin.isDestroyed()) syncOrb(true)
+    else orbWin.showInactive()
+  }
+  followCursor()
+}
+
+// ---------- Size, drift, following the cursor ----------
+
+type OrbSize = 'small' | 'default' | 'cursor'
+const orbSize = (): OrbSize => (['small', 'default', 'cursor'].includes(String(getPrefs().novaOrbSize)) ? (getPrefs().novaOrbSize as OrbSize) : 'default')
+const ORB_PX: Record<OrbSize, number> = { small: 52, default: 76, cursor: 40 }
+function sendOrbConfig(): void {
+  const size = orbSize()
+  orbWin?.webContents.send('bauer:orbConfig', { px: ORB_PX[size], follow: size === 'cursor', drift: getPrefs().novaDrift !== false })
+  if (orbWin && !orbWin.isDestroyed()) orbWin.setIgnoreMouseEvents(true, { forward: size !== 'cursor' })
+  followCursor()
+}
+let followTimer: NodeJS.Timeout | null = null
+/** In "follows my cursor" mode Nova rides just below-right of the mouse (and never catches clicks). */
+function followCursor(): void {
+  const on = orbSize() === 'cursor' && !!orbWin && !orbWin.isDestroyed() && orbWin.isVisible() && !suspended && !OFFSCREEN
+  if (!on) {
+    if (followTimer) {
+      clearInterval(followTimer)
+      followTimer = null
+      // Back to where you left Nova.
+      const saved = getSetting<{ x: number; y: number }>('bauer_orb_pos')
+      if (orbWin && !orbWin.isDestroyed()) {
+        const wa = screen.getPrimaryDisplay().workArea
+        const pos = saved && onSomeScreen(saved.x, saved.y) ? saved : { x: wa.x + wa.width - ORB_W - 8, y: wa.y + wa.height - ORB_H - 8 }
+        orbWin.setPosition(pos.x, pos.y)
+      }
+    }
+    return
+  }
+  if (followTimer) return
+  let last = ''
+  followTimer = setInterval(() => {
+    if (!orbWin || orbWin.isDestroyed() || !orbWin.isVisible()) return followCursor()
+    const p = screen.getCursorScreenPoint()
+    const px = ORB_PX.cursor
+    // The orb sits at the window's bottom-right corner (12 px padding).
+    const x = Math.round(p.x + 22 + px / 2 + 12 - ORB_W + px / 2)
+    const y = Math.round(p.y + 22 + px / 2 + 12 - ORB_H + px / 2)
+    const key = `${x},${y}`
+    if (key !== last) orbWin.setPosition(x, y)
+    last = key
+  }, 30)
 }
 
 /** Studyhall closed to the tray: hide the orb, cards and circling layer, and free Ctrl+Alt+B. Opened again: bring them back. */
@@ -90,6 +152,7 @@ const overlayWindow = (bounds: Electron.Rectangle, hash: string, focusable = fal
     webPreferences: { ...webPrefs, backgroundThrottling: false, spellcheck: false }
   })
   w.setAlwaysOnTop(true, 'screen-saver')
+  w.setContentProtection(true) // Nova never shows up in screenshots or recordings (or in its own circle-to-ask)
   w.on('close', (e) => {
     if (quitting) return
     e.preventDefault()
@@ -102,10 +165,11 @@ const overlayWindow = (bounds: Electron.Rectangle, hash: string, focusable = fal
 // ---------- The floating Bauer ----------
 
 /** Show or hide the orb to match Settings. */
-export function syncOrb(): void {
-  const on = getPrefs().bauerOrb !== false && !suspended
+export function syncOrb(force = false): void {
+  const on = (force || getPrefs().bauerOrb !== false) && !suspended
   if (!on) {
     orbWin?.hide()
+    followCursor()
     return
   }
   if (!orbWin || orbWin.isDestroyed()) {
@@ -115,8 +179,14 @@ export function syncOrb(): void {
     orbWin = overlayWindow({ ...pos, width: ORB_W, height: ORB_H }, '#orb')
     orbWin.setIgnoreMouseEvents(true, { forward: true })
     orbWin.on('closed', () => (orbWin = null))
-    orbWin.once('ready-to-show', () => orbWin?.showInactive())
-  } else if (!orbWin.isVisible()) orbWin.showInactive()
+    orbWin.once('ready-to-show', () => {
+      orbWin?.showInactive()
+      followCursor()
+    })
+  } else {
+    if (!orbWin.isVisible()) orbWin.showInactive()
+    sendOrbConfig()
+  }
 }
 
 /** Is the orb (bottom-right of its window) on a screen if the window sits at x, y? */

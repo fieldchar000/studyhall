@@ -303,6 +303,19 @@ const api: Api = {
       ipcRenderer.on('bauer:orb', l)
       return () => ipcRenderer.removeListener('bauer:orb', l)
     },
+    onOrbConfig: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('bauer:orbConfig', l)
+      ipcRenderer.send('bauer:window', { type: 'ready' })
+      return () => ipcRenderer.removeListener('bauer:orbConfig', l)
+    },
+    onLevels: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('bauer:levels', l)
+      return () => ipcRenderer.removeListener('bauer:levels', l)
+    },
+    voiceLevels: (env) => ipcRenderer.send('bauer:window', { type: 'voice', env }),
+    micLevel: (v) => ipcRenderer.send('bauer:window', { type: 'mic', v }),
     orb: (state, text) => ipcRenderer.send('bauer:window', { type: 'orb', state, text }),
     mouse: (over) => ipcRenderer.send('bauer:window', { type: 'mouse', over }),
     shot: () => ipcRenderer.invoke('bauer:shot'),
