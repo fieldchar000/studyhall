@@ -27,12 +27,15 @@ import { loadWindowState, trackWindowState } from './windowState'
 import { aiChat, aiStatus, configureAi, downloadAi, downloadEyes, removeAi, removeEyes, stopAi, warmAi } from './ai'
 import { configureMouth, installMouth, mouthStatus, removeMouth, speakMouth, warmMouth } from './mouth'
 import { configureEars, earsStatus, feedEars, installEars, removeEars, transcribeEars } from './ears'
-import { claudeBlocked, claudeChat, claudeStatus, installClaude, refreshClaudeUsage, removeClaude, signInClaude, signOutClaude } from './claude'
+import { claudeBlocked, claudeChat, claudeStatus, installClaude, refreshClaudeUsage, removeClaude, setClaudeWarm, signInClaude, signOutClaude, warmClaude } from './claude'
 import type { AiMessage, AiPurpose } from '@shared/types'
 
 /** Nova's brain: Claude when it's connected and allowed, otherwise the model on this PC (if you allow that). */
+/** The answer shape each kind of request last used, so a session can be started for the next one in advance. */
+const lastSchema = new Map<AiPurpose, object | undefined>()
 async function brainChat(messages: AiMessage[], schema: object | undefined, maxTokens: number | undefined, purpose: AiPurpose): Promise<string> {
   const prefs = getPrefs()
+  lastSchema.set(purpose, schema)
   const why = claudeBlocked(prefs)
   if (!why) {
     try {
@@ -247,6 +250,7 @@ function bauerAway(away: boolean): void {
   const off = away && getPrefs().bauerOnlyWhenOpen !== false
   setVoiceSuspended(off)
   setBauerSuspended(off)
+  setClaudeWarm(!off) // no Claude sessions waiting while Studyhall is closed
   if (off) stopAi()
 }
 
@@ -400,7 +404,14 @@ if (!app.requestSingleInstanceLock()) {
         handle('ai:status', () => aiStatus())
         handle('ai:download', () => downloadAi())
         handle('ai:remove', () => removeAi())
-        handle('ai:warm', async () => void (await warmAi()))
+        // Nova started listening: get its brain ready while you talk.
+        handle('ai:warm', async () => {
+          const p = getPrefs()
+          if (!claudeBlocked(p)) {
+            warmClaude(p, 'act', lastSchema.get('act'))
+            warmClaude(p, 'chat')
+          } else await warmAi()
+        })
         handle('ai:chat', (_e, messages, schema, maxTokens, purpose) =>
           brainChat(messages, schema, typeof maxTokens === 'number' ? maxTokens : undefined, ['act', 'chat', 'explain', 'look'].includes(purpose) ? purpose : 'act')
         )
@@ -570,6 +581,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => (quitting = true))
   app.on('window-all-closed', () => app.quit())
   app.on('will-quit', () => {
+    setClaudeWarm(false) // close waiting Claude Code sessions
     closeAllVideoRooms()
     stopOculus()
     stopLanShare()

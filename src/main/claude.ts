@@ -27,8 +27,8 @@ const EXE = (): string => join(DIR(), 'claude', PKG_VERSION, 'claude.exe')
 const CONFIG = (): string => join(DIR(), 'claude-config')
 const WORK = (): string => join(DIR(), 'work') // an empty folder, so Claude Code never reads a project
 
-const MODEL_ID = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' } as const
-type ModelKey = keyof typeof MODEL_ID
+type ModelKey = 'haiku' | 'sonnet' | 'opus'
+const MODEL_ID: Record<ModelKey, string> = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' }
 
 const exists = async (p: string): Promise<boolean> => !!(await stat(p).catch(() => null))
 // Privacy: no claude.ai connectors (your linked apps), no telemetry, no error reports, no auto-updates.
@@ -213,6 +213,8 @@ export async function signInClaude(): Promise<ClaudeStatus> {
 
 /** Disconnect (only when you press the button): sign Studyhall's copy of Claude Code out and delete its sign-in from this PC. */
 export async function signOutClaude(): Promise<ClaudeStatus> {
+  setClaudeWarm(false) // close waiting sessions before signing out
+  setClaudeWarm(true)
   if (await exists(EXE())) await run(['auth', 'logout'])
   // Belt and braces: the sign-in file goes too, even if logout couldn't reach Anthropic.
   await rm(join(CONFIG(), '.credentials.json'), { force: true }).catch(() => {})
@@ -258,9 +260,102 @@ export function pickModel(prefs: Prefs, purpose: AiPurpose): { model: ModelKey; 
 
 type Block = { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; data: string } }
 
+// ---------- Keeping Claude Code warm ----------
+// Starting Claude Code takes about two seconds. So a session is started ahead of time and waits for
+// its request (measured: a quick answer in ~1.1 s instead of ~3.2 s). Each kind of request (model,
+// effort, answer shape) has its own waiting session; a fresh one replaces it after use, and idle ones
+// close after 10 minutes, or as soon as Studyhall is closed.
+
+type Query = import('@anthropic-ai/claude-agent-sdk').Query
+type SdkMessage = import('@anthropic-ai/claude-agent-sdk').SDKMessage
+type UserMsg = { type: 'user'; message: { role: 'user'; content: Block[] }; parent_tool_use_id: null }
+interface Warm {
+  key: string
+  q: Query
+  it: AsyncIterator<SdkMessage>
+  first: Promise<IteratorResult<SdkMessage>>
+  send: (m: UserMsg) => void
+  at: number
+}
+const WARM_SYSTEM =
+  'You are Nova, an assistant built into Studyhall, a study and life planner. Each message starts with instructions for that request, then the request itself. Follow the instructions exactly.'
+const IDLE_MS = 10 * 60_000
+const pool = new Map<string, Warm>()
+let warmAllowed = true
+
+const keyOf = (model: ModelKey, effort: NovaEffort, schema?: object): string =>
+  `${model}|${effort}|${schema ? createHash('sha1').update(JSON.stringify(schema)).digest('hex').slice(0, 12) : 'text'}`
+
+async function startSession(model: ModelKey, effort: NovaEffort, schema?: object): Promise<Warm> {
+  const { query } = await import('@anthropic-ai/claude-agent-sdk')
+  let send!: (m: UserMsg) => void
+  const gate = new Promise<UserMsg>((r) => (send = r))
+  async function* prompt(): AsyncGenerator<UserMsg> {
+    yield await gate
+  }
+  const q = query({
+    prompt: prompt() as never,
+    options: {
+      ...LOCKED(),
+      model: MODEL_ID[model],
+      effort,
+      systemPrompt: WARM_SYSTEM,
+      maxTurns: 4,
+      ...(schema ? { outputFormat: { type: 'json_schema' as const, schema: schema as Record<string, unknown> } } : {})
+    }
+  })
+  const it = q[Symbol.asyncIterator]()
+  const first = it.next() // start reading now: Claude Code starts up while it waits
+  first.catch(() => {}) // (a session closed unused is fine)
+  return { key: keyOf(model, effort, schema), q, it, first, send, at: Date.now() }
+}
+
+function closeSession(w: Warm): void {
+  try {
+    w.q.close()
+  } catch {
+    /* already closed */
+  }
+}
+
+/** Have a session waiting for this kind of request. */
+function refill(model: ModelKey, effort: NovaEffort, schema?: object): void {
+  const key = keyOf(model, effort, schema)
+  if (!warmAllowed || pool.has(key) || !state.signedIn || pool.size >= 3) return
+  void startSession(model, effort, schema)
+    .then((w) => {
+      if (!warmAllowed || pool.has(key)) return closeSession(w)
+      pool.set(key, w)
+    })
+    .catch((e) => console.warn('Nova: couldn’t start a waiting Claude session', e))
+}
+
+setInterval(() => {
+  for (const [k, w] of pool)
+    if (Date.now() - w.at > IDLE_MS) {
+      pool.delete(k)
+      closeSession(w)
+    }
+}, 60_000).unref()
+
+/** Studyhall closed (or Claude disconnected): no waiting sessions. Opened again: allowed again. */
+export function setClaudeWarm(on: boolean): void {
+  warmAllowed = on
+  if (!on) {
+    for (const w of pool.values()) closeSession(w)
+    pool.clear()
+  }
+}
+
+/** Get a kind of request ready ahead of time (called when Nova starts listening). */
+export function warmClaude(prefs: Prefs, purpose: AiPurpose = 'act', schema?: object): void {
+  if (claudeBlocked(prefs)) return
+  const { model, effort } = pickModel(prefs, purpose)
+  refill(model, effort, schema)
+}
+
 /** One request to Claude. With a JSON schema, the answer is JSON matching it. */
 export async function claudeChat(messages: AiMessage[], schema: object | undefined, prefs: Prefs, purpose: AiPurpose): Promise<string> {
-  const { query } = await import('@anthropic-ai/claude-agent-sdk')
   const { model, effort } = pickModel(prefs, purpose)
   const system = messages
     .filter((m) => m.role === 'system')
@@ -273,7 +368,9 @@ export async function claudeChat(messages: AiMessage[], schema: object | undefin
     .slice(0, -1)
     .map((m) => `${m.role === 'user' ? 'Request' : 'Answer'}: ${typeof m.content === 'string' ? m.content : '[picture]'}`)
     .join('\n')
-  const blocks: Block[] = []
+  const shapeNote = schema ? '\n\nYour answer is collected field by field: put plain values in each field, never JSON text inside a field.' : ''
+  const instructions = `<instructions>\n${system}${examples ? `\n\nWorked examples of good answers:\n${examples}` : ''}${shapeNote}\n</instructions>\n\n<request>`
+  const blocks: Block[] = [{ type: 'text', text: instructions }]
   if (last) {
     if (typeof last.content === 'string') blocks.push({ type: 'text', text: last.content })
     else
@@ -285,26 +382,22 @@ export async function claudeChat(messages: AiMessage[], schema: object | undefin
         }
       }
   }
-  async function* prompt(): AsyncGenerator<{ type: 'user'; message: { role: 'user'; content: Block[] }; parent_tool_use_id: null }> {
-    yield { type: 'user', message: { role: 'user', content: blocks }, parent_tool_use_id: null }
-  }
+  blocks.push({ type: 'text', text: '</request>' })
+
   const started = Date.now()
-  const q = query({
-    prompt: prompt() as never,
-    options: {
-      ...LOCKED(),
-      model: MODEL_ID[model],
-      effort,
-      systemPrompt: examples ? `${system}\n\nWorked examples of good answers:\n${examples}` : system,
-      maxTurns: 4,
-      ...(schema ? { outputFormat: { type: 'json_schema' as const, schema: schema as Record<string, unknown> } } : {})
-    }
-  })
+  const key = keyOf(model, effort, schema)
+  const w = pool.get(key) ?? (await startSession(model, effort, schema))
+  pool.delete(key)
+  const wasWarm = w.at < started
+  w.send({ type: 'user', message: { role: 'user', content: blocks }, parent_tool_use_id: null })
   let text = ''
   let structured: unknown
   let cost = 0
   try {
-    for await (const m of q) {
+    let r = await w.first
+    for (;;) {
+      if (r.done) break
+      const m = r.value
       if (m.type === 'rate_limit_event') noteLimit(m.rate_limit_info, prefs)
       else if (m.type === 'assistant' && m.error === 'authentication_failed') set({ signedIn: false })
       else if (m.type === 'assistant' && (m.error === 'billing_error' || m.error === 'rate_limit')) {
@@ -316,7 +409,9 @@ export async function claudeChat(messages: AiMessage[], schema: object | undefin
           text = m.result
           structured = m.structured_output
         } else throw new Error(`Claude couldn’t finish (${m.subtype})`)
+        break
       }
+      r = await w.it.next()
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -325,11 +420,14 @@ export async function claudeChat(messages: AiMessage[], schema: object | undefin
       set({ paused: 'your Claude usage limit was reached' })
     }
     throw e
+  } finally {
+    closeSession(w) // one request per session: nothing carries over to the next one
+    refill(model, effort, schema) // and the next one is already starting
   }
   const month = (getSetting<number>(monthKey()) ?? 0) + cost
   setSetting(monthKey(), month)
   set({ last: { model, effort, ms: Date.now() - started, costUsd: cost, at: new Date().toISOString() }, monthCostUsd: month, error: null })
-  console.info(`Nova: ${model}/${effort} ${purpose} in ${Date.now() - started} ms`)
+  console.info(`Nova: ${model}/${effort} ${purpose} in ${Date.now() - started} ms (${wasWarm ? 'warm' : 'cold'})`)
   return structured !== undefined ? JSON.stringify(structured) : text
 }
 
