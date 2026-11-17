@@ -247,6 +247,10 @@ const api: Api = {
     feed: (samples) => ipcRenderer.send('voice:window', { type: 'feed', samples }),
     transcribe: (samples) => ipcRenderer.invoke('ears:transcribe', samples)
   },
+  eyes: {
+    help: (text) => ipcRenderer.invoke('eyes:help', text),
+    stop: () => ipcRenderer.invoke('eyes:stop')
+  },
   mouth: {
     status: () => ipcRenderer.invoke('mouth:status'),
     install: () => ipcRenderer.invoke('mouth:install'),
@@ -315,6 +319,11 @@ const api: Api = {
       return () => ipcRenderer.removeListener('bauer:levels', l)
     },
     voiceLevels: (env) => ipcRenderer.send('bauer:window', { type: 'voice', env }),
+    onPoint: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('bauer:point', l)
+      return () => ipcRenderer.removeListener('bauer:point', l)
+    },
     micLevel: (v) => ipcRenderer.send('bauer:window', { type: 'mic', v }),
     orb: (state, text) => ipcRenderer.send('bauer:window', { type: 'orb', state, text }),
     mouse: (over) => ipcRenderer.send('bauer:window', { type: 'mouse', over }),

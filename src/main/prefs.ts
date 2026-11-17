@@ -27,6 +27,8 @@ const DEFAULTS: Prefs = {
   novaSpeed: 1.05,
   novaOrbSize: 'default',
   novaDrift: true,
+  novaEyes: 'auto',
+  novaWalk: true,
   quickCaptureShortcut: 'CommandOrControl+Shift+Space',
   spotifyLinks: []
 }

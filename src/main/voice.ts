@@ -287,6 +287,13 @@ export function startBrief(): void {
   send({ type: 'listen' })
 }
 
+/** Say something (e.g. the next step of a walkthrough), with Nova's voice. */
+export function voiceSay(text: string): void {
+  if (suspended || !text) return
+  ensureWindow()
+  send({ type: 'say', text })
+}
+
 // ---------- Talk keys (hold Ctrl + Alt to talk, tap Ctrl + Shift to type) ----------
 
 let keys: ChildProcess | null = null

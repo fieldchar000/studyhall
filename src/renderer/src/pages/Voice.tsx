@@ -163,6 +163,11 @@ export default function VoicePanel(): React.JSX.Element {
         } else if (c.type === 'listen') void listen(!!c.ptt)
         else if (c.type === 'stop') engine.cancel()
         else if (c.type === 'wake') engine.externalWake()
+        else if (c.type === 'say') {
+          // The next step of a walkthrough: say it, and show it on the floating orb.
+          api.bauer.orb('done', c.text)
+          say(c.text)
+        }
         else if (c.type === 'finish') void engine.finish()
         else if (c.type === 'cancel') {
           engine.cancel()
@@ -235,6 +240,7 @@ export default function VoicePanel(): React.JSX.Element {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         stopSpeaking()
+        void api.eyes.stop().catch(() => {})
         close()
       }
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && phaseRef.current === 'review') void apply()

@@ -473,6 +473,31 @@ export function NovaPage(): React.JSX.Element {
 
           {!phone && (
             <section className="card rounded-2xl p-5">
+              <h2 className="flex items-center gap-2 font-semibold">
+                Eyes &amp; pointing <span className="nova-tag">Screenshots go to Claude</span>
+              </h2>
+              <p className="mb-3 text-[13px] text-muted">
+                Ask about the app you’re using: “where’s export?”, “how do I save this as a PDF?”, “what does this button do?”. {name} reads that window’s buttons and text through Windows (the way screen readers do), takes one screenshot of just that window, and puts a ring around the right place. Nothing is looked at unless you ask.
+              </p>
+              <Row title="Look at my screen" hint="Only for requests about what’s on screen. Needs Claude connected.">
+                <Seg
+                  value={prefs?.novaEyes ?? 'auto'}
+                  options={[
+                    ['off', 'Off'],
+                    ['auto', 'When I ask']
+                  ]}
+                  onChange={(v) => save({ novaEyes: v as Prefs['novaEyes'] })}
+                />
+              </Row>
+              <Row title="Walk me through it" hint="Rings step 1, waits for your click there, then shows step 2 (up to 8 steps). Esc stops.">
+                <input type="checkbox" checked={prefs?.novaWalk !== false} onChange={(e) => save({ novaWalk: e.target.checked })} aria-label="Walkthroughs" />
+              </Row>
+              <p className="text-xs text-muted">{name} can’t see apps running as administrator. The ring and {name} itself never appear in screenshots.</p>
+            </section>
+          )}
+
+          {!phone && (
+            <section className="card rounded-2xl p-5">
               <h2 className="font-semibold">Look</h2>
               <p className="mb-3 text-[13px] text-muted">The floating orb. It ripples with {name}’s voice, breathes with yours while listening, and spins faster while thinking. It never shows up in screenshots or screen recordings.</p>
               <div className="mb-2 flex flex-wrap items-center gap-4">
@@ -640,7 +665,7 @@ export function NovaPage(): React.JSX.Element {
             <h2 className="font-semibold">Coming next</h2>
             <ul className="mt-2 flex flex-col gap-1.5 text-[13px] text-muted">
               <li>
-                <b className="text-ink">Eyes &amp; pointing</b>, then <b className="text-ink">hands</b> (clicking and typing in your apps), then <b className="text-ink">pixel cards</b>
+                <b className="text-ink">Hands</b> (pressing buttons and filling in fields in your apps), then <b className="text-ink">pixel cards</b>
               </li>
             </ul>
           </section>

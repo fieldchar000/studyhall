@@ -1464,3 +1464,10 @@ body:has(.space-shell)::before { display: none; }
 .nova-orb-btn { display: grid; place-items: center; border-radius: 50%; background: transparent; padding: 0; cursor: pointer; }
 .nova-orb-btn:focus-visible { outline: 2px solid #a8c8ff; outline-offset: 2px; }
 .nova-orb-preview { width: 92px; height: 92px; display: grid; place-items: center; border-radius: 16px; border: 1px dashed rgb(168 200 255 / .25); }
+
+/* Nova's pointer (v0.35): a pixel-cornered ring around the control to click, with a label */
+.nova-ring { position: fixed; border-radius: 10px; box-shadow: 0 0 0 3px #a8c8ff, 0 0 0 6px rgb(8 22 51 / .85), 0 0 26px 6px rgb(79 134 240 / .55); animation: nova-ring 1.4s steps(7) infinite; }
+@keyframes nova-ring { 50% { box-shadow: 0 0 0 3px #e2edff, 0 0 0 7px rgb(8 22 51 / .85), 0 0 34px 10px rgb(79 134 240 / .7); } }
+.nova-ring-label { position: fixed; display: flex; align-items: center; gap: 8px; max-width: 260px; padding: 6px 12px; font: 600 13px/1.2 'Instrument Sans Variable', 'Segoe UI', sans-serif; color: #e8f0ff; background: #081633; box-shadow: 0 -3px 0 0 #3d74e0, 0 3px 0 0 #3d74e0, -3px 0 0 0 #3d74e0, 3px 0 0 0 #3d74e0, 0 0 22px rgb(79 134 240 / .4); }
+.nova-ring-step { font-size: 11px; color: #a8c8ff; }
+@media (prefers-reduced-motion: reduce) { .nova-ring { animation: none; } }

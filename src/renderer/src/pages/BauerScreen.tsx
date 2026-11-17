@@ -144,6 +144,27 @@ export function OrbWindow(): React.JSX.Element {
   )
 }
 
+// ---------- Pointing: a ring around one control on your screen ----------
+
+export function PointWindow(): React.JSX.Element {
+  const [p, setP] = useState<{ rect: { x: number; y: number; width: number; height: number }; label: string; step: string } | null>(null)
+  useEffect(() => api.bauer.onPoint(setP), [])
+  if (!p) return <div className="fixed inset-0" />
+  const pad = 8
+  const r = { x: p.rect.x - pad, y: p.rect.y - pad, w: p.rect.width + pad * 2, h: p.rect.height + pad * 2 }
+  // The label sits below the ring, or above it near the bottom of the screen.
+  const below = r.y + r.h + 46 < window.innerHeight
+  return (
+    <div className="pointer-events-none fixed inset-0 select-none">
+      <div className="nova-ring" style={{ left: r.x, top: r.y, width: r.w, height: r.h }} />
+      <div className="nova-ring-label" style={{ left: Math.max(8, Math.min(window.innerWidth - 260, r.x)), top: below ? r.y + r.h + 10 : r.y - 40 }}>
+        {p.step && <span className="nova-ring-step">{p.step}</span>}
+        {p.label}
+      </div>
+    </div>
+  )
+}
+
 // ---------- Cards beside your work ----------
 
 export function CardsWindow(): React.JSX.Element {

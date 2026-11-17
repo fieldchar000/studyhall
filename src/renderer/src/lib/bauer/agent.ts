@@ -480,6 +480,14 @@ export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad
   // Small talk, one word, half a sentence: say nothing, do nothing, log nothing.
   const nothing = { reply: source === 'typed' ? 'I didn’t find anything to do in that.' : '', actions: [] as BriefAction[], logId: null, ignored: true }
   if (isChitChat(text)) return nothing
+  // About the app on your screen ("where's export?", "how do I save this as a PDF?")? Look and point.
+  if (onPc() && looksAtScreen(text)) {
+    const said = await api.eyes.help(text).catch((e) => `I couldn’t look at your screen: ${e instanceof Error ? e.message : String(e)}`)
+    if (said) {
+      await logAnswer(text, said, source)
+      return { reply: said, actions: [], logId: null }
+    }
+  }
   const topic = onPc() ? explainTopicFrom(text) : null
   if (topic) {
     const reply = await explainTopic(topic)
@@ -501,6 +509,18 @@ export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad
   const r = await runBauer(text, { source, mode })
   if (!r.actions.length) return nothing
   return { reply: r.reply, actions: r.actions, logId: r.logId }
+}
+
+/** Is this about what's on your screen (rather than your tasks, calendar or notes)? */
+export function looksAtScreen(t: string): boolean {
+  // Drop a leading "Hey Nova," first.
+  const s = t.toLowerCase().replace(/^\W*(hey|hi|okay|ok)\W+\w+\W*/, '').trim()
+  // Things Studyhall itself keeps: those go to the usual actions and answers.
+  if (/\b(tasks?|to-?dos?|calendar|lectures?|deadlines?|exams?|assignments?|habits?|journal|remind(er)?s?|timer|focus|budgets?|spent|grades?|flashcards?|decks?|inbox|check-?in|my notes?)\b/.test(s)) return false
+  return (
+    /\b(on (my|the|this) screen|this (page|window|app|site|website|document|doc|file|button|menu|tab|box|field|thing|bit|part|error|message|option|setting|chart|table|cell|slide|link|icon|code|graph)|that (button|menu|tab|option|icon|link)|in (this|the) (app|window|page|document))\b/.test(s) ||
+    /^(how (do|can|would|should) i|where('s| is| are| do i| can i)|which (button|menu|option|tab)|show me (how|where)|walk me through|help me (find|with this)|what (does|do) (this|that|these)|what('s| is) (this|that)\b|explain (this|that)\b|(click|press|tap) )/.test(s)
+  )
 }
 
 /** A short spoken answer from Claude, for questions your own notes can't answer. */

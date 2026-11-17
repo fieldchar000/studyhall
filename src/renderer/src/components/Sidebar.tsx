@@ -233,7 +233,7 @@ export function Sidebar(): React.JSX.Element {
           onClick={() => void startBrief()}
           className="grid w-9 shrink-0 place-items-center rounded-md border border-line bg-panel text-muted transition-colors hover:text-ink"
           title="Brief Bauer — tell Studyhall what to add, cancel or log"
-          aria-label="Brief Bauer by voice"
+          aria-label="Talk to Nova"
         >
           <Icon name="mic" size={15} />
         </button>
@@ -300,7 +300,7 @@ export function MobileBar(): React.JSX.Element {
         <div className="min-w-0 flex-1 truncate text-[19px] font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
           {title}
         </div>
-        <button className="flex h-11 w-11 items-center justify-center rounded-lg text-ink" onClick={() => void startBrief()} aria-label="Brief Bauer by voice">
+        <button className="flex h-11 w-11 items-center justify-center rounded-lg text-ink" onClick={() => void startBrief()} aria-label="Talk to Nova">
           <Icon name="mic" size={20} />
         </button>
         <button className="flex h-11 w-11 items-center justify-center rounded-lg text-ink" onClick={() => openSearch()} aria-label="Search">

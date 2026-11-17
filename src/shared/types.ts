@@ -918,6 +918,7 @@ export type VoiceCommand =
   | { type: 'finish' } // talk key released: stop recording and write it down
   | { type: 'cancel' } // talk key turned into a shortcut: forget it
   | { type: 'type' } // Ctrl+Shift tapped: open the typing box
+  | { type: 'say'; text: string } // say this (the next step of a walkthrough)
 
 /** Nova's new ears (Parakeet + wake word), PC only. */
 export interface EarsStatus {
@@ -984,6 +985,8 @@ export interface Prefs {
   novaSpeed?: number // how fast Nova talks, 0.8–1.3 (default 1.05)
   novaOrbSize?: 'small' | 'default' | 'cursor' // the floating orb (default default)
   novaDrift?: boolean // the orb bobs gently while idle (default on)
+  novaEyes?: 'off' | 'auto' // look at your screen when a request needs it (default auto)
+  novaWalk?: boolean // walkthroughs wait for your click, then show the next step (default on)
 }
 
 /** The API the preload script exposes to the UI as window.api. */
@@ -1161,6 +1164,12 @@ export interface Api {
     /** (listening window) write down a recording */
     transcribe(samples: Float32Array): Promise<string>
   }
+  /** Nova's eyes and pointing (PC only). */
+  eyes: {
+    /** Look at the app you're using and help (points, and walks you through). Returns what to say, or null if the eyes are off. */
+    help(text: string): Promise<string | null>
+    stop(): Promise<void>
+  }
   /** Nova's voice (Kokoro, offline; PC only). */
   mouth: {
     status(): Promise<EarsStatus>
@@ -1207,6 +1216,8 @@ export interface Api {
     /** (orb window) loudness to ripple with: Nova's voice (every 40 ms) or your microphone */
     onLevels(cb: (l: { kind: 'voice'; env: number[] } | { kind: 'mic'; v: number }) => void): () => void
     voiceLevels(env: number[]): void
+    /** (pointer window) where to draw the ring, or null to clear it */
+    onPoint(cb: (p: { rect: { x: number; y: number; width: number; height: number }; label: string; step: string } | null) => void): () => void
     micLevel(v: number): void
     orb(state: OrbState, text?: string): void
     mouse(over: boolean): void

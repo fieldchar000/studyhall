@@ -15,10 +15,10 @@ const isVoice = location.hash === '#voice'
 if (isVoice) document.documentElement.classList.add('bauer-voice')
 const VoicePanel = lazy(() => import('@/pages/Voice'))
 // Bauer on the PC screen: the floating orb, cards beside your work, circle-to-ask.
-const screenPart = ['#orb', '#cards', '#circle'].includes(location.hash) ? location.hash : null
+const screenPart = ['#orb', '#cards', '#circle', '#point'].includes(location.hash) ? location.hash : null
 const BauerScreen = lazy(async () => {
   const m = await import('@/pages/BauerScreen')
-  return { default: screenPart === '#orb' ? m.OrbWindow : screenPart === '#cards' ? m.CardsWindow : m.CircleWindow }
+  return { default: screenPart === '#orb' ? m.OrbWindow : screenPart === '#cards' ? m.CardsWindow : screenPart === '#point' ? m.PointWindow : m.CircleWindow }
 })
 if (screenPart) document.documentElement.classList.add('bauer-overlay')
 

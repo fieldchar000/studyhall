@@ -15,6 +15,7 @@ let webPrefs: Electron.WebPreferences = {}
 let orbWin: BrowserWindow | null = null
 let cardsWin: BrowserWindow | null = null
 let circleWin: BrowserWindow | null = null
+let pointWin: BrowserWindow | null = null
 let cards: BauerCard[] = []
 let quitting = false
 let startBrief: () => void = () => {}
@@ -119,7 +120,7 @@ function followCursor(): void {
 export function setBauerSuspended(on: boolean): void {
   suspended = on
   if (on) {
-    for (const w of [orbWin, cardsWin, circleWin]) if (w && !w.isDestroyed()) w.hide()
+    for (const w of [orbWin, cardsWin, circleWin, pointWin]) if (w && !w.isDestroyed()) w.hide()
     shot = null
   }
   setShortcut(!on)
@@ -128,8 +129,8 @@ export function setBauerSuspended(on: boolean): void {
 
 export function closeBauerWindows(): void {
   quitting = true
-  for (const w of [orbWin, cardsWin, circleWin]) w?.destroy()
-  orbWin = cardsWin = circleWin = null
+  for (const w of [orbWin, cardsWin, circleWin, pointWin]) w?.destroy()
+  orbWin = cardsWin = circleWin = pointWin = null
 }
 
 const overlayWindow = (bounds: Electron.Rectangle, hash: string, focusable = false): BrowserWindow => {
@@ -301,6 +302,33 @@ export function takeShot(): { image: string; width: number; height: number } | n
 function closeCircle(): void {
   circleWin?.hide()
   shot = null
+}
+
+// ---------- Pointing (eyes): a ring around one control on your screen ----------
+
+/** Show the pointer around a screen area (DIP). It never catches clicks and never shows in screenshots. */
+export function showPointer(rect: Electron.Rectangle, label: string, step: string): void {
+  if (suspended) return
+  const display = screen.getDisplayMatching(rect)
+  const b = display.bounds
+  if (!pointWin || pointWin.isDestroyed()) {
+    pointWin = overlayWindow(b, '#point')
+    pointWin.setIgnoreMouseEvents(true)
+    pointWin.on('closed', () => (pointWin = null))
+  } else if (!OFFSCREEN) pointWin.setBounds(b)
+  const w = pointWin
+  const send = (): void => {
+    w.webContents.send('bauer:point', { rect: { x: rect.x - b.x, y: rect.y - b.y, width: rect.width, height: rect.height }, label, step })
+    w.showInactive()
+  }
+  if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)
+  else send()
+}
+
+export function hidePointer(): void {
+  if (!pointWin || pointWin.isDestroyed()) return
+  pointWin.webContents.send('bauer:point', null)
+  pointWin.hide()
 }
 
 // ---------- Wikipedia (for "explain …") ----------

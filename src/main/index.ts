@@ -47,8 +47,9 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   } else if (why !== 'not connected' && prefs.novaOffline === false) throw new Error(`Nova is paused because ${why}.`)
   return aiChat(messages, schema, maxTokens)
 }
-import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary } from './bauer'
-import { startKeys, stopKeys } from './voice'
+import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer } from './bauer'
+import { startKeys, stopKeys, voiceSay } from './voice'
+import { helpOnScreen, pointerHooks, stopEyes, stopWalkthrough } from './eyes'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
@@ -251,6 +252,7 @@ function bauerAway(away: boolean): void {
   setVoiceSuspended(off)
   setBauerSuspended(off)
   setClaudeWarm(!off) // no Claude sessions waiting while Studyhall is closed
+  if (off) stopEyes()
   if (off) stopAi()
 }
 
@@ -430,6 +432,13 @@ if (!app.requestSingleInstanceLock()) {
           if (!isVoiceContents(e.sender) || !(samples instanceof Float32Array)) throw new Error('Not allowed')
           return transcribeEars(samples)
         })
+        handle('eyes:help', async (_e, text: string) => {
+          const p = getPrefs()
+          if (p.novaEyes === 'off') return null
+          if (claudeBlocked(p)) return 'To look at your screen I need Claude. Connect it on my page in Studyhall.'
+          return helpOnScreen(String(text).slice(0, 500))
+        })
+        handle('eyes:stop', () => stopWalkthrough())
         handle('mouth:status', () => mouthStatus())
         handle('mouth:install', () => installMouth())
         handle('mouth:remove', () => removeMouth())
@@ -475,6 +484,11 @@ if (!app.requestSingleInstanceLock()) {
     })
     configureEars((st) => broadcast('ears:status', st))
     configureMouth((st) => broadcast('mouth:status', st))
+    pointerHooks.show = showPointer
+    pointerHooks.hide = hidePointer
+    pointerHooks.say = voiceSay
+    pointerHooks.prefs = getPrefs
+    pointerHooks.ask = (messages, schema) => claudeChat(messages, schema, getPrefs(), 'look')
     configureAi((st) => broadcast('ai:status', st))
     configureVoice({
       url: appUrl,
@@ -582,6 +596,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => app.quit())
   app.on('will-quit', () => {
     setClaudeWarm(false) // close waiting Claude Code sessions
+    stopEyes()
     closeAllVideoRooms()
     stopOculus()
     stopLanShare()
