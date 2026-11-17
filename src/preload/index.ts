@@ -235,6 +235,18 @@ const api: Api = {
     goto: (page) => ipcRenderer.invoke('app:goto', page),
     openUrl: (url) => ipcRenderer.invoke('app:openUrl', url)
   },
+  ears: {
+    status: () => ipcRenderer.invoke('ears:status'),
+    install: () => ipcRenderer.invoke('ears:install'),
+    remove: () => ipcRenderer.invoke('ears:remove'),
+    onStatus: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('ears:status', l)
+      return () => ipcRenderer.removeListener('ears:status', l)
+    },
+    feed: (samples) => ipcRenderer.send('voice:window', { type: 'feed', samples }),
+    transcribe: (samples) => ipcRenderer.invoke('ears:transcribe', samples)
+  },
   claude: {
     status: () => ipcRenderer.invoke('claude:status'),
     install: () => ipcRenderer.invoke('claude:install'),

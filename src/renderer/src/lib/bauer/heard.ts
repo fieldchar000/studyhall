@@ -3,17 +3,25 @@
 
 import { readCheckin, similarity } from '@/lib/brief'
 
-/** How "Hey Bauer" tends to come out of speech recognition. */
-const WAKE = /^(?:\W*(?:hey|hi|hay|a|okay|ok|oi)\W+)?\W*(?:bauer|bower|bowers|bauers|power|powers|tower|brower|bauer's|boa|bauder|baua|bow)\b\W*/i
+/** How each name tends to come out of speech recognition ("Hey Nova" → "hey nover", …). */
+const SOUNDS_LIKE: Record<string, string> = {
+  nova: 'nova|novah|nover|noah|no va|novak',
+  atlas: 'atlas|atlus|atless|at last|atlases',
+  onyx: 'onyx|onix|on x|onyxes|annex',
+  bauer: "bauer|bower|bowers|bauers|power|powers|tower|brower|bauer's|boa|bauder|baua|bow"
+}
+// Every name is accepted at the start, so changing the name never strands an old habit.
+const ANY_NAME = Object.values(SOUNDS_LIKE).join('|')
+const WAKE = new RegExp(`^(?:\\W*(?:hey|hi|hay|a|okay|ok|oi)\\W+)?\\W*(?:${ANY_NAME})\\b\\W*`, 'i')
 
-/** Remove a leading "Hey Bauer," from what was heard. */
+/** Remove a leading "Hey Nova," from what was heard. */
 export const stripWake = (t: string): string => t.replace(WAKE, '').trim()
 
-/** After a wake-word start, the recording should begin with something like "Hey Bauer".
+/** After a wake-word start, the recording should begin with something like "Hey Nova".
  *  (It holds ~1.3 s from before the wake word was spotted, so the real thing shows up.) */
 export function wakeWordHeard(t: string): boolean {
   const first = t.trim().split(/\s+/).slice(0, 4).join(' ')
-  return WAKE.test(first) || /^\W*(?:hey|hi|okay|ok)\W+\w+/i.test(first) && /\b(?:bauer|bower|power|tower|bowers?)\b/i.test(t.slice(0, 40))
+  return WAKE.test(first) || (/^\W*(?:hey|hi|okay|ok)\W+\w+/i.test(first) && new RegExp(`\\b(?:${ANY_NAME})\\b`, 'i').test(t.slice(0, 40)))
 }
 
 const CHITCHAT = /^(?:ok(?:ay)?|yes|yeah|yep|no|nope|nah|sure|thanks?|thank you|cheers|cool|nice|great|right|ready|done|oh(?: my)? god|oh no|hmm+|um+|uh+|what|huh|wait|sorry|hello|hi|hey|bye|good(?: night| morning)?|(?:hey |hi )?(?:man|bro|dude)?,? ?(?:what'?s up|how are you|how'?s it going))[\s!?.,]*$/i

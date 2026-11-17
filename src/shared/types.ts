@@ -910,7 +910,23 @@ export interface VoiceStatus {
   error: string | null
   state: VoiceState
 }
-export type VoiceCommand = { type: 'listen' } | { type: 'config'; wake: boolean; sensitivity: number } | { type: 'stop' }
+export type VoiceCommand =
+  | { type: 'listen'; ptt?: boolean }
+  | { type: 'config'; wake: boolean; sensitivity: number; ears?: boolean; name?: NovaName }
+  | { type: 'stop' }
+  | { type: 'wake' } // the new ears heard "Hey <name>"
+  | { type: 'finish' } // talk key released: stop recording and write it down
+  | { type: 'cancel' } // talk key turned into a shortcut: forget it
+  | { type: 'type' } // Ctrl+Shift tapped: open the typing box
+
+/** Nova's new ears (Parakeet + wake word), PC only. */
+export interface EarsStatus {
+  installed: boolean
+  downloading: boolean
+  progress: number // 0..1
+  sizeMb: number
+  error: string | null
+}
 
 export type NovaName = 'Nova' | 'Atlas' | 'Onyx' | 'Bauer'
 export type NovaBrain = 'auto' | 'haiku' | 'sonnet' | 'opus'
@@ -1129,6 +1145,17 @@ export interface Api {
     goto(page: string): Promise<void>
     /** Open a website in the normal browser. */
     openUrl(url: string): Promise<void>
+  }
+  /** Nova's new ears (PC only). */
+  ears: {
+    status(): Promise<EarsStatus>
+    install(): Promise<EarsStatus>
+    remove(): Promise<EarsStatus>
+    onStatus(cb: (s: EarsStatus) => void): () => void
+    /** (listening window) microphone audio while waiting for the wake word */
+    feed(samples: Float32Array): void
+    /** (listening window) write down a recording */
+    transcribe(samples: Float32Array): Promise<string>
   }
   /** Nova's Claude brain (PC only). */
   claude: {

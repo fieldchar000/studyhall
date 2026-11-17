@@ -4,13 +4,15 @@
 // to that window from app://studyhall/voice-models/. Nothing you say leaves the PC.
 
 import { app, BrowserWindow, screen } from 'electron'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, normalize } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import JSZip from 'jszip'
-import type { VoiceCommand, VoiceState, VoiceStatus } from '@shared/types'
+import type { NovaName, VoiceCommand, VoiceState, VoiceStatus } from '@shared/types'
 import { getPrefs } from './prefs'
+import { earsStatus, unloadEars, warmEars } from './ears'
 
 export const VOICE_DIR = (): string => join(app.getPath('userData'), 'voice')
 export const VOSK_FILE = 'vosk-small-en.tar.gz'
@@ -238,9 +240,11 @@ function send(cmd: VoiceCommand): void {
 
 /** True while Studyhall is closed to the tray and "Bauer only while Studyhall is open" is on. */
 let suspended = false
-const wakeConfig = (): { wake: boolean; sensitivity: number } => {
+/** Nova's new ears are installed (Parakeet + "Hey <name>"); kept up to date by syncVoiceWindow. */
+let earsReady = false
+const wakeConfig = (): { wake: boolean; sensitivity: number; ears: boolean; name: NovaName } => {
   const p = getPrefs()
-  return { wake: !!p.voiceWake && !suspended, sensitivity: typeof p.voiceSensitivity === 'number' ? p.voiceSensitivity : 50 }
+  return { wake: !!p.voiceWake && !suspended, sensitivity: typeof p.voiceSensitivity === 'number' ? p.voiceSensitivity : 50, ears: earsReady, name: p.novaName ?? 'Nova' }
 }
 
 /** Studyhall closed (to the tray) or opened again: stop or restart listening for "Hey Bauer". */
@@ -251,12 +255,18 @@ export function setVoiceSuspended(on: boolean): void {
     send({ type: 'stop' })
     win.hide()
   }
+  if (on) {
+    stopKeys()
+    unloadEars() // frees Parakeet's memory while Studyhall is closed
+  } else startKeys()
   syncVoiceWindow()
 }
 
 /** Start/stop the hidden listener to match the settings (called at start-up and on changes). */
 export function syncVoiceWindow(): void {
-  void installed().then((ok) => {
+  void Promise.all([installed(), earsStatus()]).then(([vosk, ears]) => {
+    earsReady = ears.installed
+    const ok = vosk || earsReady
     const { wake } = wakeConfig()
     if (ok && wake) {
       ensureWindow()
@@ -273,6 +283,60 @@ export function startBrief(): void {
   place(H_SMALL)
   win!.showInactive()
   send({ type: 'listen' })
+}
+
+// ---------- Talk keys (hold Ctrl + Alt to talk, tap Ctrl + Shift to type) ----------
+
+let keys: ChildProcess | null = null
+let keysWanted = false
+/** Start the small helper that notices the talk keys (PC app only; never in automated tests). */
+export function startKeys(): void {
+  keysWanted = true
+  if (keys || suspended || process.env.STUDYHALL_OFFSCREEN === '1') return
+  const exe = app.isPackaged ? join(process.resourcesPath, 'nova-keys.exe') : join(app.getAppPath(), 'build', 'nova-keys.exe')
+  void stat(exe)
+    .then(() => {
+      if (keys || !keysWanted || suspended) return
+      const child = spawn(exe, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] })
+      keys = child
+      let buf = ''
+      child.stdout?.on('data', (d) => {
+        buf += String(d)
+        let i: number
+        while ((i = buf.indexOf(String.fromCharCode(10))) >= 0) {
+          const line = buf.slice(0, i).trim()
+          buf = buf.slice(i + 1)
+          onKey(line)
+        }
+      })
+      child.on('exit', () => {
+        if (keys === child) keys = null
+      })
+    })
+    .catch(() => console.warn('Nova: talk-key helper not found at', exe))
+}
+export function stopKeys(): void {
+  keysWanted = false
+  keys?.stdin?.end() // the helper quits when its input closes
+  keys = null
+}
+function onKey(e: string): void {
+  if (suspended) return
+  if (e === 'ptt-down') {
+    ensureWindow()
+    place(H_SMALL)
+    win!.showInactive()
+    send({ type: 'listen', ptt: true })
+    if (earsReady) warmEars()
+  } else if (e === 'ptt-up') send({ type: 'finish' })
+  else if (e === 'ptt-cancel') send({ type: 'cancel' })
+  else if (e === 'type') {
+    ensureWindow()
+    place(H_SMALL)
+    win!.show()
+    win!.focus()
+    send({ type: 'type' })
+  }
 }
 
 /** Bottom-right corner of the screen the mouse is on. */
@@ -312,6 +376,7 @@ export function voiceFromWindow(msg: { type: 'show'; height: number; focus?: boo
 
 let closingAll = false
 export function closeVoice(): void {
+  stopKeys()
   closingAll = true
   win?.destroy()
   win = null

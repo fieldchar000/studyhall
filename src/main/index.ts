@@ -25,6 +25,7 @@ import * as timer from './timer'
 import { createTray, updateTray } from './tray'
 import { loadWindowState, trackWindowState } from './windowState'
 import { aiChat, aiStatus, configureAi, downloadAi, downloadEyes, removeAi, removeEyes, stopAi, warmAi } from './ai'
+import { configureEars, earsStatus, feedEars, installEars, removeEars, transcribeEars } from './ears'
 import { claudeBlocked, claudeChat, claudeStatus, installClaude, refreshClaudeUsage, removeClaude, signInClaude, signOutClaude } from './claude'
 import type { AiMessage, AiPurpose } from '@shared/types'
 
@@ -43,6 +44,7 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   return aiChat(messages, schema, maxTokens)
 }
 import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary } from './bauer'
+import { startKeys, stopKeys } from './voice'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
@@ -401,6 +403,21 @@ if (!app.requestSingleInstanceLock()) {
         handle('ai:chat', (_e, messages, schema, maxTokens, purpose) =>
           brainChat(messages, schema, typeof maxTokens === 'number' ? maxTokens : undefined, ['act', 'chat', 'explain', 'look'].includes(purpose) ? purpose : 'act')
         )
+        handle('ears:status', () => earsStatus())
+        handle('ears:install', async () => {
+          const s = await installEars()
+          syncVoiceWindow()
+          return s
+        })
+        handle('ears:remove', async () => {
+          const s = await removeEars()
+          syncVoiceWindow()
+          return s
+        })
+        handle('ears:transcribe', (e, samples) => {
+          if (!isVoiceContents(e.sender) || !(samples instanceof Float32Array)) throw new Error('Not allowed')
+          return transcribeEars(samples)
+        })
         handle('claude:status', () => claudeStatus())
         handle('claude:install', () => installClaude())
         handle('claude:signIn', () => signInClaude())
@@ -419,15 +436,24 @@ if (!app.requestSingleInstanceLock()) {
         handle('app:openUrl', (_e, url: string) => (/^https?:\/\//i.test(String(url)) ? shell.openExternal(String(url)) : undefined))
       },
       onPrefs: (patch) => {
-        if ('voiceWake' in patch || 'voiceSensitivity' in patch) syncVoiceWindow()
+        if ('voiceWake' in patch || 'voiceSensitivity' in patch || 'novaName' in patch) syncVoiceWindow()
         if ('bauerOrb' in patch) syncOrb()
         if ('bauerOnlyWhenOpen' in patch) bauerAway(!mainWindow?.isVisible())
       }
     })
     // Messages from the Bauer panel window (show / hide / what it's doing).
     ipcMain.on('voice:window', (e, msg) => {
-      if (isVoiceContents(e.sender) && msg && typeof msg === 'object') voiceFromWindow(msg)
+      if (!isVoiceContents(e.sender) || !msg || typeof msg !== 'object') return
+      if (msg.type === 'feed') {
+        if (msg.samples instanceof Float32Array) {
+          const p = getPrefs()
+          void feedEars(e.sender, msg.samples, p.novaName ?? 'Nova', typeof p.voiceSensitivity === 'number' ? p.voiceSensitivity : 50).catch((err) => console.warn('Nova ears:', err))
+        }
+        return
+      }
+      voiceFromWindow(msg)
     })
+    configureEars((st) => broadcast('ears:status', st))
     configureAi((st) => broadcast('ai:status', st))
     configureVoice({
       url: appUrl,
@@ -488,7 +514,8 @@ if (!app.requestSingleInstanceLock()) {
     handleDeepLink(process.argv)
 
     createWindow()
-    syncVoiceWindow() // "Hey Bauer" keeps listening while Studyhall is in the tray
+    syncVoiceWindow() // "Hey Nova" keeps listening while Studyhall is in the tray
+    startKeys() // hold Ctrl + Alt to talk, tap Ctrl + Shift to type
     applyShortcut(getPrefs().quickCaptureShortcut)
     watchShortcut(applyShortcut)
 

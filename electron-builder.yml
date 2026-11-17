@@ -27,6 +27,8 @@ protocols:
 extraResources:
   - from: build/icon.png
     to: icon.png
+  - from: build/nova-keys.exe
+    to: nova-keys.exe
 win:
   target:
     - target: nsis

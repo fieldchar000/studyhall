@@ -5,6 +5,7 @@
 // Models are downloaded once by the main process and served from app://studyhall/voice-models/.
 
 import type { KaldiRecognizer, Model } from 'vosk-browser'
+import { api } from '@/lib/data'
 // ONNX Runtime's WebAssembly ships inside the app (Vite copies these next to the bundle).
 import ortMjs from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url'
 import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url'
@@ -54,6 +55,10 @@ class Engine {
   private asrLoading: Promise<void> | null = null
 
   wake = false
+  /** Nova's new ears are installed: the wake word and writing-down run in the main process (Parakeet). */
+  ears = false
+  /** Recording while the talk key (Ctrl + Alt) is held: it ends when you let go, not when you pause. */
+  private ptt = false
   /** True while the panel is busy with a briefing (the wake word is ignored then). */
   held = false
   sensitivity = 50
@@ -156,10 +161,15 @@ class Engine {
     this.kws = r
   }
 
+  /** The new ears heard "Hey <name>" (in the main process). */
+  externalWake(): void {
+    this.onWake()
+  }
+
   private onWake(): void {
     if (this.mode !== 'wake' || this.held || Date.now() - this.lastWake < 2500) return
     this.lastWake = Date.now()
-    this.newRecognizer() // forget what was heard so far
+    if (!this.ears) this.newRecognizer() // forget what was heard so far
     this.emit({ type: 'wake' })
     this.startRecording(true)
   }
@@ -174,7 +184,7 @@ class Engine {
     this.silentFrames = 0
     this.recFrames = 0
     this.mode = 'record'
-    void this.loadAsr().catch((e) => this.emit({ type: 'error', message: errText(e) })) // warm up while you talk
+    if (!this.ears) void this.loadAsr().catch((e) => this.emit({ type: 'error', message: errText(e) })) // warm up while you talk
   }
 
   private onFrame(f: Float32Array): void {
@@ -186,7 +196,8 @@ class Engine {
       this.preroll.push(f)
       if (this.preroll.length > 12) this.preroll.shift()
       this.noise = this.noise * 0.97 + Math.min(rms, this.noise * 3) * 0.03
-      this.kws?.acceptWaveformFloat(f, RATE)
+      if (this.ears) api.ears.feed(f)
+      else this.kws?.acceptWaveformFloat(f, RATE)
       return
     }
     if (this.mode !== 'record') return
@@ -202,7 +213,9 @@ class Engine {
     } else this.silentFrames++
     const seconds = (this.recFrames * FRAME) / RATE
     const pause = (this.silentFrames * FRAME) / RATE
-    if ((this.spoke && pause >= 1.7) || seconds >= 45) void this.finish()
+    if (this.ptt) {
+      if (seconds >= 120) void this.finish() // (the talk key is still held after two minutes)
+    } else if ((this.spoke && pause >= 1.7) || seconds >= 45) void this.finish()
     else if (!this.spoke && seconds >= 7) {
       this.mode = this.wake ? 'wake' : 'idle'
       this.rec = []
@@ -215,6 +228,8 @@ class Engine {
   async finish(): Promise<void> {
     if (this.mode !== 'record') return
     this.mode = 'busy'
+    const pushToTalk = this.ptt
+    this.ptt = false
     const chunks = this.rec
     this.rec = []
     this.emit({ type: 'recorded' })
@@ -227,6 +242,11 @@ class Engine {
         at += c.length
       }
       this.lastAudio = audio
+      // A quick tap of the talk key with nothing said: just close.
+      if (pushToTalk && !this.spoke) {
+        this.emit({ type: 'nothing' })
+        return
+      }
       const text = await this.transcribe(audio)
       this.emit(text ? { type: 'transcript', text } : { type: 'nothing' })
     } catch (e) {
@@ -238,6 +258,7 @@ class Engine {
 
   /** Abandon the current recording. */
   cancel(): void {
+    this.ptt = false
     if (this.mode === 'record') {
       this.rec = []
       this.mode = this.wake ? 'wake' : 'idle'
@@ -273,6 +294,12 @@ class Engine {
   }
 
   async transcribe(audio: Float32Array): Promise<string> {
+    if (this.ears) {
+      const t0 = Date.now()
+      const text = await api.ears.transcribe(audio)
+      this.note(`Parakeet wrote down ${(audio.length / 16000).toFixed(1)} s in ${Date.now() - t0} ms`)
+      return text.replace(/s+/g, ' ').trim()
+    }
     // Never leave the panel spinning: give up after two minutes.
     const timeout = new Promise<never>((_r, reject) => setTimeout(() => reject(new Error('Writing it down took too long. Try again, or restart Studyhall.')), 120_000))
     await Promise.race([this.loadAsr(), timeout])
@@ -292,12 +319,14 @@ class Engine {
   // ---------- Controls ----------
 
   /** Turn the always-on wake word on or off. */
-  async setWake(on: boolean, sensitivity: number): Promise<void> {
+  async setWake(on: boolean, sensitivity: number, ears = false): Promise<void> {
     this.sensitivity = sensitivity
-    if (on === this.wake && (this.mode !== 'idle' || !on)) return
+    const switchedEars = ears !== this.ears
+    this.ears = ears
+    if (on === this.wake && !switchedEars && (this.mode !== 'idle' || !on)) return
     this.wake = on
     if (on) {
-      await this.loadWake()
+      if (!ears) await this.loadWake()
       await this.openMic()
       if (this.mode === 'idle') this.mode = 'wake'
     } else {
@@ -309,10 +338,15 @@ class Engine {
   }
 
   /** Start listening for a briefing now (no wake word needed). */
-  async listen(): Promise<void> {
+  async listen(pushToTalk = false): Promise<void> {
     if (this.mode === 'record' || this.mode === 'busy') return
     await this.openMic()
     this.startRecording(false)
+    this.ptt = pushToTalk
+  }
+
+  get pushToTalk(): boolean {
+    return this.ptt
   }
 
   get recording(): boolean {

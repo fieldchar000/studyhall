@@ -10,3 +10,6 @@ castlabs-signup.cmd
 # Android signing key (the password lives in .env)
 *.keystore
 *.p12
+
+# built locally by scripts/build-helper.cjs
+build/nova-keys.exe

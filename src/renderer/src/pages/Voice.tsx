@@ -13,7 +13,7 @@ import { chime, engine } from '@/lib/voice/engine'
 import { BriefReview } from '@/components/BriefReview'
 import { Icon } from '@/components/ui'
 
-type Phase = 'idle' | 'starting' | 'listening' | 'thinking' | 'review' | 'done' | 'did' | 'nothing' | 'error'
+type Phase = 'idle' | 'starting' | 'listening' | 'typing' | 'thinking' | 'review' | 'done' | 'did' | 'nothing' | 'error'
 
 const currencySymbol = (code: string): string => {
   try {
@@ -115,13 +115,15 @@ export default function VoicePanel(): React.JSX.Element {
     [act]
   )
 
-  const listen = useCallback(async (): Promise<void> => {
+  const [name, setName] = useState('Nova')
+  const [typed, setTyped] = useState('')
+  const listen = useCallback(async (pushToTalk = false): Promise<void> => {
     setHeard(false)
     woke.current = false
     setPhase('starting')
     try {
       void api.ai.warm().catch(() => {})
-      await engine.listen()
+      await engine.listen(pushToTalk)
       chime()
       setPhase('listening')
     } catch (e) {
@@ -135,15 +137,26 @@ export default function VoicePanel(): React.JSX.Element {
     () =>
       api.voice.onCommand((c) => {
         if (c.type === 'config') {
+          if (c.name) setName(c.name)
           engine
-            .setWake(c.wake, c.sensitivity)
+            .setWake(c.wake, c.sensitivity, !!c.ears)
             .then(() => phaseRef.current === 'idle' && api.voice.report(engine.wake ? 'armed' : 'off'))
             .catch((e) => {
-              setMessage(`“Hey Bauer” couldn’t start: ${e instanceof Error ? e.message : String(e)}`)
+              setMessage(`“Hey ${c.name ?? 'Nova'}” couldn’t start: ${e instanceof Error ? e.message : String(e)}`)
               setPhase('error')
             })
-        } else if (c.type === 'listen') void listen()
+        } else if (c.type === 'listen') void listen(!!c.ptt)
         else if (c.type === 'stop') engine.cancel()
+        else if (c.type === 'wake') engine.externalWake()
+        else if (c.type === 'finish') void engine.finish()
+        else if (c.type === 'cancel') {
+          engine.cancel()
+          setPhase('idle')
+        } else if (c.type === 'type') {
+          engine.cancel()
+          setTyped('')
+          setPhase('typing')
+        }
       }),
     [listen]
   )
@@ -154,6 +167,7 @@ export default function VoicePanel(): React.JSX.Element {
       idle: engine.wake ? 'armed' : 'off',
       starting: 'loading',
       listening: 'listening',
+      typing: 'review',
       thinking: 'thinking',
       review: 'review',
       done: 'review',
@@ -173,7 +187,7 @@ export default function VoicePanel(): React.JSX.Element {
     }
     const el = card.current
     if (!el) return
-    const fit = (): void => api.voice.show(el.scrollHeight + 2, phase === 'review' || phase === 'error')
+    const fit = (): void => api.voice.show(el.scrollHeight + 2, phase === 'review' || phase === 'error' || phase === 'typing')
     fit()
     const ro = new ResizeObserver(fit)
     ro.observe(el)
@@ -221,16 +235,18 @@ export default function VoicePanel(): React.JSX.Element {
           <div className="font-serif text-[15px] leading-tight">
             {phase === 'starting' && 'Getting ready…'}
             {phase === 'listening' && (heard ? 'Listening…' : 'Go ahead — I’m listening')}
+            {phase === 'typing' && `Ask ${name}`}
             {phase === 'thinking' && 'On it…'}
-            {phase === 'did' && (did?.undone ? 'Undone' : did?.actions.length ? 'Done' : 'Bauer says')}
+            {phase === 'did' && (did?.undone ? 'Undone' : did?.actions.length ? 'Done' : `${name} says`)}
             {phase === 'review' && 'Is this right?'}
             {phase === 'done' && `Done — ${count} change${count === 1 ? '' : 's'} made`}
             {(phase === 'nothing' || phase === 'error') && (phase === 'nothing' ? 'Nothing heard' : 'Something went wrong')}
           </div>
           <div className="truncate text-[12px] text-muted">
-            {phase === 'listening' && 'Stop talking for a moment when you’re done.'}
-            {phase === 'thinking' && 'On this PC — nothing is sent anywhere.'}
-            {phase === 'did' && (did?.actions.length ? 'Undo it here or in the Bauer log.' : '')}
+            {phase === 'listening' && (engine.pushToTalk ? 'Let go of Ctrl + Alt when you’re done.' : 'Stop talking for a moment when you’re done.')}
+            {phase === 'typing' && 'Type, then press Enter. Esc closes.'}
+            {phase === 'thinking' && 'Thinking…'}
+            {phase === 'did' && (did?.actions.length ? `Undo it here or in ${name}’s log.` : '')}
             {phase === 'review' && 'Untick anything wrong, fix any words, then Apply.'}
             {(phase === 'nothing' || phase === 'error') && message}
           </div>
@@ -249,6 +265,27 @@ export default function VoicePanel(): React.JSX.Element {
             Cancel
           </button>
         </div>
+      )}
+
+      {phase === 'typing' && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            const t = typed.trim()
+            if (!t) return
+            woke.current = false
+            setText(t)
+            void act(t)
+          }}
+        >
+          <input
+            autoFocus
+            className="w-full select-text rounded-lg border border-line bg-canvas px-3 py-2 text-[14px] outline-none"
+            placeholder="Add milk to my tasks for tomorrow…"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+          />
+        </form>
       )}
 
       {phase === 'error' && (
@@ -289,8 +326,8 @@ export default function VoicePanel(): React.JSX.Element {
                 <Icon name="reset" /> {did.undone ? 'Undone' : 'Undo'}
               </button>
             )}
-            <button className="btn-ghost rounded-lg px-3 py-1.5 text-sm" onClick={() => void api.app.goto('bauer')}>
-              Bauer log
+            <button className="btn-ghost rounded-lg px-3 py-1.5 text-sm" onClick={() => void api.app.goto('nova')}>
+              {name}’s log
             </button>
             <button className="btn-ghost ml-auto rounded-lg px-3 py-1.5 text-sm" onClick={() => void listen()}>
               <Icon name="mic" /> More

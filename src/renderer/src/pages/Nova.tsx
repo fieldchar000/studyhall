@@ -2,7 +2,7 @@
 // and the hearing/voice settings. Nova was called Bauer before v0.30.
 
 import { useEffect, useRef, useState } from 'react'
-import type { ClaudeStatus, NovaBrain, NovaEffort, NovaName, Prefs } from '@shared/types'
+import type { ClaudeStatus, EarsStatus, NovaBrain, NovaEffort, NovaName, Prefs } from '@shared/types'
 import { api, useLive } from '@/lib/data'
 import { setPrefs, usePrefs } from '@/lib/prefs'
 import { navigate } from '@/lib/nav'
@@ -208,6 +208,21 @@ function useClaude(): ClaudeStatus | null {
   return s
 }
 
+function useEars(): EarsStatus | null {
+  const [s, setS] = useState<EarsStatus | null>(null)
+  useEffect(() => {
+    let off = (): void => {}
+    try {
+      void api.ears.status().then(setS).catch(() => setS(null))
+      off = api.ears.onStatus(setS)
+    } catch {
+      /* the pad has no new ears yet */
+    }
+    return off
+  }, [])
+  return s
+}
+
 const pct = (n: number | null | undefined): string => (n == null ? '–' : `${Math.round(n)}%`)
 const resetIn = (iso: string | null | undefined): string => {
   if (!iso) return ''
@@ -221,6 +236,8 @@ export function NovaPage(): React.JSX.Element {
   const phone = isPhoneApp()
   const prefs = usePrefs()
   const claude = useClaude()
+  const ears = useEars()
+  const [earsConfirm, setEarsConfirm] = useState(false)
   const name = prefs?.novaName ?? 'Nova'
   const brain = prefs?.novaBrain ?? 'auto'
   const effort = prefs?.novaEffort ?? 'medium'
@@ -268,7 +285,7 @@ export function NovaPage(): React.JSX.Element {
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-5xl font-semibold leading-none">{name}</h1>
           <p className="mt-2 max-w-[62ch] text-[15px] text-muted">
-            Your assistant, built into Studyhall. Talk with “Hey Bauer” or the Brief button for now; holding Ctrl + Alt to talk, “Hey {name}”, the new voice and the new orb arrive in the next updates.
+            Your assistant, built into Studyhall. Hold Ctrl + Alt anywhere and talk, tap Ctrl + Shift to type, or say “Hey {name}”.
           </p>
           <div className="mt-3 flex flex-wrap gap-2 text-[12.5px]">
             {status && (
@@ -355,7 +372,7 @@ export function NovaPage(): React.JSX.Element {
         <div className="flex min-w-0 flex-col gap-4">
           <section className="card rounded-2xl p-5">
             <h2 className="font-semibold">Name</h2>
-            <p className="mb-3 text-[13px] text-muted">What you call your assistant. From the next update the wake word follows the name (“Hey {name}”), with no download.</p>
+            <p className="mb-3 text-[13px] text-muted">What you call your assistant. The wake word follows the name (“Hey {name}”), with no extra download.</p>
             <div className="flex flex-wrap gap-2">
               {NAMES.map(({ n, hint }) => (
                 <button key={n} className="nova-name" aria-pressed={name === n} onClick={() => save({ novaName: n })}>
@@ -365,6 +382,66 @@ export function NovaPage(): React.JSX.Element {
               ))}
             </div>
           </section>
+
+          {!phone && ears && (
+            <section className="card rounded-2xl p-5">
+              <h2 className="flex items-center gap-2 font-semibold">
+                Ears <span className="nova-tag free">Free · on this PC</span>
+              </h2>
+              <p className="mb-3 text-[13px] text-muted">How {name} hears you. Your voice is written down on this PC by Parakeet, a free offline speech model, so it never leaves your computer.</p>
+              <Row title="Talk" hint="Hold, speak, let go. Works in any app.">
+                <span className="nova-keys">
+                  hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>
+                </span>
+              </Row>
+              <Row title="Type instead" hint="Opens a small box in the corner">
+                <span className="nova-keys">
+                  tap <kbd>Ctrl</kbd>+<kbd>Shift</kbd>
+                </span>
+              </Row>
+              <Row title={`Wake word: “Hey ${name}”`} hint="Listens for the name without pressing anything (switch it on below, under voice settings)">
+                <span className="text-xs text-muted">{prefs?.voiceWake ? 'On' : 'Off'}</span>
+              </Row>
+              <Row
+                title="Hearing model"
+                hint={ears.installed ? 'Parakeet and the wake-word listener are ready' : `Parakeet (writing down) and the “Hey ${name}” listener: ${ears.sizeMb} MB, downloaded once`}
+              >
+                {ears.installed ? (
+                  earsConfirm ? (
+                    <span className="flex items-center gap-2 text-[13px]">
+                      Remove them?
+                      <button
+                        className="nova-quiet danger"
+                        onClick={() => {
+                          setEarsConfirm(false)
+                          void api.ears.remove()
+                        }}
+                      >
+                        Remove
+                      </button>
+                      <button className="nova-quiet" onClick={() => setEarsConfirm(false)}>
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <span className="text-[13px] text-[#7ee2b8]">● Ready</span>
+                      <button className="nova-quiet" onClick={() => setEarsConfirm(true)}>
+                        Remove
+                      </button>
+                    </span>
+                  )
+                ) : ears.downloading ? (
+                  <span className="tabular-nums text-[13px] text-muted">Downloading… {Math.round(ears.progress * 100)}%</span>
+                ) : (
+                  <button className="btn-primary rounded-full px-4 py-1.5 text-sm font-semibold" onClick={() => void api.ears.install()}>
+                    Download ({ears.sizeMb} MB)
+                  </button>
+                )}
+              </Row>
+              {ears.error && <p className="text-sm text-danger">{ears.error}</p>}
+            </section>
+          )}
 
           <section className="card rounded-2xl p-5">
             <h2 className="flex items-center gap-2 font-semibold">
@@ -503,9 +580,6 @@ export function NovaPage(): React.JSX.Element {
           <section className="card rounded-2xl p-5">
             <h2 className="font-semibold">Coming next</h2>
             <ul className="mt-2 flex flex-col gap-1.5 text-[13px] text-muted">
-              <li>
-                <b className="text-ink">Ears:</b> hold Ctrl + Alt to talk, “Hey {name}”, and a much more accurate offline hearing model
-              </li>
               <li>
                 <b className="text-ink">Voice:</b> a natural free voice that runs on this PC
               </li>

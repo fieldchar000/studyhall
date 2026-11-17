@@ -42,6 +42,19 @@ export function VoiceCard(): React.JSX.Element {
   const [sens, setSens] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  // What to call the assistant, and which word wakes it (the old offline listener only knows "Bauer").
+  const nm = prefs?.novaName ?? 'Nova'
+  const [earsReady, setEarsReady] = useState(false)
+  useEffect(() => {
+    if (phone) return
+    try {
+      void api.ears.status().then((e) => setEarsReady(e.installed)).catch(() => {})
+      return api.ears.onStatus((e) => setEarsReady(e.installed))
+    } catch {
+      return undefined
+    }
+  }, [phone])
+  const wakeName = !phone && earsReady ? nm : 'Bauer'
 
   const savePrefs = (patch: Partial<Prefs>): Promise<unknown> => track(api.prefs.set(patch)).then(() => notifyChanged('prefs'))
 
@@ -105,14 +118,14 @@ export function VoiceCard(): React.JSX.Element {
   return (
     <section className="card mb-4 p-5">
       <h2 className="mb-1 flex items-center gap-2 font-semibold">
-        <Icon name="mic" /> Voice — “Hey Bauer”
+        <Icon name="mic" /> Voice — “Hey {wakeName}”
       </h2>
       <p className="mb-3 text-sm text-muted">
-        Tell Studyhall what to add, move, cancel or log, in your own words. Bauer does it straight away and writes everything in the{' '}
+        Tell Studyhall what to add, move, cancel or log, in your own words. {nm} does it straight away and writes everything in the{' '}
         <button className="text-accent underline" onClick={() => navigate({ name: 'bauer' })}>
-          Bauer log
+          {nm}’s log
         </button>
-        , where you can undo it. {phone ? 'Speech is understood by Android on this device.' : 'Speech is understood on this PC — nothing you say is sent anywhere.'}
+        , where you can undo it. {phone ? 'Speech is understood by Android on this device.' : 'Your voice is written down on this PC and never leaves it. With Claude connected, the written words (not your voice) go to Claude to be understood.'}
       </p>
 
       {!st ? null : !st.installed ? (
@@ -135,12 +148,12 @@ export function VoiceCard(): React.JSX.Element {
       ) : (
         <div className="flex flex-col gap-3">
           <button className="btn self-start" onClick={() => void startBrief()}>
-            <Icon name="mic" /> Brief Bauer now
+            <Icon name="mic" /> Talk to {nm} now
           </button>
           <label className="flex items-start gap-3 py-1">
             <input type="checkbox" className="mt-1" disabled={busy} checked={!!prefs?.voiceWake} onChange={(e) => void setWake(e.target.checked)} />
             <span>
-              <span className="block text-sm">Listen for “Hey Bauer”</span>
+              <span className="block text-sm">Listen for “Hey {wakeName}”</span>
               <span className="block text-xs text-muted">
                 {phone
                   ? 'Keeps working when Studyhall is closed, with a small “Listening” notification (Android requires it). Tap the notification’s Stop to switch off.'
@@ -186,7 +199,7 @@ export function VoiceCard(): React.JSX.Element {
           <label className="flex items-start gap-3 py-1">
             <input type="checkbox" className="mt-1" checked={prefs?.bauerTalk !== false} onChange={(e) => void savePrefs({ bauerTalk: e.target.checked })} />
             <span>
-              <span className="block text-sm">Bauer talks back</span>
+              <span className="block text-sm">{nm} talks back</span>
               <span className="block text-xs text-muted">He says out loud what he did, with the voice built into {phone ? 'your tablet' : 'Windows'}.</span>
             </span>
           </label>
@@ -194,13 +207,13 @@ export function VoiceCard(): React.JSX.Element {
             <input type="checkbox" className="mt-1" checked={!!prefs?.bauerConfirm} onChange={(e) => void savePrefs({ bauerConfirm: e.target.checked })} />
             <span>
               <span className="block text-sm">Ask before doing things</span>
-              <span className="block text-xs text-muted">Off: Bauer just does it (you can undo). On: you get a checklist to tick first.</span>
+              <span className="block text-xs text-muted">Off: {nm} just does it (you can undo). On: you get a checklist to tick first.</span>
             </span>
           </label>
           <label className="flex items-start gap-3 py-1">
             <input type="checkbox" className="mt-1" checked={prefs?.bauerOnlyWhenOpen !== false} onChange={(e) => void savePrefs({ bauerOnlyWhenOpen: e.target.checked })} />
             <span>
-              <span className="block text-sm">Bauer only while Studyhall is open</span>
+              <span className="block text-sm">{nm} only while Studyhall is open</span>
               <span className="block text-xs text-muted">{phone ? 'When you leave the app, Bauer stops listening until you come back.' : 'When you close the window (Studyhall keeps running in the tray) or quit, Bauer stops listening, leaves your screen and his AI shuts down. Open Studyhall to bring him back. Good for exams.'}</span>
             </span>
           </label>
