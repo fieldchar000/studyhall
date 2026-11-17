@@ -481,8 +481,8 @@ export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad
   const nothing = { reply: source === 'typed' ? 'I didn’t find anything to do in that.' : '', actions: [] as BriefAction[], logId: null, ignored: true }
   if (isChitChat(text)) return nothing
   // About the app on your screen ("where's export?", "how do I save this as a PDF?")? Look and point.
-  if (onPc() && looksAtScreen(text)) {
-    const said = await api.eyes.help(text).catch((e) => `I couldn’t look at your screen: ${e instanceof Error ? e.message : String(e)}`)
+  if (onPc() && (looksAtScreen(text) || wantsHands(text))) {
+    const said = await api.eyes.help(text, wantsHands(text)).catch((e) => `I couldn’t look at your screen: ${e instanceof Error ? e.message : String(e)}`)
     if (said) {
       await logAnswer(text, said, source)
       return { reply: said, actions: [], logId: null }
@@ -520,6 +520,17 @@ export function looksAtScreen(t: string): boolean {
   return (
     /\b(on (my|the|this) screen|this (page|window|app|site|website|document|doc|file|button|menu|tab|box|field|thing|bit|part|error|message|option|setting|chart|table|cell|slide|link|icon|code|graph)|that (button|menu|tab|option|icon|link)|in (this|the) (app|window|page|document))\b/.test(s) ||
     /^(how (do|can|would|should) i|where('s| is| are| do i| can i)|which (button|menu|option|tab)|show me (how|where)|walk me through|help me (find|with this)|what (does|do) (this|that|these)|what('s| is) (this|that)\b|explain (this|that)\b|(click|press|tap) )/.test(s)
+  )
+}
+
+/** Is this asking Nova to do something in the app on screen ("click export", "type my name in the search box")? */
+export function wantsHands(t: string): boolean {
+  const s = t.toLowerCase().replace(/^\W*(hey|hi|okay|ok)\W+\w+\W*/, '').trim()
+  if (/\b(tasks?|to-?dos?|calendar|lectures?|habits?|journal|remind(er)?s?|timer|focus|budgets?|flashcards?|inbox|check-?in)\b/.test(s)) return false
+  return (
+    /^(please |can you |could you |now )?(click|press|tap|hit|type|enter|fill (in|out)|tick|untick|check|uncheck|select|choose|pick|turn (on|off)|switch (on|off|to)|expand|collapse|open the \w+ (menu|tab|settings)|go to the \w+ (tab|page|menu))\b/.test(s) ||
+    /\b(do it|do that|do this) for me\s*[.!?]*$/.test(s) ||
+    /\bfor me\s*[.!?]*$/.test(s)
   )
 }
 

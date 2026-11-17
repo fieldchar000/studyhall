@@ -287,6 +287,32 @@ export function startBrief(): void {
   send({ type: 'listen' })
 }
 
+/** Ask you something in Nova's panel (Allow / Skip). Resolves false on Skip, Esc or after a minute. */
+let askSeq = 0
+const answers = new Map<number, (ok: boolean) => void>()
+export function voiceConfirm(question: string): Promise<boolean> {
+  if (suspended) return Promise.resolve(false)
+  ensureWindow()
+  place(H_SMALL)
+  win!.showInactive()
+  const id = ++askSeq
+  send({ type: 'confirm', id, question })
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      answers.delete(id)
+      resolve(false)
+    }, 60_000)
+    answers.set(id, (ok) => {
+      clearTimeout(t)
+      resolve(ok)
+    })
+  })
+}
+export function voiceAnswer(id: number, ok: boolean): void {
+  answers.get(id)?.(ok)
+  answers.delete(id)
+}
+
 /** Say something (e.g. the next step of a walkthrough), with Nova's voice. */
 export function voiceSay(text: string): void {
   if (suspended || !text) return

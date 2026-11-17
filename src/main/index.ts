@@ -48,7 +48,8 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   return aiChat(messages, schema, maxTokens)
 }
 import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer } from './bauer'
-import { startKeys, stopKeys, voiceSay } from './voice'
+import { startKeys, stopKeys, voiceAnswer, voiceConfirm, voiceSay } from './voice'
+import { doOnScreen, handsHooks, stopHands } from './hands'
 import { helpOnScreen, pointerHooks, stopEyes, stopWalkthrough } from './eyes'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
@@ -252,7 +253,10 @@ function bauerAway(away: boolean): void {
   setVoiceSuspended(off)
   setBauerSuspended(off)
   setClaudeWarm(!off) // no Claude sessions waiting while Studyhall is closed
-  if (off) stopEyes()
+  if (off) {
+    stopHands()
+    stopEyes()
+  }
   if (off) stopAi()
 }
 
@@ -432,13 +436,18 @@ if (!app.requestSingleInstanceLock()) {
           if (!isVoiceContents(e.sender) || !(samples instanceof Float32Array)) throw new Error('Not allowed')
           return transcribeEars(samples)
         })
-        handle('eyes:help', async (_e, text: string) => {
+        handle('eyes:help', async (_e, text: string, act: boolean) => {
           const p = getPrefs()
-          if (p.novaEyes === 'off') return null
+          if (p.novaEyes === 'off' && !(act && p.novaHands !== 'off')) return null
           if (claudeBlocked(p)) return 'To look at your screen I need Claude. Connect it on my page in Studyhall.'
+          // "Click export" with hands on: do it. Otherwise: show where, and walk you through.
+          if (act && p.novaHands && p.novaHands !== 'off') return doOnScreen(String(text).slice(0, 500))
           return helpOnScreen(String(text).slice(0, 500))
         })
-        handle('eyes:stop', () => stopWalkthrough())
+        handle('eyes:stop', () => {
+          stopWalkthrough()
+          stopHands()
+        })
         handle('mouth:status', () => mouthStatus())
         handle('mouth:install', () => installMouth())
         handle('mouth:remove', () => removeMouth())
@@ -473,6 +482,10 @@ if (!app.requestSingleInstanceLock()) {
     // Messages from the Bauer panel window (show / hide / what it's doing).
     ipcMain.on('voice:window', (e, msg) => {
       if (!isVoiceContents(e.sender) || !msg || typeof msg !== 'object') return
+      if (msg.type === 'confirm') {
+        voiceAnswer(Number(msg.id), !!msg.ok)
+        return
+      }
       if (msg.type === 'feed') {
         if (msg.samples instanceof Float32Array) {
           const p = getPrefs()
@@ -489,6 +502,12 @@ if (!app.requestSingleInstanceLock()) {
     pointerHooks.say = voiceSay
     pointerHooks.prefs = getPrefs
     pointerHooks.ask = (messages, schema) => claudeChat(messages, schema, getPrefs(), 'look')
+    handsHooks.ask = (messages, schema) => claudeChat(messages, schema, getPrefs(), 'look')
+    handsHooks.prefs = getPrefs
+    handsHooks.say = voiceSay
+    handsHooks.show = showPointer
+    handsHooks.hide = hidePointer
+    handsHooks.confirm = voiceConfirm
     configureAi((st) => broadcast('ai:status', st))
     configureVoice({
       url: appUrl,

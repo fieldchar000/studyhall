@@ -14,7 +14,7 @@ import { stopSpeaking } from '@/lib/voice/speak'
 import { BriefReview } from '@/components/BriefReview'
 import { Icon } from '@/components/ui'
 
-type Phase = 'idle' | 'starting' | 'listening' | 'typing' | 'thinking' | 'review' | 'done' | 'did' | 'nothing' | 'error'
+type Phase = 'idle' | 'starting' | 'listening' | 'typing' | 'confirm' | 'thinking' | 'review' | 'done' | 'did' | 'nothing' | 'error'
 
 const currencySymbol = (code: string): string => {
   try {
@@ -132,6 +132,12 @@ export default function VoicePanel(): React.JSX.Element {
 
   const [name, setName] = useState('Nova')
   const [typed, setTyped] = useState('')
+  const [asking, setAsking] = useState<{ id: number; question: string } | null>(null)
+  const answer = (ok: boolean): void => {
+    if (asking) api.eyes.confirm(asking.id, ok)
+    setAsking(null)
+    setPhase(ok ? 'thinking' : 'idle')
+  }
   const listen = useCallback(async (pushToTalk = false): Promise<void> => {
     setHeard(false)
     woke.current = false
@@ -163,7 +169,11 @@ export default function VoicePanel(): React.JSX.Element {
         } else if (c.type === 'listen') void listen(!!c.ptt)
         else if (c.type === 'stop') engine.cancel()
         else if (c.type === 'wake') engine.externalWake()
-        else if (c.type === 'say') {
+        else if (c.type === 'confirm') {
+          setAsking({ id: c.id, question: c.question })
+          setPhase('confirm')
+          chime()
+        } else if (c.type === 'say') {
           // The next step of a walkthrough: say it, and show it on the floating orb.
           api.bauer.orb('done', c.text)
           say(c.text)
@@ -188,6 +198,7 @@ export default function VoicePanel(): React.JSX.Element {
       starting: 'loading',
       listening: 'listening',
       typing: 'review',
+      confirm: 'review',
       thinking: 'thinking',
       review: 'review',
       done: 'review',
@@ -222,6 +233,7 @@ export default function VoicePanel(): React.JSX.Element {
   }, [phase, hover])
 
   const close = useCallback((): void => {
+    if (phaseRef.current === 'confirm') void api.eyes.stop().catch(() => {})
     engine.cancel()
     setPhase('idle')
     setActions([])
@@ -239,6 +251,7 @@ export default function VoicePanel(): React.JSX.Element {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
+        if (phaseRef.current === 'confirm') answer(false)
         stopSpeaking()
         void api.eyes.stop().catch(() => {})
         close()
@@ -260,6 +273,7 @@ export default function VoicePanel(): React.JSX.Element {
             {phase === 'starting' && 'Getting ready…'}
             {phase === 'listening' && (heard ? 'Listening…' : 'Go ahead — I’m listening')}
             {phase === 'typing' && `Ask ${name}`}
+            {phase === 'confirm' && 'May I?'}
             {phase === 'thinking' && 'On it…'}
             {phase === 'did' && (did?.undone ? 'Undone' : did?.actions.length ? 'Done' : `${name} says`)}
             {phase === 'review' && 'Is this right?'}
@@ -269,6 +283,7 @@ export default function VoicePanel(): React.JSX.Element {
           <div className="truncate text-[12px] text-muted">
             {phase === 'listening' && (engine.pushToTalk ? 'Let go of Ctrl + Alt when you’re done.' : 'Stop talking for a moment when you’re done.')}
             {phase === 'typing' && 'Type, then press Enter. Esc closes.'}
+            {phase === 'confirm' && 'The ring shows where. Nothing happens unless you allow it.'}
             {phase === 'thinking' && 'Thinking…'}
             {phase === 'did' && (did?.actions.length ? `Undo it here or in ${name}’s log.` : '')}
             {phase === 'review' && 'Untick anything wrong, fix any words, then Apply.'}
@@ -289,6 +304,20 @@ export default function VoicePanel(): React.JSX.Element {
             Cancel
           </button>
         </div>
+      )}
+
+      {phase === 'confirm' && asking && (
+        <>
+          <p className="text-[14px] leading-snug">{asking.question}</p>
+          <div className="flex gap-2">
+            <button className="btn-primary flex-1 justify-center py-1.5" onClick={() => answer(true)}>
+              Allow
+            </button>
+            <button className="btn-ghost flex-1 justify-center rounded-lg border border-line py-1.5 text-sm" onClick={() => answer(false)}>
+              Skip
+            </button>
+          </div>
+        </>
       )}
 
       {phase === 'typing' && (

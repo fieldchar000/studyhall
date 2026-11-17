@@ -248,8 +248,9 @@ const api: Api = {
     transcribe: (samples) => ipcRenderer.invoke('ears:transcribe', samples)
   },
   eyes: {
-    help: (text) => ipcRenderer.invoke('eyes:help', text),
-    stop: () => ipcRenderer.invoke('eyes:stop')
+    help: (text, act) => ipcRenderer.invoke('eyes:help', text, !!act),
+    stop: () => ipcRenderer.invoke('eyes:stop'),
+    confirm: (id, ok) => ipcRenderer.send('voice:window', { type: 'confirm', id, ok: !!ok })
   },
   mouth: {
     status: () => ipcRenderer.invoke('mouth:status'),

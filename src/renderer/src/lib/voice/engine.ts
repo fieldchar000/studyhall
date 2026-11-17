@@ -302,7 +302,7 @@ class Engine {
       const t0 = Date.now()
       const text = await api.ears.transcribe(audio)
       this.note(`Parakeet wrote down ${(audio.length / 16000).toFixed(1)} s in ${Date.now() - t0} ms`)
-      return text.replace(/s+/g, ' ').trim()
+      return text.replace(/\s+/g, ' ').trim()
     }
     // Never leave the panel spinning: give up after two minutes.
     const timeout = new Promise<never>((_r, reject) => setTimeout(() => reject(new Error('Writing it down took too long. Try again, or restart Studyhall.')), 120_000))

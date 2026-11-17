@@ -1471,3 +1471,7 @@ body:has(.space-shell)::before { display: none; }
 .nova-ring-label { position: fixed; display: flex; align-items: center; gap: 8px; max-width: 260px; padding: 6px 12px; font: 600 13px/1.2 'Instrument Sans Variable', 'Segoe UI', sans-serif; color: #e8f0ff; background: #081633; box-shadow: 0 -3px 0 0 #3d74e0, 0 3px 0 0 #3d74e0, -3px 0 0 0 #3d74e0, 3px 0 0 0 #3d74e0, 0 0 22px rgb(79 134 240 / .4); }
 .nova-ring-step { font-size: 11px; color: #a8c8ff; }
 @media (prefers-reduced-motion: reduce) { .nova-ring { animation: none; } }
+
+.nova-app { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--color-line); font-size: 12px; color: var(--color-muted); }
+.nova-app button { color: var(--color-muted); }
+.nova-app-add { border-radius: 999px; border: 1px dashed var(--color-line); background: transparent; color: var(--color-muted); font-size: 12px; padding: 3px 8px; }

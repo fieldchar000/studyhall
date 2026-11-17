@@ -919,6 +919,7 @@ export type VoiceCommand =
   | { type: 'cancel' } // talk key turned into a shortcut: forget it
   | { type: 'type' } // Ctrl+Shift tapped: open the typing box
   | { type: 'say'; text: string } // say this (the next step of a walkthrough)
+  | { type: 'confirm'; id: number; question: string } // hands: ask before doing something
 
 /** Nova's new ears (Parakeet + wake word), PC only. */
 export interface EarsStatus {
@@ -987,6 +988,8 @@ export interface Prefs {
   novaDrift?: boolean // the orb bobs gently while idle (default on)
   novaEyes?: 'off' | 'auto' // look at your screen when a request needs it (default auto)
   novaWalk?: boolean // walkthroughs wait for your click, then show the next step (default on)
+  novaHands?: 'off' | 'ask' | 'allowed' // pressing buttons / filling fields in your apps (default off)
+  novaHandsApps?: string[] // apps Nova may use without asking (Windows process names), when novaHands is 'allowed'
 }
 
 /** The API the preload script exposes to the UI as window.api. */
@@ -1167,8 +1170,10 @@ export interface Api {
   /** Nova's eyes and pointing (PC only). */
   eyes: {
     /** Look at the app you're using and help (points, and walks you through). Returns what to say, or null if the eyes are off. */
-    help(text: string): Promise<string | null>
+    help(text: string, act?: boolean): Promise<string | null>
     stop(): Promise<void>
+    /** (listening window) your answer to a hands question */
+    confirm(id: number, ok: boolean): void
   }
   /** Nova's voice (Kokoro, offline; PC only). */
   mouth: {

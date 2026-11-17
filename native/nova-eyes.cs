@@ -14,6 +14,7 @@
 //   {"cmd":"setValue","id":7,"text":"..."}  fill a text field
 //   {"cmd":"focus","id":7}           put the keyboard focus on it
 //   {"cmd":"waitClick","rect":[x,y,w,h],"timeoutMs":60000}  wait until you click inside that box
+//   {"cmd":"esc"}                    has Esc been pressed since the last time we asked? (stops Nova's hands)
 // Positions are physical screen pixels (this program is DPI-aware).
 
 using System;
@@ -123,11 +124,13 @@ static class NovaEyes
                     if (!e.TryGetCurrentPattern(ValuePattern.Pattern, out p)) throw new Exception("Not a text field");
                     var vp = (ValuePattern)p;
                     if (vp.Current.IsReadOnly) throw new Exception("That field is read-only");
+                    if (e.Current.IsPassword) throw new Exception("Nova never types into password fields");
                     vp.SetValue(r.ContainsKey("text") ? Convert.ToString(r["text"]) : "");
                     return Ok();
                 }
             case "focus": El(r).SetFocus(); return Ok();
             case "waitClick": return WaitClick(r);
+            case "esc": return Ok("pressed", (GetAsyncKeyState(0x1B) & 0x0001) != 0 || (GetAsyncKeyState(0x1B) & 0x8000) != 0);
             default: throw new Exception("unknown command");
         }
     }
@@ -185,6 +188,7 @@ static class NovaEyes
         cache.Add(AutomationElement.IsValuePatternAvailableProperty);
         cache.Add(AutomationElement.IsSelectionItemPatternAvailableProperty);
         cache.Add(AutomationElement.IsExpandCollapsePatternAvailableProperty);
+        cache.Add(AutomationElement.IsPasswordProperty);
         cache.TreeScope = TreeScope.Element;
 
         AutomationElementCollection all;
@@ -221,6 +225,7 @@ static class NovaEyes
                     { "rect", new[] { (int)b.X, (int)b.Y, (int)b.Width, (int)b.Height } },
                     { "enabled", c.IsEnabled }, { "actions", actions }
                 };
+                if (c.IsPassword) item["password"] = true; // Nova never types into these
                 string help = c.HelpText;
                 if (!string.IsNullOrEmpty(help) && help.Length < 120) item["hint"] = help;
                 (actions.Count > 0 ? list : rest).Add(item);

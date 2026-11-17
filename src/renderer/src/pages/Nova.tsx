@@ -163,6 +163,26 @@ const VOICES: { id: string; name: string; hint: string; line: string }[] = [
   { id: 'am_onyx', name: 'Onyx', hint: 'Low · US', line: 'I’m Onyx. What do you need?' }
 ]
 
+/** Apps on this PC Nova can be allowed to use (Windows process name → name you know). */
+const APP_NAMES: Record<string, string> = {
+  opera: 'Opera GX',
+  chrome: 'Google Chrome',
+  msedge: 'Microsoft Edge',
+  explorer: 'File Explorer',
+  notion: 'Notion',
+  obsidian: 'Obsidian',
+  excel: 'Excel',
+  winword: 'Word',
+  powerpnt: 'PowerPoint',
+  onenote: 'OneNote',
+  outlook: 'Outlook',
+  discord: 'Discord',
+  spotify: 'Spotify',
+  'notepad++': 'Notepad++',
+  notepad: 'Notepad',
+  studyhall: 'Studyhall'
+}
+
 function useEars(): EarsStatus | null {
   const [s, setS] = useState<EarsStatus | null>(null)
   useEffect(() => {
@@ -498,6 +518,58 @@ export function NovaPage(): React.JSX.Element {
 
           {!phone && (
             <section className="card rounded-2xl p-5">
+              <h2 className="flex items-center gap-2 font-semibold">
+                Hands <span className="nova-tag">Off until you turn it on</span>
+              </h2>
+              <p className="mb-3 text-[13px] text-muted">
+                Say “click export”, “type my name in the search box”, “turn on dark mode”, or “… for me”, and {name} does it in the app you’re using: pressing buttons, filling in fields, ticking boxes, choosing tabs. It works the controls through Windows, so it never moves your mouse or types with your keyboard. Esc stops it at once.
+              </p>
+              <Row title="Use my apps">
+                <Seg
+                  value={prefs?.novaHands ?? 'off'}
+                  options={[
+                    ['off', 'Off'],
+                    ['ask', 'Ask me each time'],
+                    ['allowed', 'Allowed apps only']
+                  ]}
+                  onChange={(v) => save({ novaHands: v as Prefs['novaHands'] })}
+                />
+              </Row>
+              <Row title="Allowed apps" hint="Used without asking when “Allowed apps only” is on. Other apps still ask.">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(prefs?.novaHandsApps ?? []).map((a) => (
+                    <span key={a} className="nova-app">
+                      {APP_NAMES[a.toLowerCase()] ?? a}
+                      <button aria-label={`Remove ${a}`} onClick={() => save({ novaHandsApps: (prefs?.novaHandsApps ?? []).filter((x) => x !== a) })}>
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  <select
+                    className="nova-app-add"
+                    value=""
+                    onChange={(e) => e.target.value && save({ novaHandsApps: [...new Set([...(prefs?.novaHandsApps ?? []), e.target.value])] })}
+                    aria-label="Add an app"
+                  >
+                    <option value="">+ Add</option>
+                    {Object.entries(APP_NAMES)
+                      .filter(([k]) => !(prefs?.novaHandsApps ?? []).some((a) => a.toLowerCase() === k))
+                      .map(([k, label]) => (
+                        <option key={k} value={k}>
+                          {label}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </Row>
+              <p className="text-xs text-muted">
+                Always asks first, in every mode: sending, posting, deleting, buying, paying, ordering, installing, submitting forms, signing out. Never types into password fields. Some controls only answer to a real mouse click: {name} rings those for you to click instead.
+              </p>
+            </section>
+          )}
+
+          {!phone && (
+            <section className="card rounded-2xl p-5">
               <h2 className="font-semibold">Look</h2>
               <p className="mb-3 text-[13px] text-muted">The floating orb. It ripples with {name}’s voice, breathes with yours while listening, and spins faster while thinking. It never shows up in screenshots or screen recordings.</p>
               <div className="mb-2 flex flex-wrap items-center gap-4">
@@ -665,7 +737,7 @@ export function NovaPage(): React.JSX.Element {
             <h2 className="font-semibold">Coming next</h2>
             <ul className="mt-2 flex flex-col gap-1.5 text-[13px] text-muted">
               <li>
-                <b className="text-ink">Hands</b> (pressing buttons and filling in fields in your apps), then <b className="text-ink">pixel cards</b>
+                <b className="text-ink">Pixel cards</b>: answers, timelines, charts, step diagrams and quizzes beside what you’re reading
               </li>
             </ul>
           </section>
