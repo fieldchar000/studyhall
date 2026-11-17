@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import type { AiStatus, BauerLogEntry } from '@shared/types'
-import { answerQuestion, isQuestion, runBauer, say, undoLog } from '@/lib/bauer/agent'
+import { handleSpeech, say, undoLog } from '@/lib/bauer/agent'
 import { api, useLive, useRows } from '@/lib/data'
 import { navigate } from '@/lib/nav'
 import { useMode } from '@/lib/profile'
@@ -41,7 +41,7 @@ export function BauerLogPage(): React.JSX.Element {
     setBusy(true)
     setReply('')
     try {
-      const r = isQuestion(t) ? await answerQuestion(t, 'typed') : (await runBauer(t, { source: 'typed', mode })).reply
+      const r = (await handleSpeech(t, 'typed', mode)).reply
       setReply(r)
       setText('')
       if (prefs?.bauerTalk !== false) say(r)

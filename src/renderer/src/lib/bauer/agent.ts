@@ -9,6 +9,12 @@ import { api, db } from '@/lib/data'
 import { SIMPLE_PAGES } from '@/lib/nav'
 import { buildBrain } from '@/lib/brain'
 import { ask } from '@/lib/brainAsk'
+import { isPhoneApp } from '@/lib/platform'
+import { explainTopic, explainTopicFrom } from './explain'
+
+/** Cards, circling and apps exist only on the PC. */
+const onPc = (): boolean => !isPhoneApp()
+const APP_LIST = ['spotify', 'calculator', 'notepad', 'file explorer', 'settings', 'camera', 'clock', 'calendar', 'mail', 'photos', 'snipping tool']
 
 export interface BauerResult {
   reply: string
@@ -32,7 +38,7 @@ export const isQuestion = (t: string): boolean => (QUESTION.test(t.trim()) || /\
 
 // ---------- Understanding with the local AI ----------
 
-const TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page'] as const
+const TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page', 'explain', 'look_at_screen', 'open_app'] as const
 type AiAction = {
   type: (typeof TYPES)[number]
   title?: string
@@ -119,6 +125,9 @@ function systemPrompt(ctx: BriefContext, now: Date): string {
     '- inbox: text, for anything else worth keeping.',
     '- open_website: url (full https link; for a topic use a search link like https://www.google.com/search?q=… or https://www.youtube.com/results?search_query=…), title = what it is.',
     `- open_page: page = one of ${SIMPLE_PAGES.join(', ')}.`,
+    '- explain: text = the topic, when they want something explained or taught ("explain black holes", "teach me integration").',
+    '- look_at_screen: when they want you to look at something on their screen ("what\'s this", "look at this", "help me with this question").',
+    `- open_app: text = one of ${APP_LIST}.`,
     '',
     'reply: one short, friendly sentence saying what you did, as Bauer ("Done. Gym is at 7 on Thursday."). If nothing to do, say so.',
     '',
@@ -278,6 +287,17 @@ function toActions(list: AiAction[], ctx: BriefContext, said: string, now: Date)
       case 'open_page':
         if (a.page && SIMPLE_PAGES.includes(a.page)) out.push({ ...common(), kind: 'open_page', page: a.page, label: a.page[0].toUpperCase() + a.page.slice(1) })
         break
+      case 'explain':
+        if (onPc() && (a.text || a.title)) out.push({ ...common(), kind: 'explain', topic: (a.text || a.title)! })
+        break
+      case 'look_at_screen':
+        if (onPc()) out.push({ ...common(), kind: 'circle' })
+        break
+      case 'open_app': {
+        const name = (a.text || a.title || '').toLowerCase()
+        if (onPc() && APP_LIST.includes(name)) out.push({ ...common(), kind: 'open_app', name })
+        break
+      }
     }
   }
   return out
@@ -346,6 +366,12 @@ function plainReply(actions: BriefAction[]): string {
         return `opened ${a.label || 'the website'}`
       case 'open_page':
         return `opened ${a.label}`
+      case 'explain':
+        return `put some cards about ${a.topic} beside your screen`
+      case 'circle':
+        return 'froze your screen — circle what you mean'
+      case 'open_app':
+        return `opened ${a.name}`
     }
   }
   const parts = actions.slice(0, 4).map(bit)
@@ -411,14 +437,39 @@ export async function undoLog(entry: BauerLogEntry): Promise<void> {
 
 /** Answer a question from everything you've saved (the Brain), and log it. */
 export async function answerQuestion(text: string, source: 'voice' | 'typed' | 'pad'): Promise<string> {
+  const { reply } = await findAnswer(text)
+  await logAnswer(text, reply, source)
+  return reply
+}
+
+async function findAnswer(text: string): Promise<{ reply: string; found: boolean }> {
   const a = ask(await buildBrain(), text)
   const lines = a.lines
     .slice(0, 3)
     .map((l) => `${l.text}${l.sub ? `, ${l.sub}` : ''}`.replace(/\s+/g, ' ').replace(/\s·\s/g, ', ').trim())
     .filter(Boolean)
   const reply = lines.length ? `${a.title}. ${lines.join('. ')}`.replace(/\.\./g, '.') : a.empty || 'I couldn’t find anything about that yet.'
-  await logAnswer(text, reply, source)
-  return reply
+  return { reply, found: lines.length > 0 }
+}
+
+/** Everything Bauer hears goes through here: explain, answer from your notes, or act. */
+export async function handleSpeech(text: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null }> {
+  const topic = onPc() ? explainTopicFrom(text) : null
+  if (topic) {
+    const reply = await explainTopic(topic)
+    await logAnswer(text, reply, source)
+    return { reply, actions: [], logId: null }
+  }
+  if (isQuestion(text)) {
+    const r = await findAnswer(text)
+    // Nothing in your own notes? On the PC, look it up and pin cards instead.
+    const what = /^(?:what|who)(?:'s| is| are| was| were)s+(?:a |an |the )?(.+?)[?.!]*$/i.exec(text.trim())?.[1]
+    const reply = !r.found && what && onPc() ? await explainTopic(what) : r.reply
+    await logAnswer(text, reply, source)
+    return { reply, actions: [], logId: null }
+  }
+  const r = await runBauer(text, { source, mode })
+  return { reply: r.reply, actions: r.actions, logId: r.logId }
 }
 
 /** Log a spoken answer to a question (nothing changed, so nothing to undo). */

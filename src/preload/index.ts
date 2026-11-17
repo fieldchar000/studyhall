@@ -240,12 +240,43 @@ const api: Api = {
     download: () => ipcRenderer.invoke('ai:download'),
     remove: () => ipcRenderer.invoke('ai:remove'),
     warm: () => ipcRenderer.invoke('ai:warm'),
-    chat: (messages, schema) => ipcRenderer.invoke('ai:chat', messages, schema),
+    chat: (messages, schema, maxTokens) => ipcRenderer.invoke('ai:chat', messages, schema, maxTokens),
+    downloadEyes: () => ipcRenderer.invoke('ai:downloadEyes'),
+    removeEyes: () => ipcRenderer.invoke('ai:removeEyes'),
     onStatus: (cb) => {
       const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
       ipcRenderer.on('ai:status', l)
       return () => ipcRenderer.removeListener('ai:status', l)
     }
+  },
+  bauer: {
+    cards: (cards) => ipcRenderer.invoke('bauer:cards', cards),
+    clearCards: () => ipcRenderer.invoke('bauer:clearCards'),
+    wiki: (topic) => ipcRenderer.invoke('bauer:wiki', topic),
+    circle: () => ipcRenderer.invoke('bauer:circle'),
+    openApp: (name) => ipcRenderer.invoke('bauer:openApp', name),
+    onCards: (cb) => {
+      const l = (_e: unknown, c: Parameters<typeof cb>[0]): void => cb(c)
+      ipcRenderer.on('bauer:cards', l)
+      ipcRenderer.send('bauer:window', { type: 'ready' })
+      return () => ipcRenderer.removeListener('bauer:cards', l)
+    },
+    onOrb: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('bauer:orb', l)
+      return () => ipcRenderer.removeListener('bauer:orb', l)
+    },
+    orb: (state, text) => ipcRenderer.send('bauer:window', { type: 'orb', state, text }),
+    mouse: (over) => ipcRenderer.send('bauer:window', { type: 'mouse', over }),
+    shot: () => ipcRenderer.invoke('bauer:shot'),
+    closeCircle: () => ipcRenderer.send('bauer:window', { type: 'closeCircle' }),
+    onCircle: (cb) => {
+      const l = (): void => cb()
+      ipcRenderer.on('bauer:circle', l)
+      return () => ipcRenderer.removeListener('bauer:circle', l)
+    },
+    listen: () => ipcRenderer.send('bauer:window', { type: 'listen' }),
+    hideOrb: () => ipcRenderer.send('bauer:window', { type: 'hideOrb' })
   }
 }
 

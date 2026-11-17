@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { describe, parseBrief, type BriefAction } from '@/lib/brief'
-import { answerQuestion, isQuestion, runBauer, say, undoLog } from '@/lib/bauer/agent'
+import { handleSpeech, say, undoLog } from '@/lib/bauer/agent'
 import { navigate } from '@/lib/nav'
 import { applyBrief, loadBriefContext } from '@/lib/briefApply'
 import { api } from '@/lib/data'
@@ -53,7 +53,7 @@ export function VoiceOverlay(): React.JSX.Element | null {
       }
       setPhase('thinking')
       try {
-        const r = isQuestion(t) ? { reply: await answerQuestion(t, 'pad'), actions: [] as BriefAction[], logId: null } : await runBauer(t, { source: 'pad', mode: profile.mode })
+        const r = await handleSpeech(t, 'pad', profile.mode)
         setCurrency(symbol(profile.currency || ''))
         setDid({ reply: r.reply, actions: r.actions, logId: r.logId, undone: false })
         setPhase('did')

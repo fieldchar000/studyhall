@@ -15,6 +15,7 @@ const DEFAULTS: Prefs = {
   notifyCheckin: true,
   bauerConfirm: false,
   bauerTalk: true,
+  bauerOrb: true,
   quickCaptureShortcut: 'CommandOrControl+Shift+Space',
   spotifyLinks: []
 }

@@ -267,6 +267,7 @@ function place(height: number): void {
   if (!win) return
   const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
   const h = Math.min(height, area.height - 32)
+  if (process.env.STUDYHALL_OFFSCREEN === '1') return void win.setBounds({ x: -30000, y: -30000, width: W, height: h }) // automated tests
   win.setBounds({ x: Math.round(area.x + area.width - W - 16), y: Math.round(area.y + area.height - h - 16), width: W, height: h })
 }
 
@@ -284,7 +285,7 @@ export function voiceFromWindow(msg: { type: 'show'; height: number; focus?: boo
   }
   if (msg.type === 'show') {
     place(Math.max(160, Math.min(900, Math.round(msg.height))))
-    if (msg.focus) {
+    if (msg.focus && process.env.STUDYHALL_OFFSCREEN !== '1') {
       win.show()
       win.focus()
     } else if (!win.isVisible()) win.showInactive()

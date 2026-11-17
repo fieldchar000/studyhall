@@ -13,10 +13,21 @@ import './lib/appearance' // theme + accent before the first paint
 const isCapture = location.hash === '#capture'
 const isVoice = location.hash === '#voice'
 const VoicePanel = lazy(() => import('@/pages/Voice'))
+// Bauer on the PC screen: the floating orb, cards beside your work, circle-to-ask.
+const screenPart = ['#orb', '#cards', '#circle'].includes(location.hash) ? location.hash : null
+const BauerScreen = lazy(async () => {
+  const m = await import('@/pages/BauerScreen')
+  return { default: screenPart === '#orb' ? m.OrbWindow : screenPart === '#cards' ? m.CardsWindow : m.CircleWindow }
+})
+if (screenPart) document.documentElement.classList.add('bauer-overlay')
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {isVoice ? (
+    {screenPart ? (
+      <Suspense fallback={null}>
+        <BauerScreen />
+      </Suspense>
+    ) : isVoice ? (
       <Suspense fallback={null}>
         <VoicePanel />
       </Suspense>

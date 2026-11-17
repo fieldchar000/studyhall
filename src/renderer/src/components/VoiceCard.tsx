@@ -197,6 +197,15 @@ export function VoiceCard(): React.JSX.Element {
               <span className="block text-xs text-muted">Off: Bauer just does it (you can undo). On: you get a checklist to tick first.</span>
             </span>
           </label>
+          {!phone && (
+            <label className="flex items-start gap-3 py-1">
+              <input type="checkbox" className="mt-1" checked={prefs?.bauerOrb !== false} onChange={(e) => void savePrefs({ bauerOrb: e.target.checked })} />
+              <span>
+                <span className="block text-sm">Show Bauer on screen</span>
+                <span className="block text-xs text-muted">A small glowing Bauer in the corner of your screen, over any app. Click him to talk; hover for “Circle”. Circle anything on screen with Ctrl+Alt+B.</span>
+              </span>
+            </label>
+          )}
           {!phone && <AiBrain />}
           {err && <p className="text-xs text-danger">{err}</p>}
           <details className="text-sm">
@@ -260,6 +269,38 @@ function AiBrain(): React.JSX.Element {
           )}
           {st.error && <p className="mt-1 text-xs text-danger">{st.error}</p>}
         </>
+      )}
+      {st.installed && (
+        <div className="mt-3 border-t border-line pt-3">
+          <div className="mb-1 flex items-center gap-2 font-semibold">
+            <Icon name="camera" size={15} className="text-brass" /> Bauer’s eyes
+            {st.eyes && <span className="ml-auto text-xs font-normal text-muted">Ready</span>}
+          </div>
+          {st.eyes ? (
+            <>
+              <p className="text-xs text-muted">Circle anything on screen (Ctrl+Alt+B, or hover Bauer → Circle) and ask about it, or have him explain it, make flashcards, add its dates or save it as a note. Runs on this PC.</p>
+              <button className="btn-ghost mt-2 -ml-2 text-xs" onClick={() => confirm('Delete Bauer’s eyes from this PC?') && void api.ai.removeEyes()}>
+                Remove ({(st.eyesSizeMb / 1000).toFixed(1)} GB)
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="mb-2 text-xs text-muted">A second free AI (Qwen3-VL 4B) that can look at pictures, so Bauer can see what you circle on screen. One-time download of {(st.eyesSizeMb / 1000).toFixed(1)} GB.</p>
+              {st.downloadingEyes ? (
+                <>
+                  <div className="h-2 overflow-hidden rounded-full bg-line">
+                    <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${Math.round(st.progress * 100)}%` }} />
+                  </div>
+                  <p className="mt-1 text-xs text-muted">{Math.round(st.progress * 100)}%</p>
+                </>
+              ) : (
+                <button className="btn" disabled={st.downloading} onClick={() => void api.ai.downloadEyes()}>
+                  Download eyes ({(st.eyesSizeMb / 1000).toFixed(1)} GB)
+                </button>
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   )

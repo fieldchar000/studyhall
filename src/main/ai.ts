@@ -1,7 +1,8 @@
-// Bauer's brain on the PC: a small AI model that runs on this computer, free and offline.
-// One-time download (~2.5 GB) of llama.cpp's server (open source) and the Qwen3 4B model.
-// The server only listens on 127.0.0.1, starts when Bauer needs it and stops after a while
-// of quiet so the graphics card is free again. Nothing you say leaves the PC.
+// Bauer's brain on the PC: small AI models that run on this computer, free and offline.
+//  • brain (2.5 GB): Qwen3 4B — understands what you say.
+//  • eyes (3 GB, optional): Qwen3-VL 4B — looks at what you circle on screen.
+// Both run on llama.cpp's server (open source), one at a time, only on 127.0.0.1. A server starts
+// when Bauer needs it and stops after a while of quiet so the graphics card is free again.
 
 import { app } from 'electron'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
@@ -10,29 +11,43 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { basename, dirname, join } from 'node:path'
 import JSZip from 'jszip'
-import type { AiStatus } from '@shared/types'
+import type { AiMessage, AiStatus } from '@shared/types'
 
+type Profile = 'text' | 'vision'
+interface FileSpec {
+  name: string
+  url: string
+  bytes: number
+}
+const HF = 'https://huggingface.co'
+const FILES: Record<Profile, FileSpec[]> = {
+  text: [{ name: 'qwen3-4b-instruct-2507-q4_k_m.gguf', url: `${HF}/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf`, bytes: 2_497_281_120 }],
+  vision: [
+    { name: 'qwen3vl-4b-instruct-q4_k_m.gguf', url: `${HF}/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen3VL-4B-Instruct-Q4_K_M.gguf`, bytes: 2_497_281_664 },
+    { name: 'mmproj-qwen3vl-4b-instruct-q8_0.gguf', url: `${HF}/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf`, bytes: 453_974_304 }
+  ]
+}
 const AI_DIR = (): string => join(app.getPath('userData'), 'ai')
 const SERVER_DIR = (): string => join(AI_DIR(), 'llama')
 const SERVER_EXE = (): string => join(SERVER_DIR(), 'llama-server.exe')
 const PID_FILE = (): string => join(AI_DIR(), 'server.pid')
-const MODEL = (): string => join(AI_DIR(), 'qwen3-4b-instruct-2507-q4_k_m.gguf')
-const MODEL_URL = 'https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
-const MODEL_BYTES = 2_497_281_120
+const path = (f: FileSpec): string => join(AI_DIR(), f.name)
 const SERVER_BYTES_GUESS = 45_000_000
 const IDLE_MS = 10 * 60_000
+const bytesOf = (p: Profile): number => FILES[p].reduce((n, f) => n + f.bytes, 0)
 
 const exists = async (p: string): Promise<boolean> => !!(await stat(p).catch(() => null))
-async function installed(): Promise<boolean> {
-  const m = await stat(MODEL()).catch(() => null)
-  return !!m && m.size === MODEL_BYTES && (await exists(SERVER_EXE()))
+async function installed(p: Profile): Promise<boolean> {
+  for (const f of FILES[p]) if ((await stat(path(f)).catch(() => null))?.size !== f.bytes) return false
+  return exists(SERVER_EXE())
 }
 
-let downloading = false
+let downloading: Profile | null = null
 let got = 0
-let total = MODEL_BYTES + SERVER_BYTES_GUESS
+let total = 1
 let error: string | null = null
 let proc: ChildProcess | null = null
+let running: Profile | null = null
 let port = 0
 let starting: Promise<number> | null = null
 let idleTimer: NodeJS.Timeout | null = null
@@ -49,7 +64,7 @@ async function killLeftover(): Promise<void> {
   const pid = Number((await readFile(PID_FILE(), 'utf8').catch(() => '')).trim())
   if (!pid) return
   execFile('tasklist', ['/FI', `PID eq ${pid}`, '/NH'], { windowsHide: true }, (_e, out) => {
-    if (/llama-server.exe/i.test(String(out))) {
+    if (/llama-server\.exe/i.test(String(out))) {
       try {
         process.kill(pid)
       } catch {
@@ -61,7 +76,17 @@ async function killLeftover(): Promise<void> {
 }
 
 export async function aiStatus(): Promise<AiStatus> {
-  return { installed: await installed(), downloading, progress: downloading ? Math.min(1, got / total) : 0, sizeMb: Math.round((MODEL_BYTES + SERVER_BYTES_GUESS) / 1e6), error, running: !!proc && port > 0 }
+  return {
+    installed: await installed('text'),
+    eyes: await installed('vision'),
+    downloading: downloading === 'text',
+    downloadingEyes: downloading === 'vision',
+    progress: downloading ? Math.min(1, got / total) : 0,
+    sizeMb: Math.round((bytesOf('text') + SERVER_BYTES_GUESS) / 1e6),
+    eyesSizeMb: Math.round(bytesOf('vision') / 1e6),
+    error,
+    running: !!proc && port > 0
+  }
 }
 const push = (): void => void aiStatus().then(notify)
 
@@ -106,16 +131,17 @@ async function serverZipUrl(): Promise<{ url: string; size: number }> {
   throw new Error('Couldn’t find the AI program for Windows')
 }
 
-export async function downloadAi(): Promise<AiStatus> {
-  if (downloading || (await installed())) return aiStatus()
-  downloading = true
+async function download(p: Profile): Promise<AiStatus> {
+  if (downloading || (await installed(p))) return aiStatus()
+  downloading = p
   error = null
   got = 0
+  total = bytesOf(p) + SERVER_BYTES_GUESS
   push()
   try {
     if (!(await exists(SERVER_EXE()))) {
       const { url, size } = await serverZipUrl()
-      total = MODEL_BYTES + size
+      total = bytesOf(p) + size
       const zipPath = join(AI_DIR(), 'llama.zip')
       await rm(`${zipPath}.part`, { force: true })
       await fetchTo(url, zipPath, size)
@@ -129,19 +155,30 @@ export async function downloadAi(): Promise<AiStatus> {
       await rm(zipPath, { force: true })
       if (!(await exists(SERVER_EXE()))) throw new Error('The AI program download looks incomplete')
     } else got += SERVER_BYTES_GUESS
-    if (!(await installed())) await fetchTo(MODEL_URL, MODEL(), MODEL_BYTES)
+    for (const f of FILES[p]) {
+      if ((await stat(path(f)).catch(() => null))?.size === f.bytes) got += f.bytes
+      else await fetchTo(f.url, path(f), f.bytes)
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
   } finally {
-    downloading = false
+    downloading = null
     push()
   }
   return aiStatus()
 }
+export const downloadAi = (): Promise<AiStatus> => download('text')
+export const downloadEyes = (): Promise<AiStatus> => download('vision')
 
 export async function removeAi(): Promise<AiStatus> {
   stopAi()
   await rm(AI_DIR(), { recursive: true, force: true })
+  push()
+  return aiStatus()
+}
+export async function removeEyes(): Promise<AiStatus> {
+  if (running === 'vision') stopAi()
+  for (const f of FILES.vision) await rm(path(f), { force: true })
   push()
   return aiStatus()
 }
@@ -177,46 +214,52 @@ export function stopAi(): void {
   idleTimer = null
   proc?.kill()
   proc = null
+  running = null
   port = 0
   starting = null
 }
 
 function touch(): void {
   if (idleTimer) clearTimeout(idleTimer)
-  idleTimer = setTimeout(stopAi, IDLE_MS)
+  idleTimer = setTimeout(() => {
+    stopAi()
+    push()
+  }, IDLE_MS)
 }
 
-/** Start the server (if it isn't already) and wait until it's ready. Returns its port. */
-export async function warmAi(): Promise<number> {
-  if (proc && port) {
+/** Start a server for this model (swapping out the other one) and wait until it's ready. Returns its port. */
+export async function warmAi(profile: Profile = 'text'): Promise<number> {
+  if (proc && port && running === profile) {
     touch()
     return port
   }
-  if (starting) return starting
+  if (starting) {
+    await starting.catch(() => 0)
+    if (proc && port && running === profile) return port
+  }
+  if (proc) stopAi()
   starting = (async () => {
-    if (!(await installed())) throw new Error('Bauer’s brain isn’t downloaded yet (Settings → Voice)')
+    if (!(await installed(profile))) throw new Error(profile === 'vision' ? 'Bauer’s eyes aren’t downloaded yet (Settings → Voice)' : 'Bauer’s brain isn’t downloaded yet (Settings → Voice)')
     const p = await freePort()
     const dev = await pickDevice()
+    const [model, mmproj] = FILES[profile].map(path)
     // One conversation at a time (-np 1) keeps it fast; on laptops with two graphics chips, use the real one.
-    const args = ['-m', MODEL(), '--host', '127.0.0.1', '--port', String(p), '-c', '8192', '-np', '1', '-ngl', '99', ...(dev ? ['--device', dev] : [])]
-    const child = spawn(SERVER_EXE(), args, {
-      cwd: SERVER_DIR(),
-      windowsHide: true,
-      stdio: ['ignore', 'ignore', 'pipe']
-    })
+    const args = ['-m', model, ...(mmproj ? ['--mmproj', mmproj] : []), '--host', '127.0.0.1', '--port', String(p), '-c', '8192', '-np', '1', '-ngl', '99', ...(dev ? ['--device', dev] : [])]
+    const child = spawn(SERVER_EXE(), args, { cwd: SERVER_DIR(), windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] })
     let log = ''
     child.stderr?.on('data', (d: Buffer) => (log = (log + d.toString()).slice(-4000)))
     child.on('exit', () => {
       if (proc === child) {
         proc = null
+        running = null
         port = 0
-        starting = null
         push()
       }
     })
     proc = child
+    running = profile
     void writeFile(PID_FILE(), String(child.pid ?? '')).catch(() => {})
-    const until = Date.now() + 120_000
+    const until = Date.now() + 150_000
     for (;;) {
       if (child.exitCode != null) throw new Error(`The AI stopped while starting: ${log.split('\n').filter(Boolean).slice(-2).join(' ')}`)
       const ok = await fetch(`http://127.0.0.1:${p}/health`)
@@ -244,10 +287,11 @@ export async function warmAi(): Promise<number> {
   }
 }
 
-/** One chat turn. With a JSON schema the answer is guaranteed to match it. */
-export async function aiChat(messages: { role: 'system' | 'user' | 'assistant'; content: string }[], schema?: object): Promise<string> {
-  const p = await warmAi()
-  const body: Record<string, unknown> = { messages, temperature: 0.2, max_tokens: 900 }
+/** One chat turn. With a JSON schema the answer is guaranteed to match it. Messages with pictures use the eyes. */
+export async function aiChat(messages: AiMessage[], schema?: object, maxTokens = 900): Promise<string> {
+  const vision = messages.some((m) => Array.isArray(m.content))
+  const p = await warmAi(vision ? 'vision' : 'text')
+  const body: Record<string, unknown> = { messages, temperature: 0.2, max_tokens: maxTokens }
   if (schema) body.response_format = { type: 'json_schema', json_schema: { name: 'bauer', schema, strict: true } }
   const res = await fetch(`http://127.0.0.1:${p}/v1/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   if (!res.ok) throw new Error(`The AI couldn’t answer (${res.status}): ${(await res.text()).slice(0, 200)}`)
@@ -255,4 +299,3 @@ export async function aiChat(messages: { role: 'system' | 'user' | 'assistant'; 
   touch()
   return data.choices[0]?.message?.content ?? ''
 }
-

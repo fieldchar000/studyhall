@@ -7,6 +7,7 @@ import { api, db } from './data'
 import { createTask } from './tasks'
 import { isPhoneApp } from './platform'
 import { navigate, SIMPLE_PAGES, type Route } from './nav'
+import { explainTopic } from './bauer/explain'
 
 /** Your open tasks, nearby events, habits and modules — what "cancel my gym session" can point at. */
 export async function loadBriefContext(): Promise<BriefContext> {
@@ -161,6 +162,15 @@ export async function applyBrief(actions: BriefAction[], mode: Mode): Promise<{ 
           if (!SIMPLE_PAGES.includes(a.page)) break
           if (isPhoneApp() || document.location.hash !== '#voice') navigate({ name: a.page } as Route)
           else await api.app.goto(a.page)
+          break
+        case 'explain':
+          await explainTopic(a.topic)
+          break
+        case 'circle':
+          await api.bauer.circle()
+          break
+        case 'open_app':
+          if (!(await api.bauer.openApp(a.name))) throw new Error(`Bauer can’t open ${a.name}`)
           break
       }
       count++

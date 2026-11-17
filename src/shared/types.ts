@@ -748,14 +748,37 @@ export type UndoStep = { op: 'created'; table: TableName; id: string } | { op: '
 
 /** Bauer's brain on the PC (a local AI model). */
 export interface AiStatus {
-  installed: boolean
+  installed: boolean // the brain (understands speech)
+  eyes: boolean // the eyes (looks at what you circle on screen)
   downloading: boolean
+  downloadingEyes: boolean
   progress: number // 0..1
   sizeMb: number
+  eyesSizeMb: number
   error: string | null
   running: boolean
 }
-export type AiMessage = { role: 'system' | 'user' | 'assistant'; content: string }
+export type AiPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+export type AiMessage = { role: 'system' | 'user' | 'assistant'; content: string | AiPart[] }
+
+/** A card Bauer puts beside your screen ("explain black holes", circle-and-ask answers). */
+export interface BauerCard {
+  id: string
+  kind: 'summary' | 'photo' | 'points' | 'timeline' | 'answer'
+  title: string
+  body?: string
+  image?: string // data: URL
+  items?: { label: string; detail?: string }[]
+  source?: string // e.g. "Wikipedia"
+  link?: string // https link to read more
+}
+export interface WikiSummary {
+  title: string
+  extract: string
+  image: string | null // data: URL
+  url: string
+}
+export type OrbState = 'idle' | 'listening' | 'thinking' | 'done' | 'error'
 
 export type MediaKind = 'book' | 'film' | 'show' | 'anime' | 'game' | 'podcast'
 export type MediaStatus = 'want' | 'doing' | 'done' | 'dropped'
@@ -908,6 +931,7 @@ export interface Prefs {
   voiceSensitivity?: number // 0–100, how readily "Hey Bauer" is accepted (default 50)
   bauerConfirm?: boolean // show the checklist before Bauer changes anything (default off: he just does it, with Undo)
   bauerTalk?: boolean // Bauer says out loud what he did (default on)
+  bauerOrb?: boolean // PC: Bauer floats at the edge of the screen (default on)
 }
 
 /** The API the preload script exposes to the UI as window.api. */
@@ -1080,7 +1104,27 @@ export interface Api {
     download(): Promise<AiStatus>
     remove(): Promise<AiStatus>
     warm(): Promise<void>
-    chat(messages: AiMessage[], schema?: object): Promise<string>
+    chat(messages: AiMessage[], schema?: object, maxTokens?: number): Promise<string>
     onStatus(cb: (s: AiStatus) => void): () => void
+    downloadEyes(): Promise<AiStatus>
+    removeEyes(): Promise<AiStatus>
+  }
+  /** Bauer on the PC screen: cards beside your work, circle-to-ask, apps (PC only). */
+  bauer: {
+    cards(cards: BauerCard[]): Promise<void>
+    clearCards(): Promise<void>
+    wiki(topic: string): Promise<WikiSummary | null>
+    circle(): Promise<void>
+    openApp(name: string): Promise<boolean>
+    // Used by the floating Bauer, the cards and the circle windows themselves:
+    onCards(cb: (cards: BauerCard[] | null) => void): () => void
+    onOrb(cb: (s: { state: OrbState; text?: string }) => void): () => void
+    orb(state: OrbState, text?: string): void
+    mouse(over: boolean): void
+    shot(): Promise<{ image: string; width: number; height: number } | null>
+    closeCircle(): void
+    onCircle(cb: () => void): () => void
+    listen(): void
+    hideOrb(): void
   }
 }

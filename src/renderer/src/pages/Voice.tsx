@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { VoiceState } from '@shared/types'
 import { describe, parseBrief, type BriefAction } from '@/lib/brief'
-import { answerQuestion, isQuestion, runBauer, say, undoLog } from '@/lib/bauer/agent'
+import { handleSpeech, say, undoLog } from '@/lib/bauer/agent'
 import { applyBrief, loadBriefContext } from '@/lib/briefApply'
 import { api } from '@/lib/data'
 import { chime, engine } from '@/lib/voice/engine'
@@ -59,7 +59,8 @@ export default function VoicePanel(): React.JSX.Element {
       }
       setPhase('thinking')
       try {
-        const r = isQuestion(t) ? { reply: await answerQuestion(t, 'voice'), actions: [] as BriefAction[], logId: null } : await runBauer(t, { source: 'voice', mode: profile.mode })
+        const r = await handleSpeech(t, 'voice', profile.mode)
+        api.bauer.orb('done', r.reply)
         setCurrency(currencySymbol(profile.currency || ''))
         setDid({ reply: r.reply, actions: r.actions, logId: r.logId, undone: false })
         setPhase('did')

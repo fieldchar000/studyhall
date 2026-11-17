@@ -86,6 +86,7 @@ function badgeIcon(text: string, color: [number, number, number]): NativeImage {
 const PHASE_LABEL = { focus: 'Focus', short_break: 'Short break', long_break: 'Long break' }
 
 export function createTray(iconPath: string, a: TrayActions): void {
+  if (process.env.STUDYHALL_OFFSCREEN === '1') return // automated tests: no tray icon
   actions = a
   idleIcon = nativeImage.createFromPath(iconPath).resize({ width: 32, height: 32 })
   tray = new Tray(idleIcon)

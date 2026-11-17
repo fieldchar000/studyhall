@@ -38,6 +38,9 @@ export type BriefAction = Common &
     | { kind: 'task_move'; id: string; title: string; due: string | null }
     | { kind: 'open_url'; url: string; label: string }
     | { kind: 'open_page'; page: string; label: string }
+    | { kind: 'explain'; topic: string }
+    | { kind: 'circle' }
+    | { kind: 'open_app'; name: string }
   )
 export type BriefKind = BriefAction['kind']
 
@@ -577,6 +580,12 @@ export function describe(a: BriefAction, currency = ''): { icon: string; verb: s
       return { icon: '🌐', verb: 'Open website', text: a.label || a.url, detail: a.url.replace(/^https?:\/\//, '').split('/')[0] }
     case 'open_page':
       return { icon: '📂', verb: 'Open', text: a.label, detail: '' }
+    case 'explain':
+      return { icon: '💡', verb: 'Explain', text: a.topic, detail: 'cards beside your screen' }
+    case 'circle':
+      return { icon: '⭕', verb: 'Look at the screen', text: 'circle what you mean', detail: '' }
+    case 'open_app':
+      return { icon: '🖥️', verb: 'Open app', text: a.name, detail: '' }
   }
 }
 

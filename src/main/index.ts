@@ -24,7 +24,8 @@ import { checkLifeReminders } from './lifeReminders'
 import * as timer from './timer'
 import { createTray, updateTray } from './tray'
 import { loadWindowState, trackWindowState } from './windowState'
-import { aiChat, aiStatus, configureAi, downloadAi, removeAi, warmAi } from './ai'
+import { aiChat, aiStatus, configureAi, downloadAi, downloadEyes, removeAi, removeEyes, warmAi } from './ai'
+import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, showCards, startCircle, syncOrb, takeShot, wikiSummary } from './bauer'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
@@ -208,7 +209,7 @@ function showWindow(page?: string): void {
 // Keep notification objects alive until they're dismissed, or click handlers get lost.
 const liveNotifications = new Set<Notification>()
 function notify(title: string, body: string, page?: string): void {
-  if (!Notification.isSupported()) return
+  if (!Notification.isSupported() || process.env.STUDYHALL_OFFSCREEN === '1') return // (tests stay silent)
   const n = new Notification({ title, body, icon: ICON_PATH })
   liveNotifications.add(n)
   const forget = (): boolean => liveNotifications.delete(n)
@@ -235,6 +236,13 @@ function createWindow(forceShow = false): void {
   trackWindowState(win)
   win.once('ready-to-show', () => {
     if (START_HIDDEN && !forceShow) return // stay in the tray when started with Windows
+    // Automated tests: render far off-screen without taking focus, so nothing appears for the user.
+    if (process.env.STUDYHALL_OFFSCREEN === '1') {
+      win.setPosition(-30000, -30000)
+      win.setSkipTaskbar(true)
+      win.showInactive()
+      return
+    }
     if (state.maximized) win.maximize()
     win.show()
   })
@@ -266,6 +274,7 @@ function createWindow(forceShow = false): void {
     mainWindow = null
     captureWindow?.destroy() // so the app can exit once the main window is gone
     closeVoice()
+    closeBauerWindows()
   })
   // Windows is shutting down / logging off: really quit instead of hiding to the tray.
   win.on('session-end', () => (quitting = true))
@@ -358,12 +367,21 @@ if (!app.requestSingleInstanceLock()) {
         handle('ai:download', () => downloadAi())
         handle('ai:remove', () => removeAi())
         handle('ai:warm', async () => void (await warmAi()))
-        handle('ai:chat', (_e, messages, schema) => aiChat(messages, schema))
+        handle('ai:chat', (_e, messages, schema, maxTokens) => aiChat(messages, schema, typeof maxTokens === 'number' ? maxTokens : undefined))
+        handle('ai:downloadEyes', () => downloadEyes())
+        handle('ai:removeEyes', () => removeEyes())
+        handle('bauer:cards', (_e, cards) => showCards(Array.isArray(cards) ? cards : []))
+        handle('bauer:clearCards', () => clearCards())
+        handle('bauer:wiki', (_e, topic: string) => wikiSummary(String(topic)).catch(() => null))
+        handle('bauer:circle', () => startCircle())
+        handle('bauer:openApp', (_e, name: string) => openApp(String(name)))
+        handle('bauer:shot', () => takeShot())
         handle('app:goto', (_e, page: string) => showWindow(String(page)))
         handle('app:openUrl', (_e, url: string) => (/^https?:\/\//i.test(String(url)) ? shell.openExternal(String(url)) : undefined))
       },
       onPrefs: (patch) => {
         if ('voiceWake' in patch || 'voiceSensitivity' in patch) syncVoiceWindow()
+        if ('bauerOrb' in patch) syncOrb()
       }
     })
     // Messages from the Bauer panel window (show / hide / what it's doing).
@@ -371,7 +389,19 @@ if (!app.requestSingleInstanceLock()) {
       if (isVoiceContents(e.sender) && msg && typeof msg === 'object') voiceFromWindow(msg)
     })
     configureAi((st) => broadcast('ai:status', st))
-    configureVoice({ url: appUrl, webPreferences: SECURE_PREFS, onStatus: (st) => broadcast('voice:status', st) })
+    configureVoice({
+      url: appUrl,
+      webPreferences: SECURE_PREFS,
+      onStatus: (st) => {
+        broadcast('voice:status', st)
+        // The floating Bauer mirrors what the voice panel is doing.
+        if (st.state === 'listening') sendOrb('listening')
+        else if (st.state === 'thinking' || st.state === 'loading') sendOrb('thinking')
+        else if (st.state === 'error') sendOrb('error')
+        else if (st.state === 'armed' || st.state === 'off') sendOrb('idle')
+      }
+    })
+    configureBauer({ url: appUrl, webPreferences: SECURE_PREFS, startBrief: () => void startBrief() })
     // Tell every other window when data changes (e.g. quick capture -> inbox badge).
     onDbChange((table) => {
       // Local edit to a synced table: upload it shortly (when signed in).
@@ -466,6 +496,7 @@ if (!app.requestSingleInstanceLock()) {
     stopLanShare()
     closeSpotifyPlayer()
     closeVoice()
+    closeBauerWindows()
     globalShortcut.unregisterAll()
     closeDb()
   })
