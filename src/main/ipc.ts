@@ -305,7 +305,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('prefs:get', () => getPrefs())
   handle('prefs:set', (_e, patch: Record<string, unknown>) => {
     const clean: Partial<Prefs> = {}
-    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages', 'syncAllFiles', 'oculusDei', 'lanShare', 'lanAutoFetch', 'voiceWake', 'notifyBudgets', 'notifyPeople', 'notifyCheckin', 'bauerConfirm', 'bauerTalk', 'bauerOrb', 'bauerOnlyWhenOpen'] as const) {
+    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages', 'syncAllFiles', 'oculusDei', 'lanShare', 'lanAutoFetch', 'voiceWake', 'notifyBudgets', 'notifyPeople', 'notifyCheckin', 'bauerConfirm', 'bauerTalk', 'bauerOrb', 'bauerOnlyWhenOpen', 'novaOffline', 'novaNoExtra'] as const) {
       if (k in patch) clean[k] = !!patch[k]
     }
     if (typeof patch.quickCaptureShortcut === 'string' && SHORTCUTS.includes(patch.quickCaptureShortcut)) {
@@ -322,6 +322,10 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
         }))
     }
     if ('voiceSensitivity' in patch && Number.isFinite(Number(patch.voiceSensitivity))) clean.voiceSensitivity = Math.max(0, Math.min(100, Math.round(Number(patch.voiceSensitivity))))
+    if ('novaName' in patch && ['Nova', 'Atlas', 'Onyx', 'Bauer'].includes(String(patch.novaName))) clean.novaName = String(patch.novaName) as Prefs['novaName']
+    if ('novaBrain' in patch && ['auto', 'haiku', 'sonnet', 'opus'].includes(String(patch.novaBrain))) clean.novaBrain = String(patch.novaBrain) as Prefs['novaBrain']
+    if ('novaEffort' in patch && ['low', 'medium', 'high'].includes(String(patch.novaEffort))) clean.novaEffort = String(patch.novaEffort) as Prefs['novaEffort']
+    if ('novaCap' in patch && Number.isFinite(Number(patch.novaCap))) clean.novaCap = Math.min(100, Math.max(10, Math.round(Number(patch.novaCap))))
     if ('sky' in patch && ['nebula', 'blackhole', 'galaxy', 'off'].includes(String(patch.sky))) clean.sky = String(patch.sky) as Prefs['sky']
     const saved = setPrefs(clean)
     deps.onPrefs?.(clean)

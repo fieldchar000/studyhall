@@ -25,6 +25,23 @@ import * as timer from './timer'
 import { createTray, updateTray } from './tray'
 import { loadWindowState, trackWindowState } from './windowState'
 import { aiChat, aiStatus, configureAi, downloadAi, downloadEyes, removeAi, removeEyes, stopAi, warmAi } from './ai'
+import { claudeBlocked, claudeChat, claudeStatus, installClaude, refreshClaudeUsage, signInClaude, signOutClaude } from './claude'
+import type { AiMessage, AiPurpose } from '@shared/types'
+
+/** Nova's brain: Claude when it's connected and allowed, otherwise the model on this PC (if you allow that). */
+async function brainChat(messages: AiMessage[], schema: object | undefined, maxTokens: number | undefined, purpose: AiPurpose): Promise<string> {
+  const prefs = getPrefs()
+  const why = claudeBlocked(prefs)
+  if (!why) {
+    try {
+      return await claudeChat(messages, schema, prefs, purpose)
+    } catch (e) {
+      console.warn('Nova: Claude couldn’t answer', e)
+      if (prefs.novaOffline === false) throw e
+    }
+  } else if (why !== 'not connected' && prefs.novaOffline === false) throw new Error(`Nova is paused because ${why}.`)
+  return aiChat(messages, schema, maxTokens)
+}
 import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary } from './bauer'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
@@ -381,7 +398,14 @@ if (!app.requestSingleInstanceLock()) {
         handle('ai:download', () => downloadAi())
         handle('ai:remove', () => removeAi())
         handle('ai:warm', async () => void (await warmAi()))
-        handle('ai:chat', (_e, messages, schema, maxTokens) => aiChat(messages, schema, typeof maxTokens === 'number' ? maxTokens : undefined))
+        handle('ai:chat', (_e, messages, schema, maxTokens, purpose) =>
+          brainChat(messages, schema, typeof maxTokens === 'number' ? maxTokens : undefined, ['act', 'chat', 'explain', 'look'].includes(purpose) ? purpose : 'act')
+        )
+        handle('claude:status', () => claudeStatus())
+        handle('claude:install', () => installClaude())
+        handle('claude:signIn', () => signInClaude())
+        handle('claude:signOut', () => signOutClaude())
+        handle('claude:refreshUsage', () => refreshClaudeUsage(getPrefs()))
         handle('ai:downloadEyes', () => downloadEyes())
         handle('ai:removeEyes', () => removeEyes())
         handle('bauer:cards', (_e, cards) => showCards(Array.isArray(cards) ? cards : []))

@@ -17,6 +17,12 @@ const DEFAULTS: Prefs = {
   bauerTalk: true,
   bauerOrb: true,
   bauerOnlyWhenOpen: true,
+  novaName: 'Nova',
+  novaBrain: 'auto',
+  novaEffort: 'medium',
+  novaOffline: true,
+  novaNoExtra: true,
+  novaCap: 80,
   quickCaptureShortcut: 'CommandOrControl+Shift+Space',
   spotifyLinks: []
 }

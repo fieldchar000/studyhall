@@ -26,7 +26,13 @@ export interface BauerResult {
   brain: 'ai' | 'rules'
 }
 
+/** Can Nova think with an AI right now? (Claude when connected, or the model on this PC.) */
 export async function aiInstalled(): Promise<boolean> {
+  try {
+    if ((await api.claude.status()).signedIn) return true
+  } catch {
+    /* the pad has no Claude connection */
+  }
   try {
     return (await api.ai.status()).installed
   } catch {
@@ -327,7 +333,9 @@ async function understandWithAi(text: string, ctx: BriefContext, now: Date): Pro
       ...examples(now),
       { role: 'user', content: text }
     ],
-    SCHEMA
+    SCHEMA,
+    undefined,
+    'act'
   )
   const parsed = JSON.parse(raw) as { actions: AiAction[]; reply: string }
   // Keep only what your words actually ask for.
@@ -481,13 +489,40 @@ export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad
     const r = await findAnswer(text)
     // Nothing in your own notes? On the PC, look it up and pin cards instead.
     const what = /^(?:what|who)(?:'s| is| are| was| were)\s+(?:a |an |the )?(.+?)[?.!]*$/i.exec(text.trim())?.[1]
-    const reply = !r.found && what && onPc() ? await explainTopic(what) : r.reply
+    let reply = r.reply
+    if (!r.found) {
+      if (what && onPc()) reply = await explainTopic(what)
+      else reply = (await chatAnswer(text).catch(() => null)) ?? r.reply
+    }
     await logAnswer(text, reply, source)
     return { reply, actions: [], logId: null }
   }
   const r = await runBauer(text, { source, mode })
   if (!r.actions.length) return nothing
   return { reply: r.reply, actions: r.actions, logId: r.logId }
+}
+
+/** A short spoken answer from Claude, for questions your own notes can't answer. */
+async function chatAnswer(text: string): Promise<string | null> {
+  try {
+    if (!(await api.claude.status()).signedIn) return null
+  } catch {
+    return null // the pad has no Claude connection
+  }
+  const name = (await api.prefs.get()).novaName ?? 'Nova'
+  const raw = await api.ai.chat(
+    [
+      {
+        role: 'system',
+        content: `You are ${name}, a friendly assistant built into Studyhall, a study and life planner. Today is ${new Date().toDateString()}. Your reply is spoken out loud: answer in one to three short sentences of plain speech, with no markdown, lists or emoji.`
+      },
+      { role: 'user', content: text }
+    ],
+    undefined,
+    400,
+    'chat'
+  )
+  return raw.trim() || null
 }
 
 /** Log a spoken answer to a question (nothing changed, so nothing to undo). */

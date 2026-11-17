@@ -4,6 +4,7 @@
 
 import type { BauerCard } from '@shared/types'
 import { api } from '@/lib/data'
+import { aiInstalled } from './agent'
 
 const uid = (): string => Math.random().toString(36).slice(2, 10)
 
@@ -21,10 +22,7 @@ const SCHEMA = {
 export async function explainTopic(topic: string): Promise<string> {
   const wiki = await api.bauer.wiki(topic).catch(() => null)
   let ai: { summary: string; style: 'points' | 'timeline'; items: { label: string; detail: string }[] } | null = null
-  const ready = await api.ai
-    .status()
-    .then((s) => s.installed)
-    .catch(() => false)
+  const ready = await aiInstalled()
   if (ready) {
     try {
       const raw = await api.ai.chat(
@@ -37,7 +35,8 @@ export async function explainTopic(topic: string): Promise<string> {
           { role: 'user', content: `Topic: ${topic}${wiki ? `\n\nReference (Wikipedia, ${wiki.title}):\n${wiki.extract}` : ''}` }
         ],
         SCHEMA,
-        600
+        600,
+        'explain'
       )
       ai = JSON.parse(raw)
     } catch (e) {

@@ -61,6 +61,7 @@ export function PageDock(): React.JSX.Element | null {
   const route = useRoute()
   const mode = useMode()
   const [busy, setBusy] = useState(false)
+  const name = useLive(['prefs'], () => api.prefs.get(), []).data?.novaName ?? 'Nova'
   if (OWN_SKY.has(route.name) || route.name === 'focus') return null
   const phone = isPhoneApp()
   const newTask = async (): Promise<void> => {
@@ -84,7 +85,7 @@ export function PageDock(): React.JSX.Element | null {
         <Icon name="plus" size={15} /> New task
       </button>
       <button className="dock-act glass" onClick={() => void startBrief()}>
-        <Icon name="mic" size={15} /> Brief Bauer
+        <Icon name="mic" size={15} /> Talk to {name}
       </button>
       <button className="dock-act glass max-sm:hidden" onClick={() => navigate({ name: 'focus' })}>
         <Icon name="focus" size={15} /> Focus

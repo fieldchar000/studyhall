@@ -20,7 +20,8 @@ async function look(image: string, prompt: string, schema?: object, maxTokens = 
       { role: 'user', content: [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: prompt }] }
     ],
     schema,
-    maxTokens
+    maxTokens,
+    'look'
   )
 }
 

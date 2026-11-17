@@ -235,12 +235,24 @@ const api: Api = {
     goto: (page) => ipcRenderer.invoke('app:goto', page),
     openUrl: (url) => ipcRenderer.invoke('app:openUrl', url)
   },
+  claude: {
+    status: () => ipcRenderer.invoke('claude:status'),
+    install: () => ipcRenderer.invoke('claude:install'),
+    signIn: () => ipcRenderer.invoke('claude:signIn'),
+    signOut: () => ipcRenderer.invoke('claude:signOut'),
+    refreshUsage: () => ipcRenderer.invoke('claude:refreshUsage'),
+    onStatus: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('claude:status', l)
+      return () => ipcRenderer.removeListener('claude:status', l)
+    }
+  },
   ai: {
     status: () => ipcRenderer.invoke('ai:status'),
     download: () => ipcRenderer.invoke('ai:download'),
     remove: () => ipcRenderer.invoke('ai:remove'),
     warm: () => ipcRenderer.invoke('ai:warm'),
-    chat: (messages, schema, maxTokens) => ipcRenderer.invoke('ai:chat', messages, schema, maxTokens),
+    chat: (messages, schema, maxTokens, purpose) => ipcRenderer.invoke('ai:chat', messages, schema, maxTokens, purpose),
     downloadEyes: () => ipcRenderer.invoke('ai:downloadEyes'),
     removeEyes: () => ipcRenderer.invoke('ai:removeEyes'),
     onStatus: (cb) => {

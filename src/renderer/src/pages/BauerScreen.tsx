@@ -206,7 +206,7 @@ export function CircleWindow(): React.JSX.Element {
     setQ('')
     setBusy('')
     setShot(await api.bauer.shot())
-    setEyes(await api.ai.status().then((s) => s.eyes).catch(() => false))
+    setEyes((await api.claude.status().then((s) => s.signedIn).catch(() => false)) || (await api.ai.status().then((s) => s.eyes).catch(() => false)))
   }, [])
   useEffect(() => {
     void reset()

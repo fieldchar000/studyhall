@@ -36,6 +36,7 @@ import { MoneyPage } from './pages/Money'
 import { TrendsPage } from './pages/Trends'
 import { ReviewPage } from './pages/Review'
 import { BauerLogPage } from './pages/BauerLog'
+import { NovaPage } from './pages/Nova'
 import { BriefingPage } from './pages/dev/Briefing'
 import { FeedsPage } from './pages/dev/Feeds'
 import { ReadingPage } from './pages/dev/Reading'
@@ -99,6 +100,7 @@ export function App(): React.JSX.Element {
         {route.name === 'trends' && <TrendsPage />}
         {route.name === 'review' && <ReviewPage />}
         {route.name === 'bauer' && <BauerLogPage />}
+        {route.name === 'nova' && <NovaPage />}
         {route.name === 'game' && <GamePage />}
         {route.name === 'languages' && <LanguagesPage />}
         {route.name === 'language' && <LanguageDetailPage key={route.id} id={route.id} />}

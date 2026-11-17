@@ -8,7 +8,7 @@ import { WifiShareCard } from '@/components/WifiShareCard'
 import { RelationshipsCard } from '@/components/RelationshipsSettings'
 import { UpdatesCard } from '@/components/UpdateBanner'
 import { isPhoneApp } from '@/lib/platform'
-import { VoiceCard } from '@/components/VoiceCard'
+import { navigate } from '@/lib/nav'
 
 export function SettingsPage(): React.JSX.Element {
   const phone = isPhoneApp()
@@ -39,7 +39,15 @@ export function SettingsPage(): React.JSX.Element {
 
       <RelationshipsCard />
 
-      <VoiceCard />
+      <section className="card mb-4 flex flex-wrap items-center gap-3 p-5">
+        <div className="min-w-0 flex-1">
+          <h2 className="mb-1 font-semibold">{prefs?.novaName ?? 'Nova'}, your assistant</h2>
+          <p className="text-sm text-muted">Voice, wake word, Claude brain and usage now live on their own page.</p>
+        </div>
+        <button className="btn" onClick={() => navigate({ name: 'nova' })}>
+          Open
+        </button>
+      </section>
 
       <section className="card mb-4 p-5">
         <h2 className="mb-1 font-semibold">Categories</h2>

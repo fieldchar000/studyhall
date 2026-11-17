@@ -39,7 +39,8 @@ const groups: { title?: string; items: NavItem[] }[] = [
       { label: 'Home', icon: 'home', route: { name: 'home' }, match: ['home'], modes: ['study', 'work', 'life'] },
       { label: 'Inbox', icon: 'inbox', route: { name: 'inbox' }, match: ['inbox'], modes: ALL },
       { label: 'Tasks', icon: 'tasks', route: { name: 'tasks' }, match: ['tasks'], modes: ALL },
-      { label: 'Focus', icon: 'focus', route: { name: 'focus' }, match: ['focus'], modes: ALL }
+      { label: 'Focus', icon: 'focus', route: { name: 'focus' }, match: ['focus'], modes: ALL },
+      { label: 'Nova', icon: 'mic', route: { name: 'nova' }, match: ['nova', 'bauer'], modes: ALL }
     ]
   },
   {
@@ -91,7 +92,6 @@ const groups: { title?: string; items: NavItem[] }[] = [
     title: 'You',
     items: [
       { label: 'Weekly review', icon: 'calendar', route: { name: 'review' }, match: ['review'], modes: ALL },
-      { label: 'Bauer log', icon: 'mic', route: { name: 'bauer' }, match: ['bauer'], modes: ALL },
       { label: 'Stats', icon: 'grades', route: { name: 'stats' }, match: ['stats'], modes: ALL },
       { label: 'Pixel Quest', icon: 'game', route: { name: 'game' }, match: ['game'], modes: ALL },
       { label: 'Settings', icon: 'settings', route: { name: 'settings' }, match: ['settings'], modes: ALL }
@@ -140,7 +140,9 @@ export function Sidebar(): React.JSX.Element {
   const shown = MODES.filter((m) => enabled.includes(m.mode))
   const partnerLabel = useProfile()?.partner_label || 'Partner'
   // Oculus Dei sits beside the categories as its own tab (unlocked by typing OCULUSDEI).
-  const oculus = !!usePrefs()?.oculusDei && !isPhoneApp()
+  const prefs = usePrefs()
+  const oculus = !!prefs?.oculusDei && !isPhoneApp()
+  const novaName = prefs?.novaName ?? 'Nova'
   const onOculus = route.name === 'oculus'
   const tabs = shown.length + (oculus ? 1 : 0)
   const index = onOculus && oculus ? shown.length : Math.max(0, shown.findIndex((m) => m.mode === mode))
@@ -259,7 +261,7 @@ export function Sidebar(): React.JSX.Element {
                       <span className="absolute top-2 bottom-2 left-0 w-[2px] rounded-full bg-brass" />
                     )}
                     <Icon name={item.icon} size={17} weight={active ? 'regular' : 'light'} className={active ? 'text-accent' : 'opacity-90 group-hover:opacity-100'} />
-                    <span className="flex-1">{item.label === 'Partner' ? partnerLabel : item.label}</span>
+                    <span className="flex-1">{item.label === 'Partner' ? partnerLabel : item.label === 'Nova' ? novaName : item.label}</span>
                     {badge(item.label) > 0 && (
                       <span className="rounded-full bg-accent px-1.5 text-[10px] font-bold text-on-accent">
                         {badge(item.label)}

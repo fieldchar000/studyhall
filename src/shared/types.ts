@@ -912,6 +912,29 @@ export interface VoiceStatus {
 }
 export type VoiceCommand = { type: 'listen' } | { type: 'config'; wake: boolean; sensitivity: number } | { type: 'stop' }
 
+export type NovaName = 'Nova' | 'Atlas' | 'Onyx' | 'Bauer'
+export type NovaBrain = 'auto' | 'haiku' | 'sonnet' | 'opus'
+export type NovaEffort = 'low' | 'medium' | 'high'
+/** What a request is for, so Auto can pick the right model. */
+export type AiPurpose = 'act' | 'chat' | 'explain' | 'look'
+
+/** Nova's Claude connection (Anthropic's own Claude Code program, signed in with your Claude plan). */
+export interface ClaudeStatus {
+  installed: boolean // Claude Code is downloaded
+  downloading: boolean
+  progress: number // 0..1
+  sizeMb: number
+  signingIn: boolean
+  signedIn: boolean
+  plan: string | null // 'pro', 'max', … when known
+  /** Your plan's usage windows (0–100 %), as last reported by Claude. */
+  usage: { fiveHour: number | null; sevenDay: number | null; fiveHourResets: string | null; sevenDayResets: string | null; at: string } | null
+  paused: string | null // why Nova isn't using Claude right now (limit reached, extra usage, …)
+  last: { model: string; effort: string; ms: number; costUsd: number; at: string } | null
+  monthCostUsd: number // what Nova's Claude use this month would cost at API prices (a guide to how heavy it is)
+  error: string | null
+}
+
 export interface Prefs {
   closeToTray: boolean
   launchAtLogin: boolean
@@ -934,6 +957,13 @@ export interface Prefs {
   bauerOrb?: boolean // PC: Bauer floats at the edge of the screen (default on)
   bauerOnlyWhenOpen?: boolean // Bauer stops listening and leaves the screen when Studyhall is closed (default on)
   sky?: 'nebula' | 'blackhole' | 'galaxy' | 'off' // the live sky behind every page (default nebula)
+  // Nova (the assistant, formerly Bauer)
+  novaName?: NovaName // what you call it; the wake word follows (default Nova)
+  novaBrain?: NovaBrain // which Claude model thinks (default auto)
+  novaEffort?: NovaEffort // how hard it thinks when a model is picked by hand (default medium)
+  novaOffline?: boolean // fall back to the model on this PC when Claude can't answer (default on)
+  novaNoExtra?: boolean // never use paid extra usage on your Claude account (default on)
+  novaCap?: number // pause Claude when your weekly Claude usage reaches this % (default 80)
 }
 
 /** The API the preload script exposes to the UI as window.api. */
@@ -1100,13 +1130,22 @@ export interface Api {
     /** Open a website in the normal browser. */
     openUrl(url: string): Promise<void>
   }
+  /** Nova's Claude brain (PC only). */
+  claude: {
+    status(): Promise<ClaudeStatus>
+    install(): Promise<ClaudeStatus>
+    signIn(): Promise<ClaudeStatus>
+    signOut(): Promise<ClaudeStatus>
+    refreshUsage(): Promise<ClaudeStatus>
+    onStatus(cb: (s: ClaudeStatus) => void): () => void
+  }
   /** Bauer's local AI (PC only; on the pad these reject). */
   ai: {
     status(): Promise<AiStatus>
     download(): Promise<AiStatus>
     remove(): Promise<AiStatus>
     warm(): Promise<void>
-    chat(messages: AiMessage[], schema?: object, maxTokens?: number): Promise<string>
+    chat(messages: AiMessage[], schema?: object, maxTokens?: number, purpose?: AiPurpose): Promise<string>
     onStatus(cb: (s: AiStatus) => void): () => void
     downloadEyes(): Promise<AiStatus>
     removeEyes(): Promise<AiStatus>
