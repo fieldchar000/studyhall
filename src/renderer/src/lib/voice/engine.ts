@@ -167,8 +167,9 @@ class Engine {
   // ---------- Recording a briefing ----------
 
   private startRecording(fromWake: boolean): void {
-    // Keep the last ~0.6 s: people say "Hey Bauer, add…" without a pause.
-    this.rec = fromWake ? this.preroll.slice(-5) : []
+    // Keep the last ~1.3 s, so the wake word itself is in the recording: what's written down
+    // can then be checked for "Hey Bauer" (false wake-ups from other talk are thrown away).
+    this.rec = fromWake ? this.preroll.slice(-10) : []
     this.spoke = false
     this.silentFrames = 0
     this.recFrames = 0

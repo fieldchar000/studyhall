@@ -54,6 +54,11 @@ export function VoiceOverlay(): React.JSX.Element | null {
       setPhase('thinking')
       try {
         const r = await handleSpeech(t, 'pad', profile.mode)
+        if (r.ignored) {
+          setMessage('I didn’t hear anything to do.')
+          setPhase('nothing')
+          return
+        }
         setCurrency(symbol(profile.currency || ''))
         setDid({ reply: r.reply, actions: r.actions, logId: r.logId, undone: false })
         setPhase('did')

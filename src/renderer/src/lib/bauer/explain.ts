@@ -64,6 +64,12 @@ const firstSentences = (t: string, n: number): string => (t.match(/[^.!?]+[.!?]+
 
 /** "explain photosynthesis", "tell me about the French revolution", "teach me integrals". */
 export function explainTopicFrom(text: string): string | null {
-  const m = /^(?:hey\s+bauer[,.\s]*)?(?:can you\s+|please\s+)?(?:explain|tell me (?:about|what)|teach me(?: about)?|show me (?:info|something) about|give me (?:an? )?(?:overview|summary) of)\s+(.+?)[.?!]*$/i.exec(text.trim())
-  return m ? m[1].replace(/^(?:to me\s+)?(?:what\s+)?/i, '').replace(/\s+(?:is|are|means?)$/i, '').trim() : null
+  const m = /^(?:hey\s+bauer[,.\s]*)?(?:can you\s+|could you\s+|please\s+)?(?:explain|tell me (?:about|what)|teach me(?: about)?|show me (?:info|something) about|give me (?:an? )?(?:overview|summary) of)\s+(.+?)[.?!]*$/i.exec(text.trim())
+  if (!m) return null
+  const t = m[1]
+    .replace(/\s+(?:to me|for me|please|simply|in simple terms)$/i, '')
+    .replace(/^(?:to me\s+)?(?:what\s+|how\s+)?(?:a |an |the )?/i, '')
+    .replace(/\s+(?:is|are|means?|works?)$/i, '')
+    .trim()
+  return t.length >= 2 && t.length <= 80 ? t : null
 }

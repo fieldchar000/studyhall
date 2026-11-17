@@ -11,6 +11,8 @@ import { buildBrain } from '@/lib/brain'
 import { ask } from '@/lib/brainAsk'
 import { isPhoneApp } from '@/lib/platform'
 import { explainTopic, explainTopicFrom } from './explain'
+import { grounded, isChitChat, stripWake } from './heard'
+import { readCheckin } from '@/lib/brief'
 
 /** Cards, circling and apps exist only on the PC. */
 const onPc = (): boolean => !isPhoneApp()
@@ -130,6 +132,7 @@ function systemPrompt(ctx: BriefContext, now: Date): string {
     `- open_app: text = one of ${APP_LIST}.`,
     '',
     'reply: one short, friendly sentence saying what you did, as Bauer ("Done. Gym is at 7 on Thursday."). If nothing to do, say so.',
+    'IMPORTANT: only act on clear requests. Small talk, half sentences, thinking out loud, talking to someone else, or exclamations ("oh god", "okay", "thank you", "can you") mean actions: []. Never copy the examples, never guess values (moods, sleep, amounts, dates) that weren\'t said, and never put text in the journal or inbox unless asked to.',
     '',
     `OPEN TASKS: ${ctx.tasks.slice(0, 40).map((t) => `"${t.title}"${t.due_at ? ` (due ${when(t.due_at)})` : ''}`).join('; ') || 'none'}`,
     `EVENTS: ${soon.map((e) => `"${e.title}" ${when(e.start_at)}`).join('; ') || 'none'}`,
@@ -274,8 +277,9 @@ function toActions(list: AiAction[], ctx: BriefContext, said: string, now: Date)
         if (a.text) out.push({ ...common(), kind: 'journal', text: a.text, date: a.date || today })
         break
       case 'checkin': {
-        const five = (n?: number): number | undefined => (n == null || n <= 0 ? undefined : n > 5 ? Math.max(1, Math.min(5, Math.round(n / 2))) : Math.round(n))
-        out.push({ ...common(), kind: 'checkin', date: a.date || today, mood: five(a.mood), energy: five(a.energy), sleep: a.sleep && a.sleep > 0 ? a.sleep : undefined, highlight: a.text || undefined })
+        // Only the numbers you actually said (the AI can't make up a mood or sleep).
+        const c = readCheckin(said)
+        if (c) out.push({ ...common(), kind: 'checkin', date: a.date || today, mood: c.mood, energy: c.energy, sleep: c.sleep, highlight: c.highlight, gratitude: c.gratitude })
         break
       }
       case 'inbox':
@@ -287,9 +291,12 @@ function toActions(list: AiAction[], ctx: BriefContext, said: string, now: Date)
       case 'open_page':
         if (a.page && SIMPLE_PAGES.includes(a.page)) out.push({ ...common(), kind: 'open_page', page: a.page, label: a.page[0].toUpperCase() + a.page.slice(1) })
         break
-      case 'explain':
-        if (onPc() && (a.text || a.title)) out.push({ ...common(), kind: 'explain', topic: (a.text || a.title)! })
+      case 'explain': {
+        // The topic comes from your words, not the AI's own explanation.
+        const topic = explainTopicFrom(said) ?? (a.text || a.title || '')
+        if (onPc() && topic && topic.length <= 80) out.push({ ...common(), kind: 'explain', topic })
         break
+      }
       case 'look_at_screen':
         if (onPc()) out.push({ ...common(), kind: 'circle' })
         break
@@ -323,7 +330,10 @@ async function understandWithAi(text: string, ctx: BriefContext, now: Date): Pro
     SCHEMA
   )
   const parsed = JSON.parse(raw) as { actions: AiAction[]; reply: string }
-  return { actions: toActions(parsed.actions ?? [], ctx, text, now), reply: String(parsed.reply ?? '') }
+  // Keep only what your words actually ask for.
+  const kept = (parsed.actions ?? []).filter((a) => grounded(a, text))
+  if (kept.length < (parsed.actions ?? []).length) console.info('Bauer: dropped unsupported actions', (parsed.actions ?? []).filter((a) => !kept.includes(a)))
+  return { actions: toActions(kept, ctx, text, now), reply: String(parsed.reply ?? '') }
 }
 
 // ---------- Doing it ----------
@@ -396,7 +406,8 @@ export async function runBauer(text: string, opts: { source: 'voice' | 'typed' |
       console.warn('Bauer: the local AI failed, using the rules instead', e)
     }
   }
-  if (brain === 'rules') actions = parseBrief(text, ctx, now).filter((a) => a.on)
+  if (brain === 'rules') actions = parseBrief(text, ctx, now).filter((a) => a.on && a.kind !== 'inbox') // (the rules used to drop anything unclear into the Inbox)
+  if (!actions.length) return { reply: '', actions, count: 0, logId: null, brain }
   await fillMoveEnds(actions)
   const { count, undo } = await applyBrief(actions, opts.mode)
   // The AI's own sentence can get times wrong; say what was really done.
@@ -448,12 +459,18 @@ async function findAnswer(text: string): Promise<{ reply: string; found: boolean
     .slice(0, 3)
     .map((l) => `${l.text}${l.sub ? `, ${l.sub}` : ''}`.replace(/\s+/g, ' ').replace(/\s·\s/g, ', ').trim())
     .filter(Boolean)
-  const reply = lines.length ? `${a.title}. ${lines.join('. ')}`.replace(/\.\./g, '.') : a.empty || 'I couldn’t find anything about that yet.'
-  return { reply, found: lines.length > 0 }
+  // A plain word search isn't an answer ("Results for …" from a stray word).
+  const found = lines.length > 0 && !/^results for\b/i.test(a.title)
+  const reply = found ? `${a.title}. ${lines.join('. ')}`.replace(/\.\./g, '.') : 'I don’t know that one yet.'
+  return { reply, found }
 }
 
 /** Everything Bauer hears goes through here: explain, answer from your notes, or act. */
-export async function handleSpeech(text: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null }> {
+export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean }> {
+  const text = stripWake(raw)
+  // Small talk, one word, half a sentence: say nothing, do nothing, log nothing.
+  const nothing = { reply: source === 'typed' ? 'I didn’t find anything to do in that.' : '', actions: [] as BriefAction[], logId: null, ignored: true }
+  if (isChitChat(text)) return nothing
   const topic = onPc() ? explainTopicFrom(text) : null
   if (topic) {
     const reply = await explainTopic(topic)
@@ -463,12 +480,13 @@ export async function handleSpeech(text: string, source: 'voice' | 'typed' | 'pa
   if (isQuestion(text)) {
     const r = await findAnswer(text)
     // Nothing in your own notes? On the PC, look it up and pin cards instead.
-    const what = /^(?:what|who)(?:'s| is| are| was| were)s+(?:a |an |the )?(.+?)[?.!]*$/i.exec(text.trim())?.[1]
+    const what = /^(?:what|who)(?:'s| is| are| was| were)\s+(?:a |an |the )?(.+?)[?.!]*$/i.exec(text.trim())?.[1]
     const reply = !r.found && what && onPc() ? await explainTopic(what) : r.reply
     await logAnswer(text, reply, source)
     return { reply, actions: [], logId: null }
   }
   const r = await runBauer(text, { source, mode })
+  if (!r.actions.length) return nothing
   return { reply: r.reply, actions: r.actions, logId: r.logId }
 }
 

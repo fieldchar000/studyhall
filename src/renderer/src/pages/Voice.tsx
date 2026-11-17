@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { VoiceState } from '@shared/types'
 import { describe, parseBrief, type BriefAction } from '@/lib/brief'
 import { handleSpeech, say, undoLog } from '@/lib/bauer/agent'
+import { wakeWordHeard } from '@/lib/bauer/heard'
 import { applyBrief, loadBriefContext } from '@/lib/briefApply'
 import { api } from '@/lib/data'
 import { chime, engine } from '@/lib/voice/engine'
@@ -36,6 +37,7 @@ export default function VoicePanel(): React.JSX.Element {
   const [hover, setHover] = useState(false)
   const card = useRef<HTMLDivElement>(null)
   const phaseRef = useRef<Phase>('idle')
+  const woke = useRef(false) // this recording started from "Hey Bauer" (not a button)
   phaseRef.current = phase
   engine.held = phase !== 'idle' && phase !== 'nothing'
 
@@ -57,9 +59,19 @@ export default function VoicePanel(): React.JSX.Element {
         setPhase('review')
         return
       }
+      // Woken by something that only sounded like "Hey Bauer"? Quietly go back to waiting.
+      if (woke.current && !wakeWordHeard(t)) {
+        console.info('Bauer: no wake word in', JSON.stringify(t))
+        setPhase('idle')
+        return
+      }
       setPhase('thinking')
       try {
         const r = await handleSpeech(t, 'voice', profile.mode)
+        if (r.ignored) {
+          setPhase('idle')
+          return
+        }
         api.bauer.orb('done', r.reply)
         setCurrency(currencySymbol(profile.currency || ''))
         setDid({ reply: r.reply, actions: r.actions, logId: r.logId, undone: false })
@@ -79,6 +91,7 @@ export default function VoicePanel(): React.JSX.Element {
     () =>
       engine.on((e) => {
         if (e.type === 'wake') {
+          woke.current = true
           void api.ai.warm().catch(() => {}) // wake the AI up while you talk
           chime()
           setHeard(false)
@@ -104,6 +117,7 @@ export default function VoicePanel(): React.JSX.Element {
 
   const listen = useCallback(async (): Promise<void> => {
     setHeard(false)
+    woke.current = false
     setPhase('starting')
     try {
       void api.ai.warm().catch(() => {})

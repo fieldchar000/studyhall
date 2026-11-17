@@ -18,6 +18,31 @@ export function OrbWindow(): React.JSX.Element {
   const [state, setState] = useState<OrbState>('idle')
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)
+  // Press and drag to move Bauer; a plain click talks to him.
+  const press = useRef<{ x: number; y: number; moved: boolean } | null>(null)
+  const down = (e: React.PointerEvent): void => {
+    press.current = { x: e.screenX, y: e.screenY, moved: false }
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    api.bauer.drag('dragStart', e.screenX, e.screenY)
+  }
+  const moveDrag = (e: React.PointerEvent): void => {
+    const p = press.current
+    if (!p) return
+    if (!p.moved && Math.hypot(e.screenX - p.x, e.screenY - p.y) < 4) return
+    p.moved = true
+    setOpen(false)
+    api.bauer.drag('dragMove', e.screenX, e.screenY)
+  }
+  const up = (e: React.PointerEvent): void => {
+    const p = press.current
+    press.current = null
+    if (p?.moved) api.bauer.drag('dragEnd', e.screenX, e.screenY)
+    else api.bauer.listen()
+  }
   useEffect(
     () =>
       api.bauer.onOrb((s) => {
@@ -44,7 +69,15 @@ export function OrbWindow(): React.JSX.Element {
           {text}
         </div>
       )}
-      <div {...hover} className="flex items-center gap-2" onMouseLeave={() => (setOpen(false), api.bauer.mouse(false))} onMouseEnter={() => (setOpen(true), api.bauer.mouse(true))}>
+      <div
+        className="flex items-center gap-2"
+        onMouseLeave={() => {
+          if (press.current) return // mid-drag: keep the mouse
+          setOpen(false)
+          api.bauer.mouse(false)
+        }}
+        onMouseEnter={() => (setOpen(true), api.bauer.mouse(true))}
+      >
         {open && (
           <div className="orb-menu flex gap-1 rounded-full p-1">
             <button className="orb-btn" title="Circle something on screen and ask (Ctrl+Alt+B)" onClick={() => void api.bauer.circle()}>
@@ -55,7 +88,16 @@ export function OrbWindow(): React.JSX.Element {
             </button>
           </div>
         )}
-        <button className={`orb orb-${state}`} title="Talk to Bauer" aria-label="Talk to Bauer" onClick={() => api.bauer.listen()}>
+        <button
+          className={`orb orb-${state}`}
+          title="Click to talk · drag to move"
+          aria-label="Talk to Bauer"
+          onPointerDown={down}
+          onPointerMove={moveDrag}
+          onPointerUp={up}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && api.bauer.listen()}
+          style={{ touchAction: 'none' }}
+        >
           <span className="orb-core" />
           <span className="orb-swirl" />
           <span className="orb-orbit" style={{ ['--a' as string]: '0deg', animationDuration: '5s' }} />

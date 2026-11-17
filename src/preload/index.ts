@@ -276,7 +276,8 @@ const api: Api = {
       return () => ipcRenderer.removeListener('bauer:circle', l)
     },
     listen: () => ipcRenderer.send('bauer:window', { type: 'listen' }),
-    hideOrb: () => ipcRenderer.send('bauer:window', { type: 'hideOrb' })
+    hideOrb: () => ipcRenderer.send('bauer:window', { type: 'hideOrb' }),
+    drag: (phase, x, y) => ipcRenderer.send('bauer:window', { type: phase, x, y })
   }
 }
 

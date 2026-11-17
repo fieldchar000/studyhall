@@ -8,6 +8,7 @@ import { BrowserWindow, desktopCapturer, globalShortcut, ipcMain, nativeImage, s
 import { spawn } from 'node:child_process'
 import type { BauerCard, OrbState, WikiSummary } from '@shared/types'
 import { getPrefs } from './prefs'
+import { getSetting, setSetting } from './db'
 
 let loadUrl: (hash: string) => string = (h) => h
 let webPrefs: Electron.WebPreferences = {}
@@ -39,6 +40,7 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
     else if (msg.type === 'closeCircle' && from === circleWin) closeCircle()
     else if (msg.type === 'listen' && from === orbWin) startBrief()
     else if (msg.type === 'hideOrb' && from === orbWin) orbWin?.hide()
+    else if (from === orbWin && orbWin && (msg.type === 'dragStart' || msg.type === 'dragMove' || msg.type === 'dragEnd')) dragOrb(msg.type, Number(msg.x), Number(msg.y))
   })
   if (!OFFSCREEN) globalShortcut.register(CIRCLE_SHORTCUT, () => void startCircle())
   syncOrb()
@@ -90,11 +92,42 @@ export function syncOrb(): void {
   }
   if (!orbWin || orbWin.isDestroyed()) {
     const wa = screen.getPrimaryDisplay().workArea
-    orbWin = overlayWindow({ x: wa.x + wa.width - ORB_W - 8, y: wa.y + wa.height - ORB_H - 8, width: ORB_W, height: ORB_H }, '#orb')
+    const saved = getSetting<{ x: number; y: number }>('bauer_orb_pos')
+    const pos = saved && onSomeScreen(saved.x, saved.y) ? saved : { x: wa.x + wa.width - ORB_W - 8, y: wa.y + wa.height - ORB_H - 8 }
+    orbWin = overlayWindow({ ...pos, width: ORB_W, height: ORB_H }, '#orb')
     orbWin.setIgnoreMouseEvents(true, { forward: true })
     orbWin.on('closed', () => (orbWin = null))
     orbWin.once('ready-to-show', () => orbWin?.showInactive())
   } else if (!orbWin.isVisible()) orbWin.showInactive()
+}
+
+/** Is the orb (bottom-right of its window) on a screen if the window sits at x, y? */
+function onSomeScreen(x: number, y: number): boolean {
+  const orb = { x: x + ORB_W - 40, y: y + ORB_H - 40 }
+  return screen.getAllDisplays().some((d) => orb.x >= d.workArea.x - 10 && orb.x <= d.workArea.x + d.workArea.width - 30 && orb.y >= d.workArea.y - 10 && orb.y <= d.workArea.y + d.workArea.height - 30)
+}
+
+// Dragging the orb: the window follows the mouse, then stays where you leave it (remembered).
+let drag: { wx: number; wy: number; sx: number; sy: number } | null = null
+function dragOrb(type: string, x: number, y: number): void {
+  if (!orbWin || !Number.isFinite(x) || !Number.isFinite(y)) return
+  if (type === 'dragStart') {
+    const [wx, wy] = orbWin.getPosition()
+    drag = { wx, wy, sx: x, sy: y }
+  } else if (type === 'dragMove' && drag) {
+    orbWin.setPosition(Math.round(drag.wx + x - drag.sx), Math.round(drag.wy + y - drag.sy))
+  } else if (type === 'dragEnd' && drag) {
+    drag = null
+    let [wx, wy] = orbWin.getPosition()
+    if (!onSomeScreen(wx, wy)) {
+      // Dropped off the edge: bring him back inside the nearest screen.
+      const wa = screen.getDisplayNearestPoint({ x: wx + ORB_W - 30, y: wy + ORB_H - 30 }).workArea
+      wx = Math.min(Math.max(wx, wa.x - ORB_W + 60), wa.x + wa.width - ORB_W - 8)
+      wy = Math.min(Math.max(wy, wa.y - ORB_H + 60), wa.y + wa.height - ORB_H - 8)
+      orbWin.setPosition(wx, wy)
+    }
+    setSetting('bauer_orb_pos', { x: wx, y: wy })
+  }
 }
 
 /** What Bauer is doing, for the orb (listening, thinking, a short line of what he did). */

@@ -1126,5 +1126,7 @@ export interface Api {
     onCircle(cb: () => void): () => void
     listen(): void
     hideOrb(): void
+    /** Move the floating Bauer (screen coordinates of the mouse). */
+    drag(phase: 'dragStart' | 'dragMove' | 'dragEnd', x: number, y: number): void
   }
 }
