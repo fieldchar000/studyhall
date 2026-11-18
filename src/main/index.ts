@@ -20,6 +20,7 @@ import { refreshSubscriptions } from './ics'
 import { currentSenderId, registerIpc } from './ipc'
 import { applyLoginItem, getPrefs, watchShortcut } from './prefs'
 import { checkDeadlines, checkDueNow } from './reminders'
+import { buddyHooks, focusState, lastOffered, startBuddy } from './buddy'
 import { checkLifeReminders } from './lifeReminders'
 import * as timer from './timer'
 import { createTray, updateTray } from './tray'
@@ -250,8 +251,10 @@ function notify(title: string, body: string, page?: string): void {
 
 /** "Bauer only while Studyhall is open": when the window is closed to the tray, Bauer stops
  *  listening, leaves the screen and the AI shuts down; opening Studyhall brings him back. */
+let novaAway = false // Nova is off the screen (Studyhall closed to the tray)
 function bauerAway(away: boolean): void {
   const off = away && getPrefs().bauerOnlyWhenOpen !== false
+  novaAway = off
   setVoiceSuspended(off)
   setBauerSuspended(off)
   setClaudeWarm(!off) // no Claude sessions waiting while Studyhall is closed
@@ -432,6 +435,8 @@ if (!app.requestSingleInstanceLock()) {
             `Allowed: looking at the screen ${p.novaEyes === 'off' ? 'off' : 'on'}; working their apps ${p.novaHands ?? 'off'}; drafting with connectors ${p.novaConnectors ? 'on' : 'off'}`,
             String(studyhall ?? '').slice(0, 12_000),
             factsBlock(),
+            focusState(),
+            lastOffered(),
             '</live-state>'
           ].join('\n')
           return novaTurn(e.sender, String(said ?? '').slice(0, 4000), live)
@@ -681,6 +686,17 @@ if (!app.requestSingleInstanceLock()) {
     }
     setTimeout(remind, 10_000)
     setInterval(remind, 60_000)
+
+    // Nova the study buddy: focus sessions, the morning brief, a quiz offer after a long read.
+    buddyHooks.say = (t) => voiceSay(t)
+    buddyHooks.sayThenListen = async (t) => {
+      await voiceSayAndWait(t)
+      startBrief() // listening for your answer
+    }
+    buddyHooks.emote = (e) => orbEmote(e)
+    buddyHooks.cards = (c) => showCards(c)
+    buddyHooks.away = () => novaAway
+    startBuddy()
   })
 
   app.on('before-quit', () => (quitting = true))

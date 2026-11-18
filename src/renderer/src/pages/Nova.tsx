@@ -663,6 +663,21 @@ export function NovaPage(): React.JSX.Element {
             </section>
           )}
 
+          {!phone && (
+            <section className="card rounded-2xl p-5">
+              <h2 className="font-semibold">Study buddy</h2>
+              <p className="mb-3 text-[13px] text-muted">
+                Things {name} does on its own. To do them it only looks at the title of the window in front (what your taskbar shows), and only during a focus session or while you’re on study notes. Nothing is saved or sent anywhere.
+              </p>
+              <Row title="Morning brief" hint={`The first time you’re at the PC each morning, ${name} says what’s on today and what’s due, and shows it on a card. Ask “what’s my day?” any time.`}>
+                <input type="checkbox" checked={prefs?.novaBrief !== false} onChange={(e) => save({ novaBrief: e.target.checked })} aria-label="Morning brief" />
+              </Row>
+              <Row title="Nudges and offers" hint={`In a focus session (“focus on chemistry for 45 minutes”), ${name} nudges you if you drift to YouTube, games or socials. After half an hour on the same notes it offers a quick quiz.`}>
+                <input type="checkbox" checked={prefs?.novaProactive !== false} onChange={(e) => save({ novaProactive: e.target.checked })} aria-label="Nudges and offers" />
+              </Row>
+            </section>
+          )}
+
           <section className="card rounded-2xl p-5">
             <h2 className="flex items-center gap-2 font-semibold">
               Brain <span className="nova-tag">Your Claude plan</span>
@@ -845,6 +860,11 @@ export function NovaPage(): React.JSX.Element {
               <li>“Pull up a YouTube video on how beta blockers work” · “Play some study music”</li>
               <li>Hold Ctrl + Alt, circle something on screen and ask “what’s this?” (or Ctrl + Alt + B, then circle)</li>
               <li>Highlight text anywhere and say “explain this”</li>
+              <li>“Focus on chemistry for 45 minutes” · “What’s my day?”</li>
+              <li>“Write this in my essay: …” · “Summarise what I just copied”</li>
+              <li>“Notes on the left, lecture on the right”</li>
+              <li>“Make a revision sheet from all my week 3 notes” (runs in the background)</li>
+              <li>“Make notes and flashcards from this lecture video”</li>
             </ul>
           </section>
         </aside>

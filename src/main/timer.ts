@@ -236,3 +236,16 @@ function complete(silent: boolean): void {
   if (autoStart && !silent) start()
   else changed()
 }
+
+/** Nova's focus sessions: start a focus round of this many minutes now (on a module, if given). */
+export function startFocusFor(minutes: number, moduleId?: string | null): void {
+  const t = Date.now()
+  if (state.running) accumulate(t)
+  if (state.phase === 'focus') finishSession(false, t)
+  state = idle('focus')
+  const d = Math.max(1, Math.min(240, Math.round(minutes))) * 60_000
+  state.durationMs = d
+  state.remainingMs = d
+  if (moduleId !== undefined) state.moduleId = moduleId
+  start()
+}

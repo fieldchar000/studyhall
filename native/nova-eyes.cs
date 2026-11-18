@@ -16,6 +16,9 @@
 //   {"cmd":"waitClick","rect":[x,y,w,h],"timeoutMs":60000}  wait until you click inside that box
 //   {"cmd":"esc"}                    has Esc been pressed since the last time we asked? (stops Nova's hands)
 //   {"cmd":"selection","exclude":[pid,...]}  the text you've highlighted in the app you're using, and where it is
+//   {"cmd":"typeText","text":"...","exclude":[pid,...]}  type into the box you're in (never a password box, never Studyhall)
+//   {"cmd":"windows","exclude":[pid,...]}  the windows you have open (title, app)
+//   {"cmd":"arrange","items":[{"query":"word","pos":"left|right|top|bottom|full|center"}],"exclude":[...]}  put windows side by side
 // Positions are physical screen pixels (this program is DPI-aware).
 
 using System;
@@ -39,6 +42,21 @@ static class NovaEyes
     [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
     [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr value);
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vKey);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int max);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr hMon, ref MONITORINFO mi);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
+    [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint n, INPUT[] inputs, int size);
+    delegate bool EnumProc(IntPtr h, IntPtr l);
+    [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
+    [StructLayout(LayoutKind.Sequential)] struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
+    [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public IntPtr extra; }
+    [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort wVk, wScan; public uint dwFlags, time; public IntPtr extra; }
+    [StructLayout(LayoutKind.Explicit)] struct InputUnion { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; }
+    [StructLayout(LayoutKind.Sequential)] struct INPUT { public uint type; public InputUnion u; }
     [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
     [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
 
@@ -103,6 +121,9 @@ static class NovaEyes
             case "snapshot": return Snapshot(r);
             case "window": return WindowInfo(r);
             case "selection": return Selection(r);
+            case "typeText": return TypeText(r);
+            case "windows": return Windows(r);
+            case "arrange": return Arrange(r);
             case "invoke":
                 {
                     var e = El(r); object p;
@@ -193,6 +214,115 @@ static class NovaEyes
             e = walk.GetParent(e);
         }
         return Ok("text", "");
+    }
+
+    static HashSet<uint> Excluded(Dictionary<string, object> r)
+    {
+        var ex = new HashSet<uint>();
+        object v;
+        if (r.TryGetValue("exclude", out v) && v is System.Collections.IEnumerable)
+            foreach (var p in (System.Collections.IEnumerable)v) ex.Add(Convert.ToUInt32(p));
+        return ex;
+    }
+
+    // Typing for you (dictation): into the focused box of the app you're using, as if typed on the keyboard.
+    static Dictionary<string, object> TypeText(Dictionary<string, object> r)
+    {
+        string text = r.ContainsKey("text") ? Convert.ToString(r["text"]) : "";
+        if (text.Length == 0) return Ok();
+        if (text.Length > 20000) throw new Exception("That's too long to type");
+        var focused = AutomationElement.FocusedElement;
+        if (focused == null) throw new Exception("No text box has the focus");
+        if (Excluded(r).Contains((uint)focused.Current.ProcessId)) throw new Exception("Click into the box you want it typed in first");
+        if (focused.Current.IsPassword) throw new Exception("That's a password box: Nova never types there");
+        var inputs = new List<INPUT>();
+        foreach (char c in text.Replace("\r\n", "\n"))
+        {
+            if (c == '\n')
+            {
+                inputs.Add(Key(0x0D, '\0', 0)); inputs.Add(Key(0x0D, '\0', 2)); // Enter
+                continue;
+            }
+            inputs.Add(Key(0, c, 4)); inputs.Add(Key(0, c, 4 | 2)); // KEYEVENTF_UNICODE (down, up)
+        }
+        var arr = inputs.ToArray();
+        for (int i = 0; i < arr.Length; i += 200)
+        {
+            int n = Math.Min(200, arr.Length - i);
+            var part = new INPUT[n];
+            Array.Copy(arr, i, part, 0, n);
+            SendInput((uint)n, part, Marshal.SizeOf(typeof(INPUT)));
+            Thread.Sleep(15);
+        }
+        return Ok("typed", text.Length);
+    }
+    static INPUT Key(ushort vk, char ch, uint flags)
+    {
+        var i = new INPUT { type = 1 };
+        i.u.ki = new KEYBDINPUT { wVk = vk, wScan = ch, dwFlags = flags };
+        return i;
+    }
+
+    static List<Dictionary<string, object>> ListWindows(HashSet<uint> exclude)
+    {
+        var list = new List<Dictionary<string, object>>();
+        EnumWindows((h, l) =>
+        {
+            if (!IsWindowVisible(h) || GetWindowTextLength(h) == 0) return true;
+            if ((GetWindowLong(h, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) != 0) return true;
+            uint pid; GetWindowThreadProcessId(h, out pid);
+            if (exclude.Contains(pid)) return true;
+            var sb = new StringBuilder(512);
+            GetWindowText(h, sb, 512);
+            string app = "";
+            try { app = Process.GetProcessById((int)pid).ProcessName; } catch { }
+            if (app == "ApplicationFrameHost" && sb.Length == 0) return true;
+            list.Add(new Dictionary<string, object> { { "hwnd", h.ToInt64() }, { "title", sb.ToString() }, { "app", app } });
+            return list.Count < 60;
+        }, IntPtr.Zero);
+        return list;
+    }
+    static Dictionary<string, object> Windows(Dictionary<string, object> r) { return Ok("windows", ListWindows(Excluded(r))); }
+
+    // Put your windows where you ask: left or right half, top or bottom, full screen, or centred.
+    static Dictionary<string, object> Arrange(Dictionary<string, object> r)
+    {
+        var wins = ListWindows(Excluded(r));
+        var done = new List<string>();
+        var missing = new List<string>();
+        var items = r.ContainsKey("items") && r["items"] is System.Collections.IEnumerable ? (System.Collections.IEnumerable)r["items"] : new object[0];
+        IntPtr first = IntPtr.Zero;
+        foreach (var o in items)
+        {
+            var it = o as Dictionary<string, object>;
+            if (it == null) continue;
+            string q = Convert.ToString(it.ContainsKey("query") ? it["query"] : "").ToLowerInvariant();
+            string pos = Convert.ToString(it.ContainsKey("pos") ? it["pos"] : "full");
+            Dictionary<string, object> hit = null;
+            foreach (var w in wins)
+                if (((string)w["title"]).ToLowerInvariant().Contains(q) || ((string)w["app"]).ToLowerInvariant().Contains(q)) { hit = w; break; }
+            if (hit == null || q.Length == 0) { missing.Add(q); continue; }
+            var h = new IntPtr(Convert.ToInt64(hit["hwnd"]));
+            if (first == IntPtr.Zero) first = h;
+            var mi = new MONITORINFO { cbSize = Marshal.SizeOf(typeof(MONITORINFO)) };
+            GetMonitorInfo(MonitorFromWindow(first, 2), ref mi);
+            int x = mi.rcWork.L, y = mi.rcWork.T, w2 = mi.rcWork.R - mi.rcWork.L, h2 = mi.rcWork.B - mi.rcWork.T;
+            ShowWindow(h, 9); // restore (out of maximised or minimised)
+            if (pos == "full") ShowWindow(h, 3);
+            else
+            {
+                int px = x, py = y, pw = w2, ph = h2;
+                if (pos == "left") pw = w2 / 2;
+                else if (pos == "right") { px = x + w2 / 2; pw = w2 - w2 / 2; }
+                else if (pos == "top") ph = h2 / 2;
+                else if (pos == "bottom") { py = y + h2 / 2; ph = h2 - h2 / 2; }
+                else if (pos == "center") { pw = w2 * 2 / 3; ph = h2 * 4 / 5; px = x + (w2 - pw) / 2; py = y + (h2 - ph) / 2; }
+                SetWindowPos(h, IntPtr.Zero, px, py, pw, ph, 0x0004 | 0x0040);
+            }
+            SetForegroundWindow(h);
+            done.Add((string)hit["title"]);
+        }
+        return Ok("arranged", done, "missing", missing);
     }
 
     static Dictionary<string, object> WindowInfo(Dictionary<string, object> r)

@@ -159,3 +159,34 @@ export async function readPage(url: string, offset = 0): Promise<string> {
   }
   throw new Error('too many redirects')
 }
+
+// ---------- A YouTube video's subtitles ----------
+
+/** The words spoken in a YouTube video, from its subtitles (English first). */
+export async function youtubeTranscript(url: string): Promise<string> {
+  const id = /(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/.exec(url)?.[1]
+  if (!id) throw new Error('that isn’t a YouTube video link')
+  const page = await (await net.fetch(`https://www.youtube.com/watch?v=${id}&hl=en`, { headers: { 'User-Agent': UA, 'Accept-Language': 'en-GB,en;q=0.9' } })).text()
+  const title = /<title>([^<]*)<\/title>/.exec(page)?.[1]?.replace(/ - YouTube$/, '') ?? 'the video'
+  const at = page.indexOf('"captionTracks":')
+  if (at < 0) throw new Error('this video has no subtitles')
+  const start = page.indexOf('[', at)
+  let depth = 0
+  let end = start
+  for (; end < page.length; end++) {
+    if (page[end] === '[') depth++
+    else if (page[end] === ']' && --depth === 0) break
+  }
+  const tracks = JSON.parse(page.slice(start, end + 1)) as { baseUrl: string; languageCode: string; kind?: string }[]
+  const track = tracks.find((t) => t.languageCode.startsWith('en') && t.kind !== 'asr') ?? tracks.find((t) => t.languageCode.startsWith('en')) ?? tracks[0]
+  if (!track) throw new Error('this video has no subtitles')
+  const res = await net.fetch(`${track.baseUrl}&fmt=json3`, { headers: { 'User-Agent': UA } })
+  const j = (await res.json()) as { events?: { segs?: { utf8: string }[] }[] }
+  const text = (j.events ?? [])
+    .map((e) => (e.segs ?? []).map((s) => s.utf8).join(''))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!text) throw new Error('the subtitles were empty')
+  return `Video: ${title}\n\n${text.slice(0, 60_000)}${text.length > 60_000 ? ' …(cut)' : ''}`
+}
