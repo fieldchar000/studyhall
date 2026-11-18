@@ -1272,6 +1272,11 @@ export interface Api {
     bubble(who: 'you' | 'nova', text: string, opts?: { append?: boolean; done?: boolean }): void
     /** (orb window) */
     onBubble(cb: (b: { who: 'you' | 'nova'; text: string; append: boolean; done: boolean }) => void): () => void
+    /** (orb window) the pen is on (draw what you mean) or off */
+    onPen(cb: (p: { on: boolean; once: boolean }) => void): () => void
+    /** (orb window) the pen's marks covered this box (window coordinates), or null if nothing was drawn */
+    penDone(rect: { x: number; y: number; width: number; height: number } | null): void
+    penCancel(): void
     /** Nova is talking about mark n on your screen now: the globe floats beside it */
     lookMark(n: number): void
     /** (cards window) what the cards are arranged around (window coordinates), or null */

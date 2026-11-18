@@ -57,7 +57,7 @@ const sentencesOf = (text: string): string[] =>
     .slice(0, 16)
 
 /** Teach a topic. Resolves once the lesson has started (it carries on, spoken, in the background). */
-export async function teach(topic: string, onScreen: boolean, wiki = ''): Promise<{ started: boolean; first: string }> {
+export async function teach(topic: string, onScreen: boolean, wiki = '', notes?: { title: string; text: string }): Promise<{ started: boolean; first: string }> {
   stopTeach()
   const my = gen
   const prefs = teachHooks.prefs()
@@ -73,7 +73,16 @@ export async function teach(topic: string, onScreen: boolean, wiki = ''): Promis
       screenLines = []
     }
   }
-  if (!screenLines.length && prefs.novaSource !== 'none') {
+  if (!screenLines.length && notes) {
+    // Your own study file: its lines are the source page (the key one gets underlined).
+    const lines = notes.text
+      .split('\n')
+      .map((l) => l.replace(/\s+/g, ' ').trim())
+      .filter((l) => l.length > 3)
+      .flatMap((l) => (l.length > 240 ? sentencesOf(l) : [l]))
+      .slice(0, 40)
+    if (lines.length) source = { title: notes.title, url: '', image: null, sentences: lines }
+  } else if (!screenLines.length && prefs.novaSource !== 'none') {
     const page = (wiki ? await teachHooks.source(wiki).catch(() => null) : null) ?? (await teachHooks.source(topic).catch(() => null))
     if (page) source = { title: page.title, url: page.url, image: page.image, sentences: sentencesOf(page.text) }
   }
@@ -83,7 +92,7 @@ export async function teach(topic: string, onScreen: boolean, wiki = ''): Promis
   const context = screenLines.length
     ? `\n\nNumbered text on the student's screen:\n${screenLines.map((c) => `${c.id}: ${c.name}`).join('\n')}`
     : source
-      ? `\n\nSource page (${source.title}), numbered sentences:\n${source.sentences.map((s, i) => `${i + 1}: ${s}`).join('\n')}`
+      ? `\n\n${notes ? `The student's own study notes ("${source.title}"): teach from these, using their wording for key terms and saying it's from their notes. Numbered lines` : `Source page (${source.title}), numbered sentences`}:\n${source.sentences.map((s, i) => `${i + 1}: ${s}`).join('\n')}`
       : ''
 
   // ----- Performing the script while it streams in -----

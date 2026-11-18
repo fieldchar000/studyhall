@@ -15,6 +15,7 @@
 //   {"cmd":"focus","id":7}           put the keyboard focus on it
 //   {"cmd":"waitClick","rect":[x,y,w,h],"timeoutMs":60000}  wait until you click inside that box
 //   {"cmd":"esc"}                    has Esc been pressed since the last time we asked? (stops Nova's hands)
+//   {"cmd":"selection","exclude":[pid,...]}  the text you've highlighted in the app you're using, and where it is
 // Positions are physical screen pixels (this program is DPI-aware).
 
 using System;
@@ -101,6 +102,7 @@ static class NovaEyes
         {
             case "snapshot": return Snapshot(r);
             case "window": return WindowInfo(r);
+            case "selection": return Selection(r);
             case "invoke":
                 {
                     var e = El(r); object p;
@@ -161,6 +163,38 @@ static class NovaEyes
     }
 
     /** Just the window you are using: title, app and position (fast; no controls). */
+    // The highlighted text: the selection of the focused text (or the document around it), with its screen box.
+    static Dictionary<string, object> Selection(Dictionary<string, object> r)
+    {
+        var skip = new HashSet<int>();
+        if (r.ContainsKey("exclude") && r["exclude"] is System.Collections.IEnumerable)
+            foreach (var x in (System.Collections.IEnumerable)r["exclude"]) skip.Add(Convert.ToInt32(x));
+        var e = AutomationElement.FocusedElement;
+        if (e == null || skip.Contains(e.Current.ProcessId)) return Ok("text", "");
+        var walk = TreeWalker.ControlViewWalker;
+        for (int i = 0; e != null && i < 10; i++)
+        {
+            object p;
+            if (e.TryGetCurrentPattern(TextPattern.Pattern, out p))
+            {
+                var sel = ((TextPattern)p).GetSelection();
+                if (sel.Length == 0) return Ok("text", "");
+                string text = sel[0].GetText(6000);
+                if (string.IsNullOrWhiteSpace(text)) return Ok("text", "");
+                double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+                foreach (var b in sel[0].GetBoundingRectangles())
+                {
+                    if (b.Width <= 0 || b.Height <= 0) continue;
+                    x0 = Math.Min(x0, b.X); y0 = Math.Min(y0, b.Y); x1 = Math.Max(x1, b.X + b.Width); y1 = Math.Max(y1, b.Y + b.Height);
+                }
+                var rect = x0 < x1 ? new[] { (int)x0, (int)y0, (int)(x1 - x0), (int)(y1 - y0) } : null;
+                return Ok("text", text, "rect", rect);
+            }
+            e = walk.GetParent(e);
+        }
+        return Ok("text", "");
+    }
+
     static Dictionary<string, object> WindowInfo(Dictionary<string, object> r)
     {
         var hwnd = TargetWindow(r);

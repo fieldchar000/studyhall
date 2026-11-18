@@ -841,6 +841,10 @@ export function NovaPage(): React.JSX.Element {
               <li>“I’ll email Sam the notes tomorrow morning” (a promise: it reminds you)</li>
               <li>“Remember I’m doing chemistry A-level” · “Forget that”</li>
               <li>Tap Ctrl + Shift to type to {name} beside your cursor</li>
+              <li>“Teach me week 3 PNS from my notes” · “Quiz me on my pharm week 2 file”</li>
+              <li>“Pull up a YouTube video on how beta blockers work” · “Play some study music”</li>
+              <li>Hold Ctrl + Alt, circle something on screen and ask “what’s this?” (or Ctrl + Alt + B, then circle)</li>
+              <li>Highlight text anywhere and say “explain this”</li>
             </ul>
           </section>
         </aside>

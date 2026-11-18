@@ -7,6 +7,7 @@ import { api } from '@/lib/data'
 import { lookAt, type LookKind } from '@/lib/bauer/look'
 import { say } from '@/lib/bauer/agent'
 import { startGlobe, type NovaGlobe } from '@/lib/jarvis/nova'
+import { NovaPen } from '@/components/NovaPen'
 
 /** Marks something of Nova's that takes clicks (see main.tsx: the window only catches clicks over these). */
 const hover = { 'data-hot': '' }
@@ -143,6 +144,7 @@ export function OrbWindow(): React.JSX.Element {
     <>
       {/* Roamies drives the canvas; clicks on it (not on a wrapper) are the globe's. */}
       <canvas ref={canvas} className="fixed" style={{ imageRendering: 'pixelated' }} />
+      <NovaPen />
       {nova && novaText && (
         <div className="nova-bub-row" style={{ left: bx, width: W, justifyContent: edge, ...(roomAbove ? { bottom: window.innerHeight - (at.y - at.r * 1.35) } : { top: at.y + at.r * 1.35 + (you ? 64 : 0) }) }}>
           <div className={`nova-bub nova-bub-nova ${nova.done ? 'is-done' : ''} ${roomAbove ? '' : 'flip'}`} style={{ ['--tail' as string]: tailAt }}>
@@ -588,9 +590,10 @@ export function CardsWindow(): React.JSX.Element {
           {bar(SOURCE_ID, `${name} · source`)}
           <div className="src-page">
             <h2>{source.title}</h2>
-            <div className="src-from">From Wikipedia</div>
+            <div className="src-from">{source.url ? 'From Wikipedia' : 'From your notes'}</div>
             {source.image && <img src={source.image} alt="" />}
-            <p>
+            {/* Your own notes are lines (bullets, headings); Wikipedia is running text. */}
+            <p className={source.url ? '' : 'src-lines'}>
               {source.sentences.map((s, i) =>
                 mark && mark.n === i ? (
                   <span key={i} className="src-mark">
@@ -602,9 +605,11 @@ export function CardsWindow(): React.JSX.Element {
                 )
               )}
             </p>
-            <button className="src-more" onClick={() => void api.app.openUrl(source.url)}>
-              Open the full page
-            </button>
+            {source.url && (
+              <button className="src-more" onClick={() => void api.app.openUrl(source.url)}>
+                Open the full page
+              </button>
+            )}
           </div>
         </article>
       )}

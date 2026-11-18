@@ -389,6 +389,13 @@ const api: Api = {
       ipcRenderer.on('bauer:subject', l)
       return () => ipcRenderer.removeListener('bauer:subject', l)
     },
+    onPen: (cb) => {
+      const l = (_e: unknown, p: Parameters<typeof cb>[0]): void => cb(p)
+      ipcRenderer.on('bauer:pen', l)
+      return () => ipcRenderer.removeListener('bauer:pen', l)
+    },
+    penDone: (rect) => ipcRenderer.send('bauer:window', { type: 'penDone', rect }),
+    penCancel: () => ipcRenderer.send('bauer:window', { type: 'penCancel' }),
     lookMark: (n) => ipcRenderer.send('bauer:window', { type: 'lookMark', n }),
     cardAt: (r) => ipcRenderer.send('bauer:window', { type: 'cardAt', x: r.x, y: r.y, w: r.width, h: r.height }),
     onOrbGo: (cb) => {

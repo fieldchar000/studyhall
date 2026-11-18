@@ -139,6 +139,21 @@ export async function see(opts: { hwnd?: number; offscreen?: boolean; screenshot
 }
 
 /** A JPEG of one area of the screen (Nova's own windows are hidden from capture). */
+/** A close-up of part of the screen (JPEG data URL), e.g. what you circled. Never in automated tests. */
+export async function captureArea(rect: Electron.Rectangle): Promise<string | null> {
+  if (OFFSCREEN) return null
+  return (await captureRect(rect).catch(() => null))?.image ?? null
+}
+
+/** The text you've highlighted in the app you're using, and where it is on screen (DIP). */
+export async function selectionNow(): Promise<{ text: string; rect: Electron.Rectangle | null } | null> {
+  if (OFFSCREEN) return null
+  const r = await eyes({ cmd: 'selection', exclude: [process.pid] }, 1500).catch(() => null)
+  const text = r?.ok ? String(r.text ?? '').trim() : ''
+  if (!text) return null
+  return { text: text.slice(0, 4000), rect: Array.isArray(r!.rect) ? toDip(r!.rect as number[]) : null }
+}
+
 async function captureRect(rect: Electron.Rectangle): Promise<{ image: string; scale: number } | null> {
   const display = screen.getDisplayMatching(rect)
   const sf = display.scaleFactor

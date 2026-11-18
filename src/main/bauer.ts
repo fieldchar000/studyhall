@@ -42,7 +42,12 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
       for (const op of liveQueue.splice(0)) cardsWin?.webContents.send('bauer:live', op)
     }
     // The cards window is only as tall as what's in it (never a full-height strip down your screen).
-    else if (msg.type === 'mouse' && from && (from === orbWin || from === cardsWin)) from.setIgnoreMouseEvents(!msg.over, { forward: true })
+    else if (msg.type === 'mouse' && from && (from === orbWin || from === cardsWin)) {
+      if (from === orbWin && pen) return // (while the pen is on, the layer takes the mouse for drawing)
+      from.setIgnoreMouseEvents(!msg.over, { forward: true })
+    }
+    else if (msg.type === 'penDone' && from === orbWin && orbWin) penDone(msg.rect)
+    else if (msg.type === 'penCancel' && from === orbWin) setPen(null)
     // A lesson is talking about one card: the globe floats over beside it (left of the cards).
     else if (msg.type === 'cardAt' && from === cardsWin && cardsWin && [msg.x, msg.y, msg.h].every((v) => Number.isFinite(Number(v)))) {
       const b = cardsWin.getBounds()
@@ -75,7 +80,8 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
 
 function setShortcut(on: boolean): void {
   if (OFFSCREEN) return
-  if (on && !globalShortcut.isRegistered(CIRCLE_SHORTCUT)) globalShortcut.register(CIRCLE_SHORTCUT, () => void startCircle())
+  // Ctrl+Alt+B: draw one circle on your live screen (no frozen picture, no full-screen window), then ask.
+  if (on && !globalShortcut.isRegistered(CIRCLE_SHORTCUT)) globalShortcut.register(CIRCLE_SHORTCUT, () => setPen('once'))
   else if (!on && globalShortcut.isRegistered(CIRCLE_SHORTCUT)) globalShortcut.unregister(CIRCLE_SHORTCUT)
   if (on && !globalShortcut.isRegistered(ORB_SHORTCUT)) globalShortcut.register(ORB_SHORTCUT, toggleOrb)
   else if (!on && globalShortcut.isRegistered(ORB_SHORTCUT)) globalShortcut.unregister(ORB_SHORTCUT)
@@ -187,6 +193,47 @@ export function sendOrb(state: OrbState, text?: string): void {
     cursor = local(p)
   }
   orbWin.webContents.send('bauer:orb', { state, text, cursor })
+}
+
+// ---------- The pen: circle or underline what you mean, on your live screen ----------
+// While you hold the talk keys (or once after Ctrl+Alt+B) the globe's layer takes the mouse, so dragging draws glowing
+// marks over whatever is on screen. Let go (or finish the one circle) and the layer lets clicks through again, the
+// marks fade, and Nova gets the circled area (a close-up and the text in it) with your question. It can't get stuck:
+// it ends when you let go of the keys, after one circle, on right-click, or by itself (2 minutes / 12 s untouched).
+
+let pen: 'talk' | 'once' | null = null
+let penTimer: NodeJS.Timeout | null = null
+export const penMode = (): 'talk' | 'once' | null => pen
+export const penHooks = {
+  /** A circle was drawn: what's in it (screen rect). */
+  circled: (_rect: Electron.Rectangle, _once: boolean): void => {}
+}
+export function setPen(mode: 'talk' | 'once' | null): void {
+  if (suspended || OFFSCREEN) mode = null
+  if (penTimer) clearTimeout(penTimer)
+  penTimer = null
+  if (!orbWin || orbWin.isDestroyed()) mode = null
+  const was = pen
+  pen = mode
+  if (!orbWin || orbWin.isDestroyed()) return
+  if (mode) {
+    if (!orbWin.isVisible()) orbWin.showInactive()
+    layerOn(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()))
+    orbWin.setIgnoreMouseEvents(false)
+    orbWin.webContents.send('bauer:pen', { on: true, once: mode === 'once' })
+    penTimer = setTimeout(() => setPen(null), mode === 'once' ? 12_000 : 120_000)
+  } else if (was) {
+    orbWin.webContents.send('bauer:pen', { on: false, once: false })
+    orbWin.setIgnoreMouseEvents(true, { forward: true })
+  }
+}
+function penDone(r: unknown): void {
+  const once = pen === 'once'
+  if (once) setPen(null)
+  const o = r as { x: number; y: number; width: number; height: number } | null
+  if (!o || !orbWin || ![o.x, o.y, o.width, o.height].every(Number.isFinite) || o.width < 4 || o.height < 4) return
+  const b = orbWin.getBounds()
+  penHooks.circled({ x: Math.round(b.x + o.x), y: Math.round(b.y + o.y), width: Math.round(o.width), height: Math.round(o.height) }, once)
 }
 
 /** A little performance from the globe (Nova's emote tags): wave, hype, remind, upset, motivate. */

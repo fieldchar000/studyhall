@@ -349,6 +349,9 @@ export function voiceSay(text: string): void {
 let keys: ChildProcess | null = null
 let keysWanted = false
 /** Start the small helper that notices the talk keys (PC app only; never in automated tests). */
+/** The talk keys going down and up (the pen draws while they are held). */
+export const talkKeyHooks = { down: (): void => {}, up: (): void => {} }
+
 export function startKeys(): void {
   keysWanted = true
   if (keys || suspended || process.env.STUDYHALL_OFFSCREEN === '1') return
@@ -382,13 +385,19 @@ export function stopKeys(): void {
 function onKey(e: string): void {
   if (suspended) return
   if (e === 'ptt-down') {
+    talkKeyHooks.down()
     ensureWindow()
     place(H_SMALL)
     win!.showInactive()
     send({ type: 'listen', ptt: true })
     if (earsReady) warmEars()
-  } else if (e === 'ptt-up') send({ type: 'finish' })
-  else if (e === 'ptt-cancel') send({ type: 'cancel' })
+  } else if (e === 'ptt-up') {
+    talkKeyHooks.up()
+    send({ type: 'finish' })
+  } else if (e === 'ptt-cancel') {
+    talkKeyHooks.up()
+    send({ type: 'cancel' })
+  }
   else if (e === 'type') {
     // The ask bar: a small box right beside your cursor (like Roamies'), to type to Nova.
     ensureWindow()

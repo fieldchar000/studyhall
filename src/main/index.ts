@@ -47,12 +47,12 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   } else if (why !== 'not connected' && prefs.novaOffline === false) throw new Error(`Nova is paused because ${why}.`)
   return aiChat(messages, schema, maxTokens)
 }
-import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbEmote } from './bauer'
-import { startKeys, stopKeys, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
+import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbEmote, penHooks, penMode, setPen } from './bauer'
+import { startKeys, stopKeys, talkKeyHooks, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
 import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
 import { eyes, helpOnScreen, pointerHooks, stopEyes, stopWalkthrough } from './eyes'
-import { factsBlock, forgetNovaFact, frontWindow, novaFacts, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova } from './novaBrain'
+import { factsBlock, forgetNovaFact, frontWindow, noteCircle, novaFacts, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova } from './novaBrain'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
@@ -556,6 +556,15 @@ if (!app.requestSingleInstanceLock()) {
     handsHooks.show = showPointer
     handsHooks.hide = hidePointer
     handsHooks.confirm = voiceConfirm
+    // The pen: hold the talk keys and drag to circle what you mean; Ctrl+Alt+B circles first, then asks.
+    talkKeyHooks.down = () => setPen('talk')
+    talkKeyHooks.up = () => {
+      if (penMode() === 'talk') setPen(null)
+    }
+    penHooks.circled = (rect, once) => {
+      noteCircle(rect)
+      if (once) startBrief() // (circled with Ctrl+Alt+B: now say what you want to know)
+    }
     teachHooks.ask = (messages, onText) => claudeChat(messages, undefined, getPrefs(), 'explain', onText)
     teachHooks.prefs = getPrefs
     teachHooks.live = liveCards

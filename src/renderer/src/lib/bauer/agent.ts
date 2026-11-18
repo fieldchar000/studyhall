@@ -603,6 +603,11 @@ async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: M
             actions = [...actions, ...done]
             logId = await writeLog(text, out, done, undo, source, 'ai')
           }
+        } else if (name === 'materialText') {
+          // A PDF or Word study file: its text (HTML files are read by the main process itself).
+          const doc = await api.materials.read(String((input as { id?: string })?.id ?? ''))
+          const { docToText } = await import('@/lib/importDoc') // (loaded only when needed: it brings the PDF reader)
+          out = doc ? (await docToText(doc)).slice(0, 200_000) : ''
         } else if (name === 'notes') {
           const r = await findAnswer(String((input as { question?: string })?.question ?? text))
           out = r.found ? r.reply : 'Nothing about that in their Studyhall.'

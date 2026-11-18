@@ -8,7 +8,7 @@
 // Everything still runs through the same locked-down Claude Code as the rest of Nova (claude.ts): none of Claude Code's
 // own tools, no connectors, no project files, nothing saved to your Claude account.
 
-import { app, BrowserWindow, type WebContents } from 'electron'
+import { app, BrowserWindow, shell, type WebContents } from 'electron'
 import { exec } from 'node:child_process'
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -19,16 +19,20 @@ import { claudeBase, claudeBlocked, claudeChecked, claudeModelId, noteClaudeMess
 import type { NovaEffort } from '@shared/types'
 import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
-import { APP_NAMES, openApp, orbEmote, showCards, showMarks } from './bauer'
-import { describeControls, eyes, helpOnScreen, see, type Seen, type SeenControl } from './eyes'
+import { APP_NAMES, openApp, orbEmote, setSubject, showCards, showMarks } from './bauer'
+import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, type Seen, type SeenControl } from './eyes'
 import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { draftWithConnectors } from './claude'
 import { voiceConfirm } from './voice'
+import { findMaterials, flashcardQuestions, focusText, readMaterial, saveFlashcards, type QuizQ } from './study'
+import { readPage, webSearch, youtubeSearch } from './web'
+import { openSpotifyPlayer } from './spotify'
 
 type Query = import('@anthropic-ai/claude-agent-sdk').Query
 type SdkMessage = import('@anthropic-ai/claude-agent-sdk').SDKMessage
-type UserMsg = { type: 'user'; message: { role: 'user'; content: { type: 'text'; text: string }[] }; parent_tool_use_id: null; session_id: string }
+type Block = { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg' | 'image/png'; data: string } }
+type UserMsg = { type: 'user'; message: { role: 'user'; content: Block[] }; parent_tool_use_id: null; session_id: string }
 
 /** A "[look N]" cue as it travels with the speech text (invisible separator, the mark's number, separator). */
 const MARKER = /\u2063\d\u2063/g
@@ -54,6 +58,9 @@ How to help (use as few tool calls as the task needs; several independent ones c
 - Anything in Studyhall (tasks, deadlines, calendar events, lectures, study logs, habits, money, journal, check-ins, inbox, opening a page or website): studyhall_actions, with every change in one call. When they say they'll do something ("I'll email Sam tomorrow"), that's a promise: save it as a task with a due time so Studyhall reminds them. Snoozing a reminder is change_task_date. Then say what you did in one short sentence.
 - Questions about their own stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first.
 - Explaining or teaching a topic ("how does a black hole work", "teach me integration", "explain this"): teach. It runs a live show-and-tell lesson with cards, a diagram and its own voice, so after calling it say nothing more.
+- Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file ("teach me week 3 PNS from my notes", "what does my pharm lab say about routes?"), find_material first, then teach with material_id (a lesson from their notes), read_material (to answer from them) or quiz_me.
+- "Quiz me" / "test me": quiz_me (from a study file's own questions, or their flashcards), then run it yourself, one question per reply. Offer save_flashcards for the ones they missed.
+- The web: "pull up a video on X", "a study music playlist", "find me a source for…": youtube (videos and playlists) or web_search, pick the best real result and open_page it; say what you opened in a few words. read_page to answer from a page. Music to study to: play_music opens Spotify in Studyhall (they have Premium), or a YouTube playlist if they ask for YouTube. Never make up links: only open ones a search gave you.
 - How to do something in the app on their screen, where something is, what something on screen means: help_on_screen. It points and walks them through it with its own voice, so say nothing more after it.
 - Clicking, typing or changing something in an app for them: do_on_screen (only when they ask you to do it).
 - A quick look at what's on screen to answer a question ("what's this error?", "summarise this page"): read_screen, then answer.
@@ -158,6 +165,38 @@ function findControl(pool: SeenControl[], find: string, seen: Seen | null): Seen
   return best
 }
 
+// ---------- What you circled or highlighted (goes with your request) ----------
+
+let circled: Promise<{ rect: Electron.Rectangle; image: string | null; text: string; at: number }> | null = null
+/** You circled part of your screen (the pen): ring it, and get a close-up and the text in it ready for your request. */
+export function noteCircle(rect: Electron.Rectangle): void {
+  setSubject(rect)
+  showMarks([{ rect, label: 'you circled this' }])
+  circled = (async () => {
+    const pad = 14
+    const area = { x: rect.x - pad, y: rect.y - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 }
+    const [image, seen] = await Promise.all([captureArea(area), see({ screenshot: false }).catch(() => null)])
+    const inside = (c: SeenControl): boolean => c.rect.x < area.x + area.width && c.rect.x + c.rect.width > area.x && c.rect.y < area.y + area.height && c.rect.y + c.rect.height > area.y
+    const text = [...new Set((seen?.controls ?? []).filter(inside).map((c) => c.name.trim()).filter(Boolean))].join(' · ').slice(0, 3000)
+    return { rect, image, text, at: Date.now() }
+  })()
+}
+/** For the request: what was just circled (picture and text), else the text you've highlighted, if any. */
+async function screenContext(): Promise<{ text: string; image: string | null }> {
+  if (circled) {
+    const c = await circled.catch(() => null)
+    circled = null
+    if (c && Date.now() - c.at < 90_000)
+      return { text: `They circled part of their screen while asking (the picture is attached; it's ringed on screen now)${c.text ? `. Text in it: «${c.text}»` : ''}. "This" / "that" means what they circled.`, image: c.image }
+  }
+  const sel = await selectionNow().catch(() => null)
+  if (sel) {
+    if (sel.rect) setSubject(sel.rect)
+    return { text: `They have this text highlighted on screen (it's what they mean by "this", "that bit", "explain this"; otherwise it may just be left over): «${sel.text}»`, image: null }
+  }
+  return { text: '', image: null }
+}
+
 // ---------- The tools ----------
 
 const ACTION_TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page'] as const
@@ -212,19 +251,150 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
     ),
     tool(
       'teach',
-      'Teach or explain a topic live: cards, a pixel diagram, the key line underlined on their screen or a source page, and its own voice. Say nothing after calling it.',
+      'Teach or explain a topic live: cards, a pixel diagram, the key line underlined on their screen, their own notes or a source page, and its own voice. With material_id (from find_material) it teaches from THEIR study file. Say nothing after calling it.',
       {
         topic: z.string().describe('the subject in a few words'),
-        wiki: z.string().describe('exact English Wikipedia article title that best covers it, or ""'),
-        on_screen: z.boolean().describe('true only if the window in front is about this topic (e.g. its Wikipedia page)')
+        wiki: z.string().describe('exact English Wikipedia article title that best covers it, or "" (ignored with material_id)'),
+        on_screen: z.boolean().describe('true only if the window in front is about this topic (e.g. its Wikipedia page)'),
+        material_id: z.string().optional().describe('teach from this study file of theirs (from find_material)')
       },
-      async ({ topic, wiki, on_screen }) => {
+      async ({ topic, wiki, on_screen, material_id }) => {
         slow()
         const p = prefs()
-        const r = await teach(String(topic).slice(0, 200), !!on_screen && p.novaEyes !== 'off', String(wiki ?? '').slice(0, 120)).catch(() => null)
+        let notes: { title: string; text: string } | undefined
+        if (material_id) {
+          const m = await readMaterial(String(material_id), (id) => rendererCall(wc, 'materialText', { id })).catch(() => null)
+          if (m) notes = { title: m.title, text: focusText(m.text, String(topic), 7000) }
+        }
+        const r = await teach(String(topic).slice(0, 200), !notes && !!on_screen && p.novaEyes !== 'off', String(wiki ?? '').slice(0, 120), notes).catch(() => null)
         if (!r?.started) return text('The lesson could not start. Explain it briefly yourself instead.')
         quiet()
         return text('The lesson has started and is speaking for itself. Reply with nothing more.')
+      }
+    ),
+    tool(
+      'find_material',
+      'Find their study files in Studyhall (lecture notes, slides, HTML study pages, labs) by what they call them ("week 3 PNS", "pharm drug administration"). Returns ids and titles.',
+      { query: z.string() },
+      async ({ query }) => {
+        const found = findMaterials(String(query))
+        return text(found.length ? found.map((m) => `${m.id} | ${m.title}${m.module ? ` | ${m.module}` : ''}${m.week ? ` week ${m.week}` : ''} (${m.kind})`).join('\n') : 'No study files in Studyhall yet.')
+      }
+    ),
+    tool(
+      'read_material',
+      'Read one of their study files: its headings, the part about focus (or the start), and how many quiz questions it has. Use it to answer questions about their notes.',
+      { id: z.string(), focus: z.string().optional().describe('what you need from it, to pick the right part of a long file') },
+      async ({ id, focus }) => {
+        slow()
+        const m = await readMaterial(String(id), (x) => rendererCall(wc, 'materialText', { id: x })).catch((e) => e as Error)
+        if (m instanceof Error) return text(`Could not read it: ${m.message}`)
+        return text(`Title: ${m.title}\nHeadings: ${m.heads.slice(0, 40).join(' · ') || '(none)'}\nQuiz questions in it: ${m.quiz.length}\n\n${focusText(m.text, String(focus ?? ''), 14_000)}`)
+      }
+    ),
+    tool(
+      'quiz_me',
+      'Start a spoken quiz: questions from their study file (its own built-in quizzes first) or their flashcards. Returns the questions with answers for YOU to ask one at a time.',
+      {
+        material_id: z.string().optional(),
+        flashcards: z.string().optional().describe('a deck name, or "due" for the cards due'),
+        topic: z.string().optional().describe('only questions about this'),
+        count: z.number().int().min(1).max(20).optional()
+      },
+      async ({ material_id, flashcards, topic, count }) => {
+        slow()
+        const n = count ?? 8
+        let from = ''
+        let qs: QuizQ[] = []
+        let notesText = ''
+        if (material_id) {
+          const m = await readMaterial(String(material_id), (x) => rendererCall(wc, 'materialText', { id: x })).catch(() => null)
+          if (!m) return text('Could not open that file.')
+          from = m.title
+          qs = m.quiz
+          notesText = focusText(m.text, String(topic ?? ''), 9000)
+        } else {
+          const fc = flashcardQuestions(String(flashcards ?? ''))
+          from = fc.deck
+          qs = fc.quiz
+        }
+        const words = String(topic ?? '').toLowerCase().match(/[a-z0-9]{4,}/g) ?? []
+        if (words.length) {
+          const on = qs.filter((q) => words.some((w) => `${q.q} ${q.options?.join(' ') ?? ''} ${q.answerText ?? ''}`.toLowerCase().includes(w)))
+          if (on.length >= 3) qs = on
+        }
+        qs = qs
+          .map((q) => [Math.random(), q] as const)
+          .sort((a, b) => a[0] - b[0])
+          .map((x) => x[1])
+          .slice(0, n)
+        const rules = 'Run the quiz out loud: one question per reply. Say the question, then for multiple choice the options as "A, … B, … C, …" in your sentences (no "- " lines), and end with the question mark so they can answer straight away. When they answer: say right or not in a few words, the correct answer, and the why in one short sentence, then the next question in the same reply. Keep score. Accept answers by letter, by the option\'s words or by meaning; for written answers, judge the meaning against the model answer and be fair. After the last one, go back over the ones they missed once, then give the score and offer to save the missed ones as flashcards (save_flashcards). "Stop" ends it with the score so far.'
+        if (!qs.length)
+          return text(`${from ? `"${from}" has no built-in quiz questions` : 'No flashcards found'}. ${notesText ? `Write ${n} good questions yourself from these notes (mix multiple choice and short answer), then run them.\n${rules}\n\nNotes:\n${notesText}` : 'Tell them, and offer a quiz on a topic instead.'}`)
+        const list = qs
+          .map((q, i) => `${i + 1}. ${q.q}${q.options ? `\n   Options: ${q.options.map((o, j) => `${String.fromCharCode(65 + j)}) ${o}`).join('  ')}\n   Answer: ${String.fromCharCode(65 + (q.answer ?? 0))}` : `\n   Model answer: ${q.answerText}`}${q.why ? `\n   Why: ${q.why}` : ''}`)
+          .join('\n')
+        return text(`Quiz from "${from}" (${qs.length} questions, their own). ${rules}\n\n${list}`)
+      }
+    ),
+    tool(
+      'save_flashcards',
+      'Save cards to one of their flashcard decks in Studyhall (e.g. the quiz questions they missed).',
+      { deck: z.string(), cards: z.array(z.object({ front: z.string(), back: z.string() })).min(1).max(60) },
+      async ({ deck, cards }) => {
+        const r = saveFlashcards(String(deck), cards)
+        return text(`Saved ${r.count} card${r.count === 1 ? '' : 's'} to the deck "${r.deck}".`)
+      }
+    ),
+    tool(
+      'youtube',
+      'Find YouTube videos or playlists (real ones, with links). Then open the best with open_page. For "a video on X", "a study music playlist".',
+      { query: z.string(), playlists: z.boolean().optional().describe('playlists instead of videos') },
+      async ({ query, playlists }) => {
+        slow()
+        const r = await youtubeSearch(String(query), !!playlists).catch((e) => e as Error)
+        if (r instanceof Error) return text(`YouTube search failed: ${r.message}`)
+        return text(r.length ? r.map((v) => `${v.title} | ${v.url}${v.by ? ` | ${v.by}` : ''}${v.length ? ` | ${v.length}` : ''}${v.views ? ` | ${v.views}` : ''}`).join('\n') : 'Nothing found.')
+      }
+    ),
+    tool(
+      'web_search',
+      'Search the web (real results with links). For facts that change, recent things, finding a specific page or source.',
+      { query: z.string() },
+      async ({ query }) => {
+        slow()
+        return text(await webSearch(String(query)).catch((e) => `Search failed: ${e instanceof Error ? e.message : String(e)}`))
+      }
+    ),
+    tool(
+      'read_page',
+      'Read a public web page (its text), to answer from it or check it before opening it.',
+      { url: z.string(), offset: z.number().int().optional().describe('character to continue from on a long page') },
+      async ({ url, offset }) => {
+        slow()
+        return text(await readPage(String(url), offset ?? 0).catch((e) => `Could not read it: ${e instanceof Error ? e.message : String(e)}`))
+      }
+    ),
+    tool(
+      'open_page',
+      'Open a web page (a video, an article, a playlist) in their browser.',
+      { url: z.string() },
+      async ({ url }) => {
+        const u = String(url)
+        if (!/^https?:\/\//i.test(u)) return text('Only web links (https) can be opened.')
+        await shell.openExternal(u)
+        return text('Opened.')
+      }
+    ),
+    tool(
+      'play_music',
+      'Play music in Studyhall\'s Spotify player (they have Spotify Premium). Give a Spotify link if you have one, else a search (e.g. "lofi study").',
+      { search: z.string() },
+      async ({ search }) => {
+        const q = String(search).trim()
+        const url = /^https:\/\/open\.spotify\.com\//.test(q) ? q : `https://open.spotify.com/search/${encodeURIComponent(q)}/playlists`
+        await openSpotifyPlayer(url).catch(() => null)
+        return text('Spotify is open on that search; they pick the playlist (or say which one).')
       }
     ),
     tool(
@@ -571,6 +741,7 @@ export function novaTurn(wc: WebContents, said: string, liveState: string): Prom
 }
 
 async function doTurn(wc: WebContents, said: string, liveState: string): Promise<NovaTurnResult> {
+  const screen = await screenContext().catch(() => ({ text: '', image: null }))
   await claudeChecked()
   const p = getPrefs()
   const blocked = claudeBlocked(p)
@@ -647,7 +818,13 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   c.at = Date.now()
   c.push({
     type: 'user',
-    message: { role: 'user', content: [{ type: 'text', text: `${liveState}\n\n${said}` }] },
+    message: {
+      role: 'user',
+      content: [
+        { type: 'text', text: `${liveState}${screen.text ? `\n${screen.text}` : ''}\n\n${said}` },
+        ...(screen.image ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: screen.image.replace(/^data:image\/\w+;base64,/, '') } }] : [])
+      ]
+    },
     parent_tool_use_id: null,
     session_id: ''
   })
