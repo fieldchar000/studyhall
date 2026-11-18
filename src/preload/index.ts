@@ -384,6 +384,11 @@ const api: Api = {
       ipcRenderer.on('bauer:bubble', l)
       return () => ipcRenderer.removeListener('bauer:bubble', l)
     },
+    onSubject: (cb) => {
+      const l = (_e: unknown, r: Parameters<typeof cb>[0]): void => cb(r)
+      ipcRenderer.on('bauer:subject', l)
+      return () => ipcRenderer.removeListener('bauer:subject', l)
+    },
     lookMark: (n) => ipcRenderer.send('bauer:window', { type: 'lookMark', n }),
     cardAt: (r) => ipcRenderer.send('bauer:window', { type: 'cardAt', x: r.x, y: r.y, w: r.width, h: r.height }),
     onOrbGo: (cb) => {

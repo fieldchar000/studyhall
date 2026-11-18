@@ -427,7 +427,23 @@ export function NovaPage(): React.JSX.Element {
                   hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>
                 </span>
               </Row>
-              <Row title="Type instead" hint="Opens a small box in the corner">
+              <Row title="Follow-up" hint={`After ${name} finishes talking, it keeps listening for about 6 seconds so you can answer straight back (no key or “Hey ${name}”). It never hears itself: it only listens once it has stopped.`}>
+                <Seg
+                  value={prefs?.novaFollowUp ?? 'asked'}
+                  options={[
+                    ['off', 'Off'],
+                    ['asked', 'When it asks me'],
+                    ['always', 'After every reply']
+                  ]}
+                  onChange={(v) => save({ novaFollowUp: v as Prefs['novaFollowUp'] })}
+                />
+              </Row>
+              <Row title="Draw while you talk" hint="While you hold the talk keys, your mouse draws on the screen: circle or underline what you mean. The marks fade when you let go.">
+                <span className="nova-keys">
+                  hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd> + drag
+                </span>
+              </Row>
+              <Row title="Type instead" hint="Opens a small box beside your cursor">
                 <span className="nova-keys">
                   tap <kbd>Ctrl</kbd>+<kbd>Shift</kbd>
                 </span>
@@ -640,7 +656,7 @@ export function NovaPage(): React.JSX.Element {
                   onChange={(v) => save({ novaOrbSize: v as Prefs['novaOrbSize'] })}
                 />
               </Row>
-              <Row title="Float around my screen" hint="Off: it rests where you drop it. Either way it hops aside when your mouse comes near, and comes over when you talk.">
+              <Row title="Float around my screen" hint="Off: it rests where you drop it. When you drop it somewhere, it stays there for a few minutes either way; it comes over when you talk.">
                 <input type="checkbox" checked={prefs?.novaDrift !== false} onChange={(e) => save({ novaDrift: e.target.checked })} aria-label="Float around my screen" />
               </Row>
               <p className="text-xs text-muted">Drag it to move it (or fling it); click it to talk; right-click it for Hide. In “follows my cursor” size it shrinks to a little HUD ring beside your mouse.</p>

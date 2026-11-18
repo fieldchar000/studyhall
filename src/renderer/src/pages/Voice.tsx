@@ -47,6 +47,7 @@ export default function VoicePanel(): React.JSX.Element {
   const card = useRef<HTMLDivElement>(null)
   const phaseRef = useRef<Phase>('idle')
   const woke = useRef(false) // this recording started from "Hey Bauer" (not a button)
+  const followUp = useRef(false) // listening for an answer straight after Nova spoke
   phaseRef.current = phase
   engine.held = phase !== 'idle' && phase !== 'nothing'
 
@@ -90,6 +91,18 @@ export default function VoicePanel(): React.JSX.Element {
         chime(false)
         // (A live lesson speaks for itself, sentence by sentence.)
         if (prefs.bauerTalk !== false && !r.quiet) say(r.reply)
+        // Follow-up: Nova has finished talking, so it listens a few seconds for your answer, no key or "Hey Nova".
+        const mode = prefs.novaFollowUp ?? 'asked'
+        if (r.followUp && (mode === 'always' || (mode === 'asked' && /\?["'”’)]*\s*$/.test(r.reply.trim())))) {
+          followUp.current = true
+          woke.current = false
+          setHeard(false)
+          await engine.listen(false, 6).catch(() => (followUp.current = false))
+          if (followUp.current) {
+            setPhase('listening')
+            youSaid('')
+          }
+        }
       } catch (e) {
         setMessage(e instanceof Error ? e.message : String(e))
         setPhase('error')
@@ -128,10 +141,18 @@ export default function VoicePanel(): React.JSX.Element {
         }
         else if (e.type === 'nothing') {
           if (phaseRef.current === 'review') return
+          // No follow-up came: quietly stop listening (nothing to report).
+          if (followUp.current) {
+            followUp.current = false
+            youSaid('', true)
+            setPhase('idle')
+            return
+          }
           setMessage('I didn’t catch anything.')
           setPhase('nothing')
           youSaid('', true)
         } else if (e.type === 'transcript') {
+          followUp.current = false
           youSaid(e.text)
           setText(e.text)
           setEdited(false)

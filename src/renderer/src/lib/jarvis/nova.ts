@@ -93,6 +93,8 @@ async function boot(opts: {
   let mouse = { x: -1e4, y: -1e4, active: false }
   let wasHeld = false
   let heldFrom: [number, number] | null = null
+  let restUntil = 0 // dropped by you: it stays right there until then (no wandering, no hopping aside)
+  let lastD = 1e9 // how far the mouse was last frame (coming closer = reaching for it)
 
   const engaged = (): boolean => state === 'listening' || state === 'thinking' || talking()
   const anchorAt = (x: number, y: number, r = 0.35): void => {
@@ -138,7 +140,8 @@ async function boot(opts: {
     target = null
     rush = false
     if (!m) return
-    if (cfg.roam) m.anchor = null
+    if (now < restUntil && home) anchorAt(home.x, home.y, 0.12) // you put it here a moment ago: it stays
+    else if (cfg.roam) m.anchor = null
     else if (home) go(home.x, home.y, false)
     else m.anchor = { x: m.x, y: m.y, r: kit.R * 0.35 }
   }
@@ -188,8 +191,10 @@ async function boot(opts: {
         if (wasHeld && !held && heldFrom && Math.hypot(m.x - heldFrom[0], m.y - heldFrom[1]) > k.R * 0.5) {
           home = { x: m.x, y: m.y }
           opts.onHome(m.x, m.y)
-          quietUntil = now + 2.5
-          if (!cfg.roam) anchorAt(m.x, m.y)
+          // You put it here: it stays put (even when it normally floats around) for a few minutes.
+          restUntil = now + 180
+          quietUntil = now + 180
+          anchorAt(m.x, m.y, 0.12)
         }
         wasHeld = held
         if (held) return
@@ -199,12 +204,14 @@ async function boot(opts: {
           // The request's done: stay a few seconds (so you can read it), then off again.
           if (now - idleSince > 6) settle()
         } else if (!byCursor && mouse.active && now > quietUntil) {
-          // You came close but not onto it: it's in your way, so it hops aside (pointing right at it means "you").
+          // Your mouse has stayed close for a while (working right next to it), but isn't reaching for it: it hops aside.
+          // Coming closer counts as reaching for it (to grab or click it), so it never runs from your hand.
           const d = Math.hypot(mouse.x - m.x, mouse.y - m.y)
-          const near = d < k.R * 3
-          const onIt = d < m.radius * 1.1
-          flee = near && !onIt ? flee + dt : Math.max(0, flee - dt * 2)
-          if (flee > 0.45) {
+          const near = d < k.R * 2.6
+          const onIt = d < m.radius * 1.4
+          const reaching = d < lastD - 0.3
+          flee = near && !onIt && !reaching ? flee + dt : near ? 0 : Math.max(0, flee - dt * 2)
+          if (flee > 2.5) {
             const [x, y] = awayFrom(mouse.x, mouse.y)
             k.sq.kick(4)
             if (cfg.roam) {
@@ -216,6 +223,12 @@ async function boot(opts: {
             }
             flee = 0
           }
+        }
+        lastD = mouse.active ? Math.hypot(mouse.x - m.x, mouse.y - m.y) : 1e9
+        // A few minutes after you put it down, it's free to float around again.
+        if (restUntil && now > restUntil && !byCursor && !target) {
+          restUntil = 0
+          settle()
         }
         if (engaged()) idleSince = now
         // Called over: get there in well under a second, even from across the screen. Floating around: slowly.

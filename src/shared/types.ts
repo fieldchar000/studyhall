@@ -998,7 +998,10 @@ export interface Prefs {
   novaVoice?: string // Kokoro voice (default af_heart)
   novaSpeed?: number // how fast Nova talks, 0.8–1.3 (default 1.05)
   novaOrbSize?: 'small' | 'default' | 'cursor' // the floating orb (default default)
-  novaDrift?: boolean // the orb bobs gently while idle (default on)
+  novaDrift?: boolean // the globe floats around the screen (default on)
+  novaFollowUp?: 'off' | 'asked' | 'always' // listen a few seconds after Nova speaks, for your answer (default 'asked': when it asked you something)
+  novaBrief?: boolean // a spoken 'here's your day' the first time you're at the PC each morning (default on)
+  novaProactive?: boolean // Nova offers things on its own: a quick quiz after a long read, a nudge in a focus session (default on)
   novaEyes?: 'off' | 'auto' // look at your screen when a request needs it (default auto)
   novaWalk?: boolean // walkthroughs wait for your click, then show the next step (default on)
   novaSource?: 'source' | 'none' // teaching something that isn't on your screen: open a brief source page beside the cards (default) or just explain
@@ -1271,6 +1274,8 @@ export interface Api {
     onBubble(cb: (b: { who: 'you' | 'nova'; text: string; append: boolean; done: boolean }) => void): () => void
     /** Nova is talking about mark n on your screen now: the globe floats beside it */
     lookMark(n: number): void
+    /** (cards window) what the cards are arranged around (window coordinates), or null */
+    onSubject(cb: (r: { x: number; y: number; width: number; height: number } | null) => void): () => void
     /** (cards window) where the card Nova is talking about is, in the window */
     cardAt(rect: { x: number; y: number; width: number; height: number }): void
     /** (orb window) loudness to ripple with: Nova's voice (every 40 ms) or your microphone */

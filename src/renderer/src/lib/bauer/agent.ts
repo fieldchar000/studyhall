@@ -575,7 +575,7 @@ function studyhallState(ctx: BriefContext, now: Date): string {
 }
 
 let sayListener = false
-async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; quiet: boolean } | null> {
+async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; quiet: boolean; followUp: boolean } | null> {
   if (!sayListener) {
     sayListener = true
     api.nova.onSay((t) => say(t)) // a walkthrough finishing later
@@ -625,14 +625,16 @@ async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: M
     await stream.end().catch(() => {})
     const reply = r.text || (actions.length ? plainReply(actions) : '')
     if (!actions.length && reply) await logAnswer(text, reply, source)
-    return { reply, actions, logId, quiet: true }
+    // A lesson or walkthrough is still talking: no follow-up listening on top of it.
+    const followUp = !r.tools.some((t) => t === 'teach' || t === 'help_on_screen' || t === 'quiz')
+    return { reply, actions, logId, quiet: true, followUp }
   } finally {
     for (const off of offs) off()
   }
 }
 
 /** Everything Nova hears goes through here: teach, explain, answer, look at your screen, or act. */
-export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean }> {
+export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean }> {
   const text = stripWake(raw)
   // Small talk, one word, half a sentence: say nothing, do nothing, log nothing.
   const nothing = { reply: source === 'typed' ? 'I didn’t find anything to do in that.' : '', actions: [] as BriefAction[], logId: null, ignored: true }

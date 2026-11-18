@@ -305,7 +305,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
   handle('prefs:get', () => getPrefs())
   handle('prefs:set', (_e, patch: Record<string, unknown>) => {
     const clean: Partial<Prefs> = {}
-    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages', 'syncAllFiles', 'oculusDei', 'lanShare', 'lanAutoFetch', 'voiceWake', 'notifyBudgets', 'notifyPeople', 'notifyCheckin', 'bauerConfirm', 'bauerTalk', 'bauerOrb', 'bauerOnlyWhenOpen', 'novaOffline', 'novaNoExtra', 'novaDrift', 'novaWalk', 'novaConnectors', 'novaShareStats'] as const) {
+    for (const k of ['closeToTray', 'launchAtLogin', 'notifyDeadlines', 'notifyTimer', 'notifyMessages', 'syncAllFiles', 'oculusDei', 'lanShare', 'lanAutoFetch', 'voiceWake', 'notifyBudgets', 'notifyPeople', 'notifyCheckin', 'bauerConfirm', 'bauerTalk', 'bauerOrb', 'bauerOnlyWhenOpen', 'novaOffline', 'novaNoExtra', 'novaDrift', 'novaBrief', 'novaProactive', 'novaWalk', 'novaConnectors', 'novaShareStats'] as const) {
       if (k in patch) clean[k] = !!patch[k]
     }
     if (typeof patch.quickCaptureShortcut === 'string' && SHORTCUTS.includes(patch.quickCaptureShortcut)) {
@@ -329,6 +329,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     if (typeof patch.novaVoice === 'string' && /^[a-z]{2}_[a-z]+$/.test(patch.novaVoice)) clean.novaVoice = patch.novaVoice
     if ('novaSpeed' in patch && Number.isFinite(Number(patch.novaSpeed))) clean.novaSpeed = Math.min(1.3, Math.max(0.8, Number(patch.novaSpeed)))
     if ('novaOrbSize' in patch && ['small', 'default', 'cursor'].includes(String(patch.novaOrbSize))) clean.novaOrbSize = String(patch.novaOrbSize) as Prefs['novaOrbSize']
+    if ('novaFollowUp' in patch && ['off', 'asked', 'always'].includes(String(patch.novaFollowUp))) clean.novaFollowUp = String(patch.novaFollowUp) as Prefs['novaFollowUp']
     if ('novaEyes' in patch && ['off', 'auto'].includes(String(patch.novaEyes))) clean.novaEyes = String(patch.novaEyes) as Prefs['novaEyes']
     if ('novaSource' in patch && ['source', 'none'].includes(String(patch.novaSource))) clean.novaSource = String(patch.novaSource) as Prefs['novaSource']
     if ('novaHands' in patch && ['off', 'ask', 'allowed'].includes(String(patch.novaHands))) clean.novaHands = String(patch.novaHands) as Prefs['novaHands']

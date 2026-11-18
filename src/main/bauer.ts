@@ -26,7 +26,6 @@ export const ORB_SHORTCUT = 'CommandOrControl+Alt+N' // show / hide Nova
 /** Automated tests: windows live far off-screen, nothing is captured, nothing takes focus. */
 const OFFSCREEN = process.env.STUDYHALL_OFFSCREEN === '1'
 
-const CARDS_W = 320
 
 export function configureBauer(opts: { url: (hash: string) => string; webPreferences: Electron.WebPreferences; startBrief: () => void }): void {
   loadUrl = opts.url
@@ -39,15 +38,10 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
       cardsWin?.webContents.send('bauer:cards', cards)
       // The page is listening now: the lesson steps that came while it loaded.
       cardsReady = true
+      sendSubject()
       for (const op of liveQueue.splice(0)) cardsWin?.webContents.send('bauer:live', op)
     }
     // The cards window is only as tall as what's in it (never a full-height strip down your screen).
-    else if (msg.type === 'cardsHeight' && from === cardsWin && cardsWin && !OFFSCREEN) {
-      const b = cardsWin.getBounds()
-      const wa = screen.getDisplayMatching(b).workArea
-      const h = Math.max(80, Math.min(wa.height - 24, Math.round(Number(msg.h) || 0) + 8))
-      if (Math.abs(h - b.height) > 2) cardsWin.setBounds({ ...b, height: h })
-    }
     else if (msg.type === 'mouse' && from && (from === orbWin || from === cardsWin)) from.setIgnoreMouseEvents(!msg.over, { forward: true })
     // A lesson is talking about one card: the globe floats over beside it (left of the cards).
     else if (msg.type === 'cardAt' && from === cardsWin && cardsWin && [msg.x, msg.y, msg.h].every((v) => Number.isFinite(Number(v)))) {
@@ -249,10 +243,17 @@ const overlayWindow = (bounds: Electron.Rectangle, hash: string, focusable = fal
 
 // ---------- Cards ----------
 
+/** The cards layer: see-through, over the whole screen the subject (or your mouse) is on; each card floats on it. */
 function ensureCards(): BrowserWindow {
-  if (cardsWin && !cardsWin.isDestroyed()) return cardsWin
-  const wa = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
-  cardsWin = overlayWindow({ x: wa.x + wa.width - CARDS_W - 12, y: wa.y + 12, width: CARDS_W, height: wa.height - 24 }, '#cards')
+  const wa = screen.getDisplayNearestPoint(subject ? { x: subject.x + subject.width / 2, y: subject.y + subject.height / 2 } : screen.getCursorScreenPoint()).workArea
+  if (cardsWin && !cardsWin.isDestroyed()) {
+    if (!OFFSCREEN && JSON.stringify(cardsWin.getBounds()) !== JSON.stringify(wa)) {
+      cardsWin.setBounds(wa)
+      sendSubject()
+    }
+    return cardsWin
+  }
+  cardsWin = overlayWindow(wa, '#cards')
   cardsWin.setIgnoreMouseEvents(true, { forward: true })
   cardsReady = false
   cardsWin.on('closed', () => {
@@ -260,6 +261,18 @@ function ensureCards(): BrowserWindow {
     cardsReady = false
   })
   return cardsWin
+}
+
+// What the cards are arranged around (what Nova ringed or underlined, or what you circled), in screen coordinates.
+let subject: Electron.Rectangle | null = null
+function sendSubject(): void {
+  if (!cardsWin || cardsWin.isDestroyed() || !cardsReady) return
+  const b = OFFSCREEN ? screen.getPrimaryDisplay().workArea : cardsWin.getBounds()
+  cardsWin.webContents.send('bauer:subject', subject ? { x: subject.x - b.x, y: subject.y - b.y, width: subject.width, height: subject.height } : null)
+}
+export function setSubject(r: Electron.Rectangle | null): void {
+  subject = r
+  sendSubject()
 }
 
 export function showCards(add: BauerCard[]): void {
@@ -392,6 +405,10 @@ let lastMarks: Electron.Rectangle[] = []
 export function showMarks(marks: { rect: Electron.Rectangle; label: string }[]): void {
   if (suspended || !marks.length) return
   lastMarks = marks.map((m) => m.rect)
+  const xs = marks.map((m) => m.rect)
+  const x0 = Math.min(...xs.map((r) => r.x))
+  const y0 = Math.min(...xs.map((r) => r.y))
+  setSubject({ x: x0, y: y0, width: Math.max(...xs.map((r) => r.x + r.width)) - x0, height: Math.max(...xs.map((r) => r.y + r.height)) - y0 })
   const display = screen.getDisplayMatching(marks[0].rect)
   const b = display.bounds
   const here = marks.filter((m) => screen.getDisplayMatching(m.rect).id === display.id).slice(0, 6)
@@ -436,7 +453,6 @@ export function hidePointer(): void {
 
 // ---------- Live lessons: cards appear step by step (and a brief source page beside them) ----------
 
-const LIVE_W = 610 // two columns: the source page and the cards
 let lessonHome: NodeJS.Timeout | null = null
 let cardsReady = false
 const liveQueue: LiveOp[] = []
@@ -445,11 +461,6 @@ const liveQueue: LiveOp[] = []
 export function liveCards(op: LiveOp): void {
   if (suspended) return
   const w = ensureCards()
-  if (op.op === 'start' && !OFFSCREEN) {
-    const wa = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
-    const width = op.source ? LIVE_W : CARDS_W
-    w.setBounds({ x: wa.x + wa.width - width - 12, y: wa.y + 12, width, height: wa.height - 24 })
-  }
   if (op.op === 'start') cards = []
   // The lesson's over: the globe stays by the cards a little while (you're reading), then floats off again.
   if (lessonHome) clearTimeout(lessonHome)
@@ -474,8 +485,8 @@ export function showHighlight(rect: Electron.Rectangle, tag: string): void {
     pointWin.setIgnoreMouseEvents(true)
     pointWin.on('closed', () => (pointWin = null))
   } else if (!OFFSCREEN) pointWin.setBounds(b)
-  const cb = cardsBounds()
-  const arrowTo = cb ? { x: cb.x - b.x, y: Math.min(cb.y + 120, cb.y + cb.height / 2) - b.y } : null
+  const arrowTo = null // (the cards float around the line now, with their own arrow to it)
+  setSubject(rect)
   orbTo(besideRect(rect)) // the globe floats over to the line it's talking about
   const w = pointWin
   const send = (): void => {

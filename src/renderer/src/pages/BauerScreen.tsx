@@ -287,22 +287,114 @@ function lookAtCard(id: string): void {
   setTimeout(go, 40)
 }
 
+// ---------- Cards: small floating cards around what you asked about (the Roamies way) ----------
+// The cards window is one see-through layer over the screen. Each card is placed on its own in free space around the
+// subject (what Nova ringed, underlined or you circled), never on top of it, with a short arrow to it; with nothing to
+// work around they line up along the right edge. At most 4 stay up (the oldest closes first, pinned ones stay). Drag
+// one by its bar to put it somewhere else (it stays there); pin it to keep it.
+
+type Rect = { x: number; y: number; width: number; height: number }
+type Pos = { x: number; y: number; moved?: boolean }
+const MAX_CARDS = 4
+const GAP = 12
+const SOURCE_ID = '__source'
+const overlaps = (a: Rect, b: Rect, pad = 0): boolean =>
+  a.x < b.x + b.width + pad && a.x + a.width + pad > b.x && a.y < b.y + b.height + pad && a.y + a.height + pad > b.y
+
+/** Where a card of size w × h goes: around the subject first (right, left, below, above), then the screen's edges,
+ *  never over the subject or another card. */
+function placeCard(w: number, h: number, subject: Rect | null, taken: Rect[]): Pos {
+  const W = window.innerWidth
+  const H = window.innerHeight
+  const free = (x: number, y: number): boolean => {
+    if (x < 8 || y < 8 || x + w > W - 8 || y + h > H - 8) return false
+    const r = { x, y, width: w, height: h }
+    if (subject && overlaps(r, subject, 14)) return false
+    return !taken.some((t) => overlaps(r, t, GAP - 2))
+  }
+  const columns: number[] = []
+  const rows: number[] = []
+  if (subject) {
+    columns.push(subject.x + subject.width + 18, subject.x - w - 18)
+    rows.push(subject.y + subject.height + 18, subject.y - h - 18)
+  }
+  columns.push(W - w - 16, 16)
+  // Down each column from the subject's top (or the screen's), then along each row.
+  for (const x of columns) {
+    const startY = subject ? Math.max(8, Math.min(subject.y - 20, H - h - 8)) : 12
+    for (let y = startY; y + h <= H - 8; y += 12) if (free(x, y)) return { x, y }
+    for (let y = startY; y >= 8; y -= 12) if (free(x, y)) return { x, y }
+  }
+  for (const y of rows) {
+    const startX = subject ? Math.max(8, Math.min(subject.x, W - w - 8)) : 16
+    for (let x = startX; x + w <= W - 8; x += 12) if (free(x, y)) return { x, y }
+    for (let x = startX; x >= 8; x -= 12) if (free(x, y)) return { x, y }
+  }
+  // Nowhere free: the right edge, from the top (over whatever's there).
+  return { x: Math.max(8, W - w - 16), y: 12 }
+}
+
 export function CardsWindow(): React.JSX.Element {
   const [cards, setCards] = useState<BauerCard[]>([])
   const [source, setSource] = useState<{ title: string; url: string; image: string | null; sentences: string[] } | null>(null)
   const [mark, setMark] = useState<{ n: number; tag: string } | null>(null)
   const [name, setName] = useState('nova')
-  useEffect(() => api.bauer.onCards((c) => setCards(c ?? [])), [])
+  const [subject, setSubject] = useState<Rect | null>(null)
+  const [pos, setPos] = useState<Record<string, Pos>>({})
+  const [pinned, setPinned] = useState<Record<string, boolean>>({})
+  const [open, setOpen] = useState<Record<string, boolean>>({}) // "+ more" expanded
+  const sizes = useRef<Record<string, { w: number; h: number }>>({})
+  const [, setTick] = useState(0)
+  const lastActive = useRef(Date.now())
+  // (The message handlers read these, so they never need re-subscribing: each subscription tells main "ready".)
+  const pinnedRef = useRef(pinned)
+  pinnedRef.current = pinned
+  const sourceRef = useRef(source)
+  sourceRef.current = source
+  const closedRef = useRef(new Set<string>())
+
+  // At most 4 cards: when a new one comes, the oldest that isn't pinned makes way.
+  const keepFew = (list: BauerCard[]): BauerCard[] => {
+    const out = [...list]
+    while (out.length + (sourceRef.current ? 1 : 0) > MAX_CARDS) {
+      const i = out.findIndex((c) => !pinnedRef.current[c.id])
+      if (i < 0) break
+      out.splice(i, 1)
+    }
+    return out
+  }
+  // Main sends the whole list: cards already up keep their order (and pinned ones stay), new ones go after them.
+  useEffect(
+    () =>
+      api.bauer.onCards((c) =>
+        setCards((old) => {
+          const incoming = (c ?? []).filter((n) => !closedRef.current.has(n.id)) // (closed ones stay closed)
+          const kept = old.filter((o) => pinnedRef.current[o.id] || incoming.some((n) => n.id === o.id)).map((o) => incoming.find((n) => n.id === o.id) ?? o)
+          return keepFew([...kept, ...incoming.filter((n) => !kept.some((k) => k.id === n.id))])
+        })
+      ),
+    []
+  )
+  // A new subject: the cards you haven't moved or pinned rearrange around it.
+  useEffect(
+    () =>
+      api.bauer.onSubject((r) => {
+        setSubject(r)
+        setPos((p) => Object.fromEntries(Object.entries(p).filter(([id, q]) => q.moved || pinnedRef.current[id])))
+      }),
+    []
+  )
   // A live lesson arrives step by step.
   useEffect(
     () =>
       api.bauer.onLive((op) => {
         if (op.op !== 'end') lastActive.current = Date.now()
         if (op.op === 'start') {
-          setCards([])
+          setCards((cs) => cs.filter((c) => pinnedRef.current[c.id]))
           setSource(op.source)
           setMark(null)
-        } else if (op.op === 'card') setCards((cs) => [...cs.filter((c) => c.id !== op.card.id), op.card])
+          setPos((p) => Object.fromEntries(Object.entries(p).filter(([id]) => pinnedRef.current[id])))
+        } else if (op.op === 'card') setCards((cs) => keepFew([...cs.filter((c) => c.id !== op.card.id), op.card]))
         else if (op.op === 'item') setCards((cs) => cs.map((c) => (c.id === op.id ? { ...c, items: [...(c.items ?? []), op.item] } : c)))
         else if (op.op === 'quiz') setCards((cs) => cs.map((c) => (c.id === op.id ? { ...c, quiz: [...(c.quiz ?? []), op.q] } : c)))
         else if (op.op === 'mark') setMark({ n: op.n, tag: op.tag })
@@ -317,9 +409,12 @@ export function CardsWindow(): React.JSX.Element {
       .catch(() => {})
   }, [])
   const close = (id: string): void => {
+    closedRef.current.add(id)
+    if (id === SOURCE_ID) setSource(null)
     const next = cards.filter((c) => c.id !== id)
     setCards(next)
-    if (!next.length && !source) {
+    setPinned((p) => ({ ...p, [id]: false }))
+    if (!next.length && (id === SOURCE_ID || !source)) {
       api.bauer.mouse(false)
       void api.bauer.clearCards()
     }
@@ -328,52 +423,105 @@ export function CardsWindow(): React.JSX.Element {
     setCards([])
     setSource(null)
     setMark(null)
+    setPos({})
+    setPinned({})
     api.bauer.mouse(false)
     void api.bauer.clearCards()
   }
-
-  // The arrow from the underlined sentence to the first card.
-  const wrap = useRef<HTMLDivElement>(null)
-  // The window fits its content; it clears itself after 3 quiet minutes.
-  useEffect(() => {
-    const el = wrap.current
-    if (!el) return
-    const fit = (): void => api.bauer.cardsHeight(el.scrollHeight)
-    const ro = new ResizeObserver(fit)
-    ro.observe(el)
-    for (const c of [...el.children]) ro.observe(c)
-    fit()
-    return () => ro.disconnect()
-  }, [cards.length, source])
-  const lastActive = useRef(Date.now())
+  // Everything clears itself after 3 quiet minutes (pinned cards stay).
   useEffect(() => {
     const touch = (): void => void (lastActive.current = Date.now())
     document.addEventListener('mousemove', touch, { passive: true })
     const t = setInterval(() => {
-      if ((cards.length || source) && Date.now() - lastActive.current > 180_000) clearAll()
+      if ((cards.length || source) && Date.now() - lastActive.current > 180_000) {
+        const keep = cards.filter((c) => pinned[c.id])
+        if (!keep.length) clearAll()
+        else {
+          setCards(keep)
+          setSource(null)
+        }
+      }
     }, 5000)
     return () => {
       document.removeEventListener('mousemove', touch)
       clearInterval(t)
     }
   })
-  const [arrow, setArrow] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+
+  // Measure each card; place the ones that need a place (new, or now covering something), keep the rest still.
+  const ids = [...(source ? [SOURCE_ID] : []), ...cards.map((c) => c.id)]
+  const layer = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = layer.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      let changed = false
+      for (const node of el.querySelectorAll<HTMLElement>('[data-card-id]')) {
+        const id = node.dataset.cardId!
+        const s = { w: node.offsetWidth, h: node.offsetHeight }
+        const o = sizes.current[id]
+        if (!o || Math.abs(o.w - s.w) > 1 || Math.abs(o.h - s.h) > 1) {
+          sizes.current[id] = s
+          changed = true
+        }
+      }
+      if (changed) setTick((t) => t + 1)
+    })
+    for (const node of el.querySelectorAll<HTMLElement>('[data-card-id]')) ro.observe(node)
+    return () => ro.disconnect()
+  }, [ids.join('|'), open])
+  useLayoutEffect(() => {
+    const next: Record<string, Pos> = {}
+    const taken: Rect[] = []
+    let changed = false
+    // Moved and pinned cards keep their place; then the others in order, keeping their place while it's still free.
+    const order = [...ids].sort((a, b) => Number(!!(pos[b]?.moved || pinned[b])) - Number(!!(pos[a]?.moved || pinned[a])))
+    for (const id of order) {
+      const s = sizes.current[id]
+      if (!s) continue
+      const p = pos[id]
+      const r = p && { x: p.x, y: p.y, width: s.w, height: s.h }
+      const ok = r && (p.moved || pinned[id] || ((!subject || !overlaps(r, subject, 10)) && !taken.some((t) => overlaps(r, t, GAP - 4)) && r.x + r.width <= window.innerWidth && r.y + r.height <= window.innerHeight))
+      const q = ok ? p : placeCard(s.w, s.h, subject, taken)
+      if (!ok) changed = true
+      next[id] = q
+      taken.push({ x: q.x, y: q.y, width: s.w, height: s.h })
+    }
+    if (changed || Object.keys(pos).some((k) => !next[k])) setPos(next)
+  })
+
+  // Dragging a card by its bar: it stays where you drop it.
+  const drag = useRef<{ id: string; dx: number; dy: number } | null>(null)
+  const startDrag = (id: string, e: React.PointerEvent): void => {
+    if ((e.target as HTMLElement).closest('button')) return
+    const p = pos[id]
+    if (!p) return
+    drag.current = { id, dx: e.clientX - p.x, dy: e.clientY - p.y }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  const moveDrag = (e: React.PointerEvent): void => {
+    const d = drag.current
+    if (!d) return
+    const s = sizes.current[d.id] ?? { w: 260, h: 100 }
+    const x = Math.max(0, Math.min(window.innerWidth - s.w, e.clientX - d.dx))
+    const y = Math.max(0, Math.min(window.innerHeight - 40, e.clientY - d.dy))
+    setPos((p) => ({ ...p, [d.id]: { x, y, moved: true } }))
+  }
+  const endDrag = (): void => void (drag.current = null)
+
+  // The source page's underlined line: the globe floats over to it.
   const lastMark = useRef<typeof mark>(null)
   useLayoutEffect(() => {
-    if (!mark || !wrap.current) return setArrow(null)
-    // Bring the underlined line into view on the source page first.
-    wrap.current.querySelector('.src-mark')?.scrollIntoView({ block: 'center' })
-    const box = wrap.current.getBoundingClientRect()
-    const from = wrap.current.querySelector('.src-mark')?.getBoundingClientRect()
-    const to = wrap.current.querySelector('.px-card')?.getBoundingClientRect()
-    if (!from || !to) return setArrow(null)
-    // The globe floats over to the underlined line (left of the source page).
+    if (!mark || !layer.current) return
+    const line = layer.current.querySelector<HTMLElement>('.src-mark')
+    if (!line) return
+    line.scrollIntoView({ block: 'center' })
     if (lastMark.current !== mark) {
       lastMark.current = mark
-      api.bauer.cardAt({ x: box.left, y: from.top, width: from.width, height: from.height })
+      const r = line.getBoundingClientRect()
+      api.bauer.cardAt({ x: (pos[SOURCE_ID]?.x ?? r.left), y: r.top, width: r.width, height: r.height })
     }
-    setArrow({ x1: from.right - box.left + 4, y1: from.top - box.top + from.height / 2, x2: to.left - box.left - 8, y2: to.top - box.top + 34 })
-  }, [mark, cards.length, source])
+  }, [mark, pos])
 
   const kindLabel: Record<BauerCard['kind'], string> = {
     summary: 'answer',
@@ -386,57 +534,94 @@ export function CardsWindow(): React.JSX.Element {
     quiz: 'quick check',
     diagram: 'diagram'
   }
-  const count = cards.length + (source ? 1 : 0)
+  const count = ids.length
+  // The arrow from the first card to the subject.
+  const first = ids.find((id) => id !== SOURCE_ID) ?? ids[0]
+  const fp = first ? pos[first] : null
+  const fs = first ? sizes.current[first] : null
+  let arrow: { x1: number; y1: number; x2: number; y2: number } | null = null
+  if (subject && fp && fs) {
+    const cx = fp.x + fs.w / 2
+    const sx = subject.x + subject.width / 2
+    const x1 = cx < sx ? fp.x + fs.w : fp.x
+    const y1 = Math.min(fp.y + fs.h - 10, Math.max(fp.y + 18, subject.y + subject.height / 2))
+    const x2 = cx < sx ? subject.x - 6 : subject.x + subject.width + 6
+    const y2 = subject.y + subject.height / 2
+    if (Math.hypot(x2 - x1, y2 - y1) > 30) arrow = { x1, y1, x2, y2 }
+  }
+  const bar = (id: string, label: string): React.JSX.Element => (
+    <header className="px-bar px-drag" onPointerDown={(e) => startDrag(id, e)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} title="Drag to move">
+      <i />
+      <i />
+      <span>{label}</span>
+      {count > 1 && id === ids[ids.length - 1] && (
+        <button onClick={clearAll} title="Close all the cards" className="px-all">
+          all ×
+        </button>
+      )}
+      <button onClick={() => setPinned((p) => ({ ...p, [id]: !p[id] }))} aria-label={pinned[id] ? 'Unpin' : 'Pin'} title={pinned[id] ? 'Pinned: stays until you close it' : 'Pin: keep this card'} className={pinned[id] ? 'px-pinned' : ''}>
+        ▣
+      </button>
+      <button onClick={() => close(id)} aria-label="Close">
+        ×
+      </button>
+    </header>
+  )
+  const style = (id: string): React.CSSProperties => {
+    const p = pos[id]
+    return p ? { left: p.x, top: p.y } : { left: -9999, top: 0, visibility: 'hidden' } // (measured first, then placed)
+  }
   return (
-    <div ref={wrap} className={`relative flex max-h-screen gap-3 overflow-y-auto overflow-x-hidden p-2 ${source ? 'flex-row items-start' : 'flex-col'}`}>
+    <div ref={layer} className="fixed inset-0 select-none">
+      {arrow && (
+        <svg className="px-arrow" aria-hidden="true">
+          <defs>
+            <marker id="px-head" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="#a8c8ff" />
+            </marker>
+          </defs>
+          <path d={`M${arrow.x1},${arrow.y1} C${(arrow.x1 + arrow.x2) / 2},${arrow.y1} ${(arrow.x1 + arrow.x2) / 2},${arrow.y2} ${arrow.x2},${arrow.y2}`} markerEnd="url(#px-head)" />
+        </svg>
+      )}
       {source && (
-        <article {...hover} className="src-page shrink-0">
-          <div className="src-url">en.wikipedia.org/wiki/{source.title.replace(/ /g, '_')}</div>
-          <h2>{source.title}</h2>
-          <div className="src-from">From Wikipedia, the free encyclopedia</div>
-          {source.image && <img src={source.image} alt="" />}
-          <p>
-            {source.sentences.map((s, i) =>
-              mark && mark.n === i ? (
-                <span key={i} className="src-mark">
-                  {s}
-                  <em>{mark.tag}</em>{' '}
-                </span>
-              ) : (
-                <span key={i}>{s} </span>
-              )
-            )}
-          </p>
-          <button className="src-more" onClick={() => void api.app.openUrl(source.url)}>
-            Open the full page
-          </button>
+        <article {...hover} data-card-id={SOURCE_ID} className={`px-card px-float src-card ${pinned[SOURCE_ID] ? 'is-pinned' : ''}`} style={style(SOURCE_ID)}>
+          {bar(SOURCE_ID, `${name} · source`)}
+          <div className="src-page">
+            <h2>{source.title}</h2>
+            <div className="src-from">From Wikipedia</div>
+            {source.image && <img src={source.image} alt="" />}
+            <p>
+              {source.sentences.map((s, i) =>
+                mark && mark.n === i ? (
+                  <span key={i} className="src-mark">
+                    {s}
+                    <em>{mark.tag}</em>{' '}
+                  </span>
+                ) : (
+                  <span key={i}>{s} </span>
+                )
+              )}
+            </p>
+            <button className="src-more" onClick={() => void api.app.openUrl(source.url)}>
+              Open the full page
+            </button>
+          </div>
         </article>
       )}
-      <div className={`flex min-w-0 flex-col gap-3 ${source ? 'flex-1' : ''}`}>
-        {count > 0 && (
-          <button {...hover} className="px-close" onClick={clearAll} title="Close everything">
-            ✕ CLOSE
-          </button>
-        )}
-        {cards.map((c) => (
-          <article key={c.id} {...hover} data-card-id={c.id} className="px-card shrink-0">
-            <header className="px-bar">
-              <i />
-              <i />
-              <span>
-                {name} · {kindLabel[c.kind]}
-              </span>
-              <button onClick={() => close(c.id)} aria-label="Close">
-                ×
-              </button>
-            </header>
+      {cards.map((c) => {
+        const items = c.items ?? []
+        const many = items.length > 4 && !open[c.id]
+        const shown = many ? items.slice(0, 4) : items
+        return (
+          <article key={c.id} {...hover} data-card-id={c.id} className={`px-card px-float ${c.kind === 'diagram' ? 'is-wide' : ''} ${pinned[c.id] ? 'is-pinned' : ''}`} style={style(c.id)}>
+            {bar(c.id, `${name} · ${kindLabel[c.kind]}`)}
             <div className="px-body">
               {c.kind !== 'photo' && <h3>{c.title}</h3>}
-              {c.image && <img src={c.image} alt="" className={`px-img ${c.kind === 'photo' ? 'max-h-64' : 'max-h-40'}`} />}
+              {c.image && <img src={c.image} alt="" className={`px-img ${c.kind === 'photo' ? 'max-h-52' : 'max-h-32'}`} />}
               {c.body && <p className="whitespace-pre-line">{c.body}</p>}
-              {c.kind === 'points' && c.items && (
+              {c.kind === 'points' && shown.length > 0 && (
                 <ul className="px-list">
-                  {c.items.map((it, i) => (
+                  {shown.map((it, i) => (
                     <li key={i} className="px-in">
                       <b>{it.label}</b>
                       {it.detail && <span> {it.detail}</span>}
@@ -444,9 +629,9 @@ export function CardsWindow(): React.JSX.Element {
                   ))}
                 </ul>
               )}
-              {c.kind === 'timeline' && c.items && (
+              {c.kind === 'timeline' && shown.length > 0 && (
                 <ol className="px-timeline">
-                  {c.items.map((it, i) => (
+                  {shown.map((it, i) => (
                     <li key={i} className="px-in">
                       <b>{it.label}</b>
                       {it.detail && <span>{it.detail}</span>}
@@ -454,9 +639,9 @@ export function CardsWindow(): React.JSX.Element {
                   ))}
                 </ol>
               )}
-              {c.kind === 'steps' && c.items && (
+              {c.kind === 'steps' && shown.length > 0 && (
                 <ol className="px-steps">
-                  {c.items.map((it, i) => (
+                  {shown.map((it, i) => (
                     <li key={i} className="px-in">
                       <em>{i + 1}</em>
                       <div>
@@ -467,7 +652,12 @@ export function CardsWindow(): React.JSX.Element {
                   ))}
                 </ol>
               )}
-              {c.kind === 'chart' && c.items && <PixelChart items={c.items} unit={c.unit} />}
+              {many && (
+                <button className="px-more" onClick={() => setOpen((o) => ({ ...o, [c.id]: true }))}>
+                  + {items.length - 4} more
+                </button>
+              )}
+              {c.kind === 'chart' && items.length > 0 && <PixelChart items={items} unit={c.unit} />}
               {c.kind === 'diagram' && c.svg && <PixelDiagram svg={c.svg} />}
               {c.kind === 'quiz' && c.quiz && c.quiz.length > 0 && <Quiz card={c} />}
               {(c.source || c.link) && c.kind !== 'diagram' && (
@@ -478,23 +668,8 @@ export function CardsWindow(): React.JSX.Element {
               )}
             </div>
           </article>
-        ))}
-        {count > 1 && (
-          <button {...hover} className="px-clear" onClick={clearAll}>
-            CLEAR ALL · {count}
-          </button>
-        )}
-      </div>
-      {arrow && (
-        <svg className="src-arrow" aria-hidden="true">
-          <defs>
-            <marker id="src-head" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 Z" fill="#a8c8ff" />
-            </marker>
-          </defs>
-          <path d={`M${arrow.x1},${arrow.y1} C${arrow.x1 + 40},${arrow.y1} ${arrow.x2 - 40},${arrow.y2} ${arrow.x2},${arrow.y2}`} markerEnd="url(#src-head)" />
-        </svg>
-      )}
+        )
+      })}
     </div>
   )
 }

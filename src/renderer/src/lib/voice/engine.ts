@@ -179,6 +179,7 @@ class Engine {
   // ---------- Recording a briefing ----------
 
   private startRecording(fromWake: boolean): void {
+    if (fromWake) this.waitS = 7
     // Keep the last ~1.3 s, so the wake word itself is in the recording: what's written down
     // can then be checked for "Hey Bauer" (false wake-ups from other talk are thrown away).
     this.rec = fromWake ? this.preroll.slice(-10) : []
@@ -220,7 +221,7 @@ class Engine {
     if (this.ptt) {
       if (seconds >= 120) void this.finish() // (the talk key is still held after two minutes)
     } else if ((this.spoke && pause >= 1.0) || seconds >= 45) void this.finish() // (a one-second pause ends it, like Roamies)
-    else if (!this.spoke && seconds >= 7) {
+    else if (!this.spoke && seconds >= this.waitS) {
       this.mode = this.wake ? 'wake' : 'idle'
       this.rec = []
       this.emit({ type: 'nothing' })
@@ -342,13 +343,16 @@ class Engine {
   }
 
   /** Start listening for a briefing now (no wake word needed). */
-  async listen(pushToTalk = false): Promise<void> {
+  async listen(pushToTalk = false, waitS = 7): Promise<void> {
     stopSpeaking() // talking to Nova interrupts it
     if (this.mode === 'record' || this.mode === 'busy') return
     await this.openMic()
     this.startRecording(false)
     this.ptt = pushToTalk
+    this.waitS = waitS // how long to wait for you to start talking (a follow-up waits less)
   }
+  /** Seconds to wait for speech to start before giving up. */
+  private waitS = 7
 
   get pushToTalk(): boolean {
     return this.ptt
