@@ -19,7 +19,7 @@ import { serveMaterial } from './files'
 import { refreshSubscriptions } from './ics'
 import { currentSenderId, registerIpc } from './ipc'
 import { applyLoginItem, getPrefs, watchShortcut } from './prefs'
-import { checkDeadlines } from './reminders'
+import { checkDeadlines, checkDueNow } from './reminders'
 import { checkLifeReminders } from './lifeReminders'
 import * as timer from './timer'
 import { createTray, updateTray } from './tray'
@@ -27,7 +27,7 @@ import { loadWindowState, trackWindowState } from './windowState'
 import { aiChat, aiStatus, configureAi, downloadAi, downloadEyes, removeAi, removeEyes, stopAi, warmAi } from './ai'
 import { configureMouth, installMouth, mouthStatus, removeMouth, speakMouth, warmMouth } from './mouth'
 import { configureEars, earsStatus, feedEars, installEars, removeEars, transcribeEars } from './ears'
-import { claudeBlocked, claudeChat, claudeStatus, draftWithConnectors, installClaude, listConnectors, refreshClaudeUsage, removeClaude, setClaudeWarm, signInClaude, signOutClaude, warmClaude } from './claude'
+import { claudeBlocked, claudeChat, claudeStatus, draftWithConnectors, installClaude, listConnectors, refreshClaudeUsage, removeClaude, setClaudeWarm, signInClaude, signOutClaude } from './claude'
 import type { AiMessage, AiPurpose } from '@shared/types'
 
 /** Nova's brain: Claude when it's connected and allowed, otherwise the model on this PC (if you allow that). */
@@ -47,11 +47,12 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   } else if (why !== 'not connected' && prefs.novaOffline === false) throw new Error(`Nova is paused because ${why}.`)
   return aiChat(messages, schema, maxTokens)
 }
-import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro } from './bauer'
+import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbEmote } from './bauer'
 import { startKeys, stopKeys, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
 import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
 import { eyes, helpOnScreen, pointerHooks, stopEyes, stopWalkthrough } from './eyes'
+import { factsBlock, forgetNovaFact, frontWindow, novaFacts, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova } from './novaBrain'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
@@ -254,6 +255,7 @@ function bauerAway(away: boolean): void {
   setVoiceSuspended(off)
   setBauerSuspended(off)
   setClaudeWarm(!off) // no Claude sessions waiting while Studyhall is closed
+  setNovaAllowed(!off)
   if (off) {
     stopTeach()
     stopHands()
@@ -413,13 +415,31 @@ if (!app.requestSingleInstanceLock()) {
         handle('ai:download', () => downloadAi())
         handle('ai:remove', () => removeAi())
         // Nova started listening: get its brain ready while you talk.
-        handle('ai:warm', async () => {
+        handle('ai:warm', async (e) => {
           const p = getPrefs()
-          if (!claudeBlocked(p)) {
-            warmClaude(p, 'act', lastSchema.get('act'))
-            warmClaude(p, 'chat')
-          } else await warmAi()
+          // With Claude: Nova's conversation gets ready while you talk (one call answers everything).
+          if (!claudeBlocked(p)) warmNova(e.sender)
+          else await warmAi()
         })
+        // Nova's conversation: one request, its speech streamed back to the window that asked.
+        handle('nova:turn', async (e, said: string, studyhall: string) => {
+          const p = getPrefs()
+          const now = new Date()
+          const live = [
+            '<live-state>',
+            `Now: ${now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, ${now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`,
+            `Window in front: ${await frontWindow()}`,
+            `Allowed: looking at the screen ${p.novaEyes === 'off' ? 'off' : 'on'}; working their apps ${p.novaHands ?? 'off'}; drafting with connectors ${p.novaConnectors ? 'on' : 'off'}`,
+            String(studyhall ?? '').slice(0, 12_000),
+            factsBlock(),
+            '</live-state>'
+          ].join('\n')
+          return novaTurn(e.sender, String(said ?? '').slice(0, 4000), live)
+        })
+        handle('nova:warm', (e) => warmNova(e.sender))
+        handle('nova:reset', () => resetNova())
+        handle('nova:facts', () => novaFacts())
+        handle('nova:forgetFact', (_e, id: string) => forgetNovaFact(String(id)))
         handle('ai:chat', (_e, messages, schema, maxTokens, purpose) =>
           brainChat(messages, schema, typeof maxTokens === 'number' ? maxTokens : undefined, ['act', 'chat', 'explain', 'look'].includes(purpose) ? purpose : 'act')
         )
@@ -502,6 +522,7 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
     // Messages from the Bauer panel window (show / hide / what it's doing).
+    ipcMain.on('nova:toolResult', (_e, id, result) => novaToolResult(Number(id), String(result ?? '')))
     ipcMain.on('voice:window', (e, msg) => {
       if (!isVoiceContents(e.sender) || !msg || typeof msg !== 'object') return
       if (msg.type === 'said') {
@@ -639,6 +660,14 @@ if (!app.requestSingleInstanceLock()) {
     const remind = (): void => {
       checkDeadlines((title, body) => notify(title, body, 'home'))
       checkLifeReminders(notify)
+      // A promise with a time has come due: Nova nudges you out loud (and the globe does its "remind" move).
+      // "Snooze it for ten minutes" works afterwards: Nova knows which one it just reminded you about.
+      if (getPrefs().bauerOrb !== false && process.env.STUDYHALL_OFFSCREEN !== '1')
+        checkDueNow((title, dueAt) => {
+          noteReminder(title, dueAt)
+          orbEmote('remind')
+          voiceSay(`Reminder: ${title}.`)
+        })
     }
     setTimeout(remind, 10_000)
     setInterval(remind, 60_000)
@@ -648,6 +677,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => app.quit())
   app.on('will-quit', () => {
     setClaudeWarm(false) // close waiting Claude Code sessions
+    setNovaAllowed(false)
     stopEyes()
     closeAllVideoRooms()
     stopOculus()

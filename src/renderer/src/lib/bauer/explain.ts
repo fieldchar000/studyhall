@@ -153,5 +153,7 @@ export function explainTopicFrom(text: string): string | null {
     .replace(/^(?:to me\s+)?(?:what\s+|how\s+)?(?:a |an |the )?/i, '')
     .replace(/\s+(?:is|are|means?|works?)$/i, '')
     .trim()
+  // "Explain what I'm looking at", "explain this": about the screen, not a topic called "I'm looking at".
+  if (/^(?:i'?m|i am|i'?ve|you|we)\b|\b(?:looking at|on (?:my|the) screen|this|that|these|those|it|here)$/i.test(t)) return null
   return t.length >= 2 && t.length <= 80 ? t : null
 }

@@ -267,6 +267,34 @@ const api: Api = {
     speak: (text, voice, speed) => ipcRenderer.invoke('mouth:speak', text, voice, speed),
     warm: () => ipcRenderer.invoke('mouth:warm')
   },
+  nova: {
+    turn: (said, studyhall) => ipcRenderer.invoke('nova:turn', said, studyhall),
+    warm: () => ipcRenderer.invoke('nova:warm'),
+    reset: () => ipcRenderer.invoke('nova:reset'),
+    facts: () => ipcRenderer.invoke('nova:facts'),
+    forgetFact: (id) => ipcRenderer.invoke('nova:forgetFact', id),
+    onSpeak: (cb) => {
+      const l = (_e: unknown, m: { text: string }): void => cb(String(m?.text ?? ''))
+      ipcRenderer.on('nova:speak', l)
+      return () => ipcRenderer.removeListener('nova:speak', l)
+    },
+    onBeat: (cb) => {
+      const l = (): void => cb()
+      ipcRenderer.on('nova:beat', l)
+      return () => ipcRenderer.removeListener('nova:beat', l)
+    },
+    onSay: (cb) => {
+      const l = (_e: unknown, text: string): void => cb(String(text ?? ''))
+      ipcRenderer.on('nova:say', l)
+      return () => ipcRenderer.removeListener('nova:say', l)
+    },
+    onTool: (cb) => {
+      const l = (_e: unknown, call: { id: number; name: string; input: unknown }): void => cb(call)
+      ipcRenderer.on('nova:tool', l)
+      return () => ipcRenderer.removeListener('nova:tool', l)
+    },
+    toolResult: (id, result) => ipcRenderer.send('nova:toolResult', id, result)
+  },
   claude: {
     status: () => ipcRenderer.invoke('claude:status'),
     install: () => ipcRenderer.invoke('claude:install'),
@@ -348,7 +376,17 @@ const api: Api = {
     },
     listen: () => ipcRenderer.send('bauer:window', { type: 'listen' }),
     hideOrb: () => ipcRenderer.send('bauer:window', { type: 'hideOrb' }),
-    drag: (phase, x, y) => ipcRenderer.send('bauer:window', { type: phase, x, y })
+    orbHome: (x, y) => ipcRenderer.send('bauer:window', { type: 'orbHome', x, y }),
+    onOrbGo: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('bauer:orbGo', l)
+      return () => ipcRenderer.removeListener('bauer:orbGo', l)
+    },
+    onEmote: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('bauer:emote', l)
+      return () => ipcRenderer.removeListener('bauer:emote', l)
+    }
   }
 }
 

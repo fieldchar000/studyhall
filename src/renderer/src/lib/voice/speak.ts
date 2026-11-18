@@ -176,3 +176,136 @@ export async function speakAndWait(text: string, voice?: string, speed?: number)
     }
   })
 }
+
+// ---------- Speaking while the reply is still being written (Nova's conversation) ----------
+// Text arrives a few words at a time. Each finished sentence is turned into speech straight away and plays in order,
+// so Nova starts talking about a second after you stop, not after the whole reply. Before something slow starts,
+// a short "beat" ("One sec.") plays at once; beats are made once and kept, so they play instantly.
+
+const BEATS = ['One sec.', 'On it.', 'Sure, one sec.', 'Okay, one moment.', 'Got it.', 'Right, on it.', 'Let me see.', 'Two secs.']
+const beatAudio = new Map<string, { samples: Float32Array; sampleRate: number }>()
+let beatsMaking = false
+let lastBeat = ''
+/** Make the beats in Nova's voice once (in the background), so they can play the moment they're needed. */
+export async function warmBeats(): Promise<void> {
+  if (beatsMaking || beatAudio.size >= BEATS.length) return
+  beatsMaking = true
+  try {
+    if (!(await api.mouth.status()).installed) return
+    for (const b of BEATS) if (!beatAudio.has(b)) beatAudio.set(b, await api.mouth.speak(b))
+  } catch {
+    /* no voice here */
+  } finally {
+    beatsMaking = false
+  }
+}
+
+export interface SpeechStream {
+  push(text: string): void
+  /** Something slow is starting and nothing has been said yet. */
+  beat(): void
+  /** No more text: resolves when everything has been said. */
+  end(): Promise<void>
+  /** Everything said so far (and still to say). */
+  readonly text: string
+}
+
+/** Start speaking a reply that is still being written. fallback(text) is used without Nova's own voice. */
+export function speechStream(fallback: (text: string) => void): SpeechStream {
+  stopSpeaking()
+  const gen = ++generation
+  let buf = ''
+  let all = ''
+  let ended = false
+  let said = false
+  const queue: Promise<{ samples: Float32Array; sampleRate: number } | null>[] = []
+  let wake: (() => void) | null = null
+  const voiceOk = api.mouth
+    .status()
+    .then((s) => s.installed)
+    .catch(() => false)
+  const enqueue = (piece: string): void => {
+    const p = piece.replace(/[*_#`>]+/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!p || !/[\p{L}\p{N}]/u.test(p)) return
+    said = true
+    queue.push(voiceOk.then((ok) => (ok && gen === generation ? api.mouth.speak(p).catch(() => null) : null)))
+    wake?.()
+  }
+  /** Cut off every finished sentence (and very long runs at a comma or space). */
+  const cut = (final: boolean): void => {
+    for (;;) {
+      const m = /[.!?…]+["'”’)\]]*\s/.exec(buf)
+      if (m) {
+        enqueue(buf.slice(0, m.index + m[0].length))
+        buf = buf.slice(m.index + m[0].length)
+        continue
+      }
+      if (buf.length > 180) {
+        const at = Math.max(buf.lastIndexOf(', ', 170), buf.lastIndexOf('; ', 170))
+        const sp = at > 40 ? at + 1 : buf.lastIndexOf(' ', 170)
+        if (sp > 20) {
+          enqueue(buf.slice(0, sp))
+          buf = buf.slice(sp)
+          continue
+        }
+      }
+      break
+    }
+    if (final && buf.trim()) {
+      enqueue(buf)
+      buf = ''
+    }
+  }
+  // The player: plays each piece in order as soon as it (and the one before) is ready.
+  const done = (async () => {
+    setSpeaking(true)
+    let i = 0
+    try {
+      for (;;) {
+        if (gen !== generation) return
+        if (i < queue.length) {
+          const audio = await queue[i++]
+          if (gen !== generation) return
+          if (audio) await play(audio.samples, audio.sampleRate, gen)
+          continue
+        }
+        if (ended) return
+        await new Promise<void>((r) => (wake = r))
+        wake = null
+      }
+    } finally {
+      if (gen === generation) setSpeaking(false)
+    }
+  })()
+  return {
+    push(t) {
+      if (gen !== generation) return
+      buf += t
+      all += t
+      cut(false)
+    },
+    beat() {
+      if (said || gen !== generation) return
+      said = true
+      const options = BEATS.filter((b) => b !== lastBeat && beatAudio.has(b))
+      const b = options[Math.floor(Math.random() * options.length)]
+      if (!b) return
+      lastBeat = b
+      queue.push(Promise.resolve(beatAudio.get(b)!))
+      wake?.()
+    },
+    async end() {
+      cut(true)
+      ended = true
+      wake?.()
+      if (!(await voiceOk)) {
+        if (all.trim() && gen === generation) fallback(all.trim())
+        return
+      }
+      await done
+    },
+    get text() {
+      return all
+    }
+  }
+}

@@ -1207,6 +1207,21 @@ export interface Api {
     warm(): Promise<void>
   }
   /** Nova's Claude brain (PC only). */
+  /** Nova's conversation (PC): one fast Claude call per request, with Nova's tools, speaking as it streams. */
+  nova: {
+    /** One request. Speech arrives meanwhile through onSpeak / onBeat; tools that live in this window through onTool. */
+    turn(said: string, studyhall: string): Promise<{ text: string; quiet: boolean; tools: string[]; error?: string }>
+    warm(): Promise<void>
+    reset(): Promise<void>
+    facts(): Promise<{ id: string; text: string; at: string }[]>
+    forgetFact(id: string): Promise<{ id: string; text: string; at: string }[]>
+    onSpeak(cb: (text: string) => void): () => void
+    onBeat(cb: () => void): () => void
+    /** Something to say later (a walkthrough finished). */
+    onSay(cb: (text: string) => void): () => void
+    onTool(cb: (call: { id: number; name: string; input: unknown }) => void): () => void
+    toolResult(id: number, result: string): void
+  }
   claude: {
     status(): Promise<ClaudeStatus>
     install(): Promise<ClaudeStatus>
@@ -1240,9 +1255,15 @@ export interface Api {
     openApp(name: string): Promise<boolean>
     // Used by the floating Bauer, the cards and the circle windows themselves:
     onCards(cb: (cards: BauerCard[] | null) => void): () => void
-    onOrb(cb: (s: { state: OrbState; text?: string }) => void): () => void
+    onOrb(cb: (s: { state: OrbState; text?: string; cursor?: { x: number; y: number } }) => void): () => void
     /** (orb window) size and behaviour from the Nova page */
-    onOrbConfig(cb: (c: { px: number; follow: boolean; drift: boolean }) => void): () => void
+    onOrbConfig(cb: (c: { size: 'small' | 'default' | 'cursor'; roam: boolean; home: { x: number; y: number } | null }) => void): () => void
+    /** (orb window) fly over to a point in the window (pointing at something), or null: back to what it was doing */
+    onOrbGo(cb: (p: { x: number; y: number } | null) => void): () => void
+    /** (orb window) a little performance: wave, hype, remind, upset, motivate */
+    onEmote(cb: (e: 'wave' | 'hype' | 'remind' | 'upset' | 'motivate') => void): () => void
+    /** (orb window) dropped somewhere new: its resting spot (window px) */
+    orbHome(x: number, y: number): void
     /** (orb window) loudness to ripple with: Nova's voice (every 40 ms) or your microphone */
     onLevels(cb: (l: { kind: 'voice'; env: number[] } | { kind: 'mic'; v: number }) => void): () => void
     voiceLevels(env: number[]): void
@@ -1260,7 +1281,5 @@ export interface Api {
     onCircle(cb: () => void): () => void
     listen(): void
     hideOrb(): void
-    /** Move the floating Bauer (screen coordinates of the mouse). */
-    drag(phase: 'dragStart' | 'dragMove' | 'dragEnd', x: number, y: number): void
   }
 }

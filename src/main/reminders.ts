@@ -50,3 +50,23 @@ export function checkDeadlines(notify: (title: string, body: string) => void): v
     notify(title, `${d.context ? `${d.context} · ` : ''}${when}`)
   }
 }
+
+/** Promises coming due now (a task with a time, in the last 10 minutes): Nova says it out loud, once.
+ *  Tasks without a time (saved as 23:59) only get the usual notifications. */
+export function checkDueNow(onDue: (title: string, dueAt: string) => void): void {
+  const db = getDb()
+  const from = new Date(Date.now() - 10 * 60_000).toISOString()
+  const rows = db
+    .prepare(`SELECT id, title, due_at FROM tasks WHERE deleted_at IS NULL AND status != 'done' AND due_at > ? AND due_at <= ?`)
+    .all(from, now()) as unknown as { id: string; title: string; due_at: string }[]
+  const seen = db.prepare('SELECT 1 FROM notifications_sent WHERE key = ?')
+  const mark = db.prepare('INSERT OR IGNORE INTO notifications_sent (key, sent_at) VALUES (?, ?)')
+  for (const r of rows) {
+    const d = new Date(r.due_at)
+    if (d.getHours() === 23 && d.getMinutes() === 59) continue
+    const key = `task:${r.id}:${r.due_at}:now`
+    if (seen.get(key)) continue
+    mark.run(key, now())
+    onDue(r.title, r.due_at)
+  }
+}

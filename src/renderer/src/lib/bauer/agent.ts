@@ -13,7 +13,7 @@ import { isPhoneApp } from '@/lib/platform'
 import { explainTopic, explainTopicFrom } from './explain'
 import { grounded, isChitChat, stripWake } from './heard'
 import { readCheckin } from '@/lib/brief'
-import { speak } from '@/lib/voice/speak'
+import { speak, speechStream, warmBeats } from '@/lib/voice/speak'
 
 /** Cards, circling and apps exist only on the PC. */
 const onPc = (): boolean => !isPhoneApp()
@@ -556,12 +556,92 @@ async function teachTopic(topic: string, onScreen: boolean, said: string, source
   return { reply, actions: [], logId: null }
 }
 
+// ---------- Nova's conversation (PC, with Claude): one call does it all ----------
+// The Roamies way: the request goes to ONE Claude call that has Nova's tools (Studyhall actions, your notes, lessons,
+// your screen, cards, memory, files) and remembers the conversation. Its reply is spoken sentence by sentence while
+// it's still being written. Studyhall's own actions run here, in this window, when it asks for them.
+
+/** What Studyhall holds right now, for the <live-state> block (main adds the time, window and memory). */
+function studyhallState(ctx: BriefContext, now: Date): string {
+  const soon = ctx.events.filter((e) => Date.parse(e.start_at.length === 10 ? `${e.start_at}T00:00` : e.start_at) > now.getTime() - 2 * 864e5).slice(0, 40)
+  return [
+    `Today: ${ymd(now)} (weeks start on Monday)`,
+    `Open tasks: ${ctx.tasks.slice(0, 40).map((t) => `"${t.title}"${t.due_at ? ` (due ${when(t.due_at)})` : ''}`).join('; ') || 'none'}`,
+    `Events: ${soon.map((e) => `"${e.title}" ${when(e.start_at)}`).join('; ') || 'none'}`,
+    `Habits: ${ctx.habits.map((h) => `"${h.name}"`).join('; ') || 'none'}`,
+    `Modules: ${ctx.modules.map((m) => `${m.code} = ${m.name}`).join('; ') || 'none'}`,
+    `Studyhall pages: ${SIMPLE_PAGES.join(', ')}`
+  ].join('\n')
+}
+
+let sayListener = false
+async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; quiet: boolean } | null> {
+  if (!sayListener) {
+    sayListener = true
+    api.nova.onSay((t) => say(t)) // a walkthrough finishing later
+  }
+  const now = new Date()
+  const ctx = await loadBriefContext()
+  let actions: BriefAction[] = []
+  let logId: string | null = null
+  const stream = speechStream((t) => say(t))
+  const offs = [
+    api.nova.onSpeak((t) => stream.push(t)),
+    api.nova.onBeat(() => stream.beat()),
+    api.nova.onTool(async ({ id, name, input }) => {
+      let out = ''
+      try {
+        if (name === 'actions') {
+          const list = ((input as { actions?: AiAction[] })?.actions ?? []).filter((a) => a && TYPES.includes(a.type))
+          const fresh = await loadBriefContext()
+          const done = toActions(list, fresh, text, new Date())
+          if (!done.length) out = 'Nothing was changed: no action matched (check the titles in <live-state>).'
+          else {
+            await fillMoveEnds(done)
+            const { undo } = await applyBrief(done, mode)
+            out = plainReply(done)
+            actions = [...actions, ...done]
+            logId = await writeLog(text, out, done, undo, source, 'ai')
+          }
+        } else if (name === 'notes') {
+          const r = await findAnswer(String((input as { question?: string })?.question ?? text))
+          out = r.found ? r.reply : 'Nothing about that in their Studyhall.'
+        } else out = 'Unknown tool.'
+      } catch (e) {
+        out = `It failed: ${e instanceof Error ? e.message : String(e)}`
+      }
+      api.nova.toolResult(id, out)
+    })
+  ]
+  void warmBeats()
+  try {
+    const r = await api.nova.turn(text, studyhallState(ctx, now))
+    if (r.error && !r.text && !r.tools.length) {
+      stream.push('')
+      void stream.end()
+      console.warn('Nova: the conversation failed, using the older way', r.error)
+      return null
+    }
+    await stream.end().catch(() => {})
+    const reply = r.text || (actions.length ? plainReply(actions) : '')
+    if (!actions.length && reply) await logAnswer(text, reply, source)
+    return { reply, actions, logId, quiet: true }
+  } finally {
+    for (const off of offs) off()
+  }
+}
+
 /** Everything Nova hears goes through here: teach, explain, answer, look at your screen, or act. */
 export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean }> {
   const text = stripWake(raw)
   // Small talk, one word, half a sentence: say nothing, do nothing, log nothing.
   const nothing = { reply: source === 'typed' ? 'I didn’t find anything to do in that.' : '', actions: [] as BriefAction[], logId: null, ignored: true }
   if (isChitChat(text)) return nothing
+  // With Claude on the PC: the one-call conversation (fast, remembers, speaks as it goes).
+  if (onPc() && (await claudeReady())) {
+    const r = await converse(text, source, mode).catch((e) => (console.warn('Nova conversation:', e), null))
+    if (r) return r
+  }
   // Clearly about Studyhall itself (tasks, calendar…)? Straight to the usual actions, no sorting needed.
   const studyhallWords = /\b(tasks?|to-?dos?|calendar|lectures?|deadlines?|exams?|assignments?|habits?|journal|remind(er)?s?|timer|focus session|budgets?|spent|grades?|flashcards?|decks?|inbox|check-?in)\b/i.test(text)
   // "Explain …" / "teach me …": clearly a lesson, so skip the sorting step (it saves ~2.5 s).

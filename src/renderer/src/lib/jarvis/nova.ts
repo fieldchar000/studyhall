@@ -1,0 +1,329 @@
+// Nova's floating JARVIS globe. The drawing, the LED pixel dither and the movement are Roamies' own code
+// (./roamies, copied unchanged, AGPL-3.0, by Ken Kai); this file is Studyhall's part: Nova's colours, and a small
+// "plugin" in the shape Roamies' agent layer uses, which tells the globe what Nova is doing (listening, thinking,
+// talking), where to go (beside your cursor when you talk, over to something it points at, home again) and when to
+// float around your screen.
+//
+// The window is one see-through layer over the whole screen. It lets every click through except on the globe itself
+// (and its little menu), the way Roamies does: each mouse move asks the globe "is this you?" and the answer decides.
+
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type Any = any
+
+export type NovaState = 'idle' | 'listening' | 'thinking' | 'done' | 'error'
+export type NovaSize = 'default' | 'small' | 'cursor'
+export type Emote = 'wave' | 'hype' | 'remind' | 'upset' | 'motivate'
+
+/** Your dark blue with light-blue highlights, darkest (the LED gaps) to brightest (the lit heart). */
+const PAL = [
+  [3, 8, 24],
+  [12, 34, 92],
+  [38, 92, 212],
+  [122, 170, 255],
+  [228, 238, 255]
+]
+
+export type NovaGlobe = {
+  /** cursor: where your mouse is (CSS px in this window), when you start talking */
+  setState(s: NovaState, cursor?: { x: number; y: number }): void
+  setConfig(c: { size: NovaSize; roam: boolean; home: { x: number; y: number } | null }): void
+  voice(env: number[]): void
+  mic(v: number): void
+  /** Fly over to a point (CSS px in this window); null: back to what it was doing. */
+  goTo(p: { x: number; y: number } | null): void
+  emote(e: Emote): void
+  /** The globe's centre and radius (CSS px), for placing a bubble or menu beside it. */
+  where(): { x: number; y: number; r: number }
+}
+
+let booting: Promise<NovaGlobe> | null = null
+
+/** Starts the globe once (later calls get the same one). */
+export function startGlobe(opts: Parameters<typeof boot>[0]): Promise<NovaGlobe> {
+  booting ??= boot(opts)
+  return booting
+}
+
+async function boot(opts: {
+  canvas: HTMLCanvasElement
+  onClick: () => void
+  onMenu: (x: number, y: number) => void
+  onHot: (hot: boolean) => void
+  /** Dropped somewhere new while it stays put: that's its home now (CSS px in this window). */
+  onHome: (x: number, y: number) => void
+  /** Is the point over something else of Nova's on this layer (the menu, a bubble)? */
+  extraHit: (x: number, y: number) => boolean
+  home: { x: number; y: number } | null
+}): Promise<NovaGlobe> {
+  const W = window as Any
+  // Roamies' scripts set up window.Roamie as they load, in this order.
+  await import('./roamies/core.js')
+  await import('./roamies/jarvis.js')
+  const R = W.Roamie
+
+  // ---- What Nova is doing ----
+  let state: NovaState = 'idle'
+  let cfg: { size: NovaSize; roam: boolean } = { size: 'default', roam: true }
+  const voice = { env: [] as number[], at: 0 }
+  const micv = { v: 0, at: 0 }
+  const talking = (): boolean => {
+    const i = Math.floor((performance.now() - voice.at) / 40)
+    return i >= 0 && i < voice.env.length
+  }
+  // Roamies' globe reads the voice's loudness from Roamie.voiceOut while it plays.
+  R.voiceOut = {
+    playing: talking,
+    level: () => {
+      const i = Math.floor((performance.now() - voice.at) / 40)
+      return i >= 0 && i < voice.env.length ? voice.env[i] : 0
+    }
+  }
+
+  let kit: Any = null
+  let m: Any = null
+  let home: { x: number; y: number } | null = opts.home // where it rests when it isn't floating around
+  let target: { x: number; y: number } | null = null // pointing at something
+  let byCursor = false // came over beside your cursor for a request
+  let rush = false
+  let flee = 0
+  let quietUntil = 0
+  let now = 0
+  let idleSince = 0
+  let mouse = { x: -1e4, y: -1e4, active: false }
+  let wasHeld = false
+  let heldFrom: [number, number] | null = null
+
+  const engaged = (): boolean => state === 'listening' || state === 'thinking' || talking()
+  const anchorAt = (x: number, y: number, r = 0.35): void => {
+    if (!m || !kit) return
+    m.anchor = { x, y, r: kit.R * r }
+  }
+  const go = (x: number, y: number, fast: boolean): void => {
+    if (!m || !kit) return
+    const pad = kit.R * 1.4
+    x = Math.min(Math.max(x, pad), innerWidth - pad)
+    y = Math.min(Math.max(y, pad), innerHeight - pad)
+    anchorAt(x, y)
+    m.goTo(x, y)
+    rush = fast
+  }
+  /** Just right of the cursor (left if there's no room), a little above it. */
+  const besideCursor = (): [number, number] => {
+    const off = kit.R * 2.3
+    const right = mouse.x + off < innerWidth - kit.R * 1.4
+    return [mouse.x + (right ? off : -off), mouse.y - kit.R * 0.4]
+  }
+  /** A free spot away from the cursor (when you come near it while it's in the way). */
+  const awayFrom = (cx: number, cy: number): [number, number] => {
+    let best: [number, number] = [m.x, m.y]
+    let bestScore = -1
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2
+      const d = kit.R * (3 + Math.random() * 3)
+      const x = m.x + Math.cos(a) * d
+      const y = m.y + Math.sin(a) * d
+      if (x < kit.R * 1.5 || y < kit.R * 1.5 || x > innerWidth - kit.R * 1.5 || y > innerHeight - kit.R * 1.5) continue
+      const s = Math.hypot(x - cx, y - cy)
+      if (s > bestScore) {
+        bestScore = s
+        best = [x, y]
+      }
+    }
+    return best
+  }
+  const settle = (): void => {
+    // Back to what it does on its own: floating around the screen, or resting at its spot.
+    byCursor = false
+    target = null
+    rush = false
+    if (!m) return
+    if (cfg.roam) m.anchor = null
+    else if (home) go(home.x, home.y, false)
+    else m.anchor = { x: m.x, y: m.y, r: kit.R * 0.35 }
+  }
+
+  const plugin = (k: Any): Any => {
+    kit = k
+    m = k.m
+    return {
+      // Nova decides when to perform (an emote), so the globe never plays its moments at random.
+      busy: () => true,
+      calm: () => false,
+      pose: () => {
+        if (state === 'listening') {
+          const lv = performance.now() - micv.at < 400 ? micv.v : 0.25
+          return { mode: 'listen', heard: Math.min(1, 0.2 + lv * 1.6) }
+        }
+        if (talking()) return { mode: 'talk' }
+        if (state === 'thinking') return { mode: 'think' }
+        return null
+      },
+      update: (dt: number, env: Any) => {
+        now += dt
+        if (env.mouse?.active) mouse = { x: env.mouse.x, y: env.mouse.y, active: true }
+        else mouse.active = false
+        if (k.presence !== 'shown') return
+        const held = m.dragging || m.flung
+        // Size "follows my cursor": it rides beside the mouse (and lets every click through).
+        if (cfg.size === 'cursor') {
+          if (!held && mouse.active) {
+            m.drive = (d: number) => {
+              const tx = target ? target.x : mouse.x + 30
+              const ty = target ? target.y : mouse.y + 30
+              const ox = m.x
+              const oy = m.y
+              const f = 1 - Math.exp(-(target ? 6 : 22) * d)
+              m.x += (tx - m.x) * f
+              m.y += (ty - m.y) * f
+              m.vx = (m.x - ox) / Math.max(d, 1e-3)
+              m.vy = (m.y - oy) / Math.max(d, 1e-3)
+            }
+          }
+          return
+        }
+        m.drive = null
+        // Dropped somewhere new: that's home now.
+        if (held && !wasHeld) heldFrom = [m.x, m.y]
+        if (wasHeld && !held && heldFrom && Math.hypot(m.x - heldFrom[0], m.y - heldFrom[1]) > k.R * 0.5) {
+          home = { x: m.x, y: m.y }
+          opts.onHome(m.x, m.y)
+          quietUntil = now + 2.5
+          if (!cfg.roam) anchorAt(m.x, m.y)
+        }
+        wasHeld = held
+        if (held) return
+        if (target) {
+          anchorAt(target.x, target.y, 0.08)
+        } else if (byCursor && !engaged()) {
+          // The request's done: stay a few seconds (so you can read it), then off again.
+          if (now - idleSince > 6) settle()
+        } else if (!byCursor && mouse.active && now > quietUntil) {
+          // You came close but not onto it: it's in your way, so it hops aside (pointing right at it means "you").
+          const d = Math.hypot(mouse.x - m.x, mouse.y - m.y)
+          const near = d < k.R * 3
+          const onIt = d < m.radius * 1.1
+          flee = near && !onIt ? flee + dt : Math.max(0, flee - dt * 2)
+          if (flee > 0.45) {
+            const [x, y] = awayFrom(mouse.x, mouse.y)
+            k.sq.kick(4)
+            if (cfg.roam) {
+              m.goTo(x, y)
+            } else {
+              home = { x, y }
+              go(x, y, false)
+              opts.onHome(x, y)
+            }
+            flee = 0
+          }
+        }
+        if (engaged()) idleSince = now
+        // Called over: get there in well under a second, even from across the screen. Floating around: slowly.
+        m.speedMul = rush ? 7 : target ? 3 : byCursor ? 1.6 : cfg.roam ? 0.55 : 1
+        if (rush && Math.hypot(m.x - m.tx, m.y - m.ty) < k.R * 0.4) rush = false
+      }
+    }
+  }
+
+  await import('./roamies/10-dither.js')
+  R.register(
+    R.ditherKit({ id: 'nova', label: 'Nova', matrix: true, pixel: 1.3, glow: 0.55, speed: 80, pal: PAL, plugin })
+  )
+  // Its size comes from this "unit" (Roamies' default). Only Nova on this layer (10-dither.js also registers its
+  // own green demo blob).
+  W.ROAMIE_UNIT = 340
+  W.ROAMIE_ONLY = ['nova']
+  R.panelHit = (x: number, y: number) => opts.extraHit(x, y)
+  R.bootDesktop(opts.canvas)
+  const tile = R.tiles[0]
+  const c = tile.creature
+  c.setLook('jarvis') // the globe of LED points with a lit heart
+  if (home) {
+    c.mover.x = home.x
+    c.mover.y = home.y
+  }
+  settle()
+
+  // A plain click on the globe talks to Nova (Roamies' "boop" is a click without a drag).
+  const boop = c.boop.bind(c)
+  c.boop = (x: number, y: number) => {
+    boop(x, y)
+    opts.onClick()
+  }
+
+  // Hot zones: ask the globe on every mouse move whether the cursor is on it (or on its menu or bubble).
+  let hot = false
+  const setHot = (h: boolean): void => {
+    if (h === hot) return
+    hot = h
+    opts.onHot(h)
+  }
+  const onMove = (e: MouseEvent): void => setHot(!!R.ptr(e.clientX, e.clientY))
+  addEventListener('mousemove', onMove, { passive: true })
+  document.addEventListener('mouseleave', () => setHot(false))
+  addEventListener('blur', () => setHot(false))
+  addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+    const mv = c.mover
+    if (Math.hypot(e.clientX - mv.x, e.clientY - mv.y) < mv.radius * 1.2) opts.onMenu(e.clientX, e.clientY)
+  })
+
+  const globe: NovaGlobe = {
+    setState(s, cursor) {
+      const was = state
+      state = s
+      if (cursor) {
+        R.ptr(cursor.x, cursor.y)
+        mouse = { x: cursor.x, y: cursor.y, active: true }
+      }
+      if (s === 'listening' && was !== 'listening' && cfg.size !== 'cursor' && (mouse.active || cursor) && kit) {
+        // You're talking to it: it comes over beside your cursor (unless it's already there).
+        const [x, y] = besideCursor()
+        if (!byCursor || Math.hypot(m.x - x, m.y - y) > kit.R * 2.5) go(x, y, true)
+        byCursor = true
+        quietUntil = now + 4
+      }
+      if (s === 'listening' || s === 'thinking') idleSince = now
+      R.wake?.()
+    },
+    setConfig(n) {
+      const sizeChanged = n.size !== cfg.size
+      cfg = { size: n.size, roam: n.roam }
+      if (n.home) home = n.home
+      if (sizeChanged) {
+        c.setForm(n.size)
+        if (n.size !== 'cursor') c.mover.drive = null
+      }
+      if (n.size !== 'cursor' && !byCursor && !target) settle()
+      R.wake?.()
+    },
+    voice(env) {
+      voice.env = env
+      voice.at = performance.now()
+      if (env.length) idleSince = now
+      R.wake?.()
+    },
+    mic(v) {
+      micv.v = v
+      micv.at = performance.now()
+    },
+    goTo(p) {
+      if (p) {
+        target = p
+        if (cfg.size !== 'cursor') go(p.x, p.y, true)
+      } else if (target) {
+        target = null
+        if (byCursor) idleSince = now
+        else settle()
+      }
+      R.wake?.()
+    },
+    emote(e) {
+      kit?.startAct?.(e)
+    },
+    where() {
+      return { x: c.mover.x, y: c.mover.y, r: kit?.R ?? 40 }
+    }
+  }
+  return globe
+}

@@ -6,7 +6,7 @@ import type { BauerCard, OrbState } from '@shared/types'
 import { api } from '@/lib/data'
 import { lookAt, type LookKind } from '@/lib/bauer/look'
 import { say } from '@/lib/bauer/agent'
-import { NovaOrb, type OrbMode } from '@/components/NovaOrb'
+import { startGlobe, type NovaGlobe } from '@/lib/jarvis/nova'
 
 /** Marks something of Nova's that takes clicks (see main.tsx: the window only catches clicks over these). */
 const hover = { 'data-hot': '' }
@@ -14,72 +14,65 @@ const hover = { 'data-hot': '' }
 // ---------- The floating Bauer ----------
 
 export function OrbWindow(): React.JSX.Element {
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const bubbleRef = useRef<HTMLDivElement>(null)
+  const globe = useRef<NovaGlobe | null>(null)
   const [state, setState] = useState<OrbState>('idle')
   const [text, setText] = useState('')
-  const [open, setOpen] = useState(false)
-  const [cfg, setCfg] = useState({ px: 76, follow: false, drift: true })
-  useEffect(() => api.bauer.onOrbConfig(setCfg), [])
-  // Loudness for the ripples: Nova's voice (a list every 40 ms, from when it arrives) or the microphone.
-  const voice = useRef<{ env: number[]; at: number }>({ env: [], at: 0 })
-  const mic = useRef({ v: 0, at: 0 })
-  const [talking, setTalking] = useState(false)
-  useEffect(
-    () =>
-      api.bauer.onLevels((l) => {
-        if (l.kind === 'voice') {
-          voice.current = { env: l.env, at: performance.now() }
-          setTalking(l.env.length > 0)
-        } else mic.current = { v: l.v, at: performance.now() }
-      }),
-    []
-  )
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [at, setAt] = useState({ x: -999, y: -999, r: 40 })
+
   useEffect(() => {
-    if (!talking) return
-    const t = setInterval(() => {
-      const v = voice.current
-      if (performance.now() - v.at > v.env.length * 40 + 400) setTalking(false)
-    }, 250)
-    return () => clearInterval(t)
-  }, [talking])
-  const level = useRef({
-    get current(): number {
-      const now = performance.now()
-      const v = voice.current
-      const i = Math.floor((now - v.at) / 40)
-      if (i >= 0 && i < v.env.length) return v.env[i]
-      return now - mic.current.at < 400 ? mic.current.v : 0
+    if (!canvas.current) return
+    const inside = (el: HTMLElement | null, x: number, y: number): boolean => {
+      if (!el) return false
+      const r = el.getBoundingClientRect()
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
     }
-  }).current
-  const mode: OrbMode = talking ? 'speaking' : state === 'listening' || state === 'thinking' || state === 'error' ? state : 'idle'
-  // Press and drag to move Bauer; a plain click talks to him.
-  const press = useRef<{ x: number; y: number; moved: boolean } | null>(null)
-  const down = (e: React.PointerEvent): void => {
-    press.current = { x: e.screenX, y: e.screenY, moved: false }
-    try {
-      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    } catch {
-      /* ignore */
+    const offs: (() => void)[] = []
+    let raf = 0
+    let gone = false
+    void startGlobe({
+      canvas: canvas.current,
+      onClick: () => {
+        setMenu(null)
+        api.bauer.listen()
+      },
+      onMenu: (x, y) => setMenu({ x, y }),
+      onHot: (h) => api.bauer.mouse(h),
+      onHome: (x, y) => api.bauer.orbHome(x, y),
+      extraHit: (x, y) => inside(menuRef.current, x, y) || inside(bubbleRef.current, x, y),
+      home: null
+    }).then((g) => {
+      if (gone) return
+      globe.current = g
+      offs.push(
+        api.bauer.onOrbConfig((c) => g.setConfig(c)),
+        api.bauer.onLevels((l) => (l.kind === 'voice' ? g.voice(l.env) : g.mic(l.v))),
+        api.bauer.onOrbGo((p) => g.goTo(p)),
+        api.bauer.onEmote((e) => g.emote(e))
+      )
+      // The bubble and menu ride beside the globe.
+      const track = (): void => {
+        const w = g.where()
+        setAt((a) => (Math.abs(a.x - w.x) > 0.5 || Math.abs(a.y - w.y) > 0.5 || a.r !== w.r ? w : a))
+        raf = requestAnimationFrame(track)
+      }
+      raf = requestAnimationFrame(track)
+    })
+    return () => {
+      gone = true
+      for (const off of offs) off()
+      cancelAnimationFrame(raf)
     }
-    api.bauer.drag('dragStart', e.screenX, e.screenY)
-  }
-  const moveDrag = (e: React.PointerEvent): void => {
-    const p = press.current
-    if (!p) return
-    if (!p.moved && Math.hypot(e.screenX - p.x, e.screenY - p.y) < 4) return
-    p.moved = true
-    setOpen(false)
-    api.bauer.drag('dragMove', e.screenX, e.screenY)
-  }
-  const up = (e: React.PointerEvent): void => {
-    const p = press.current
-    press.current = null
-    if (p?.moved) api.bauer.drag('dragEnd', e.screenX, e.screenY)
-    else api.bauer.listen()
-  }
+  }, [])
+
   useEffect(
     () =>
       api.bauer.onOrb((s) => {
         setState(s.state)
+        globe.current?.setState(s.state, s.cursor)
         if (s.text) setText(s.text)
         else if (s.state === 'listening') setText('')
       }),
@@ -91,47 +84,52 @@ export function OrbWindow(): React.JSX.Element {
     const t = setTimeout(() => {
       setState('idle')
       setText('')
+      globe.current?.setState('idle')
     }, 9000)
     return () => clearTimeout(t)
   }, [state, text])
+  // The menu closes when the mouse wanders off for a moment.
+  useEffect(() => {
+    if (!menu) return
+    const t = setTimeout(() => setMenu(null), 6000)
+    return () => clearTimeout(t)
+  }, [menu])
 
+  const left = at.x > window.innerWidth / 2
   return (
-    <div className="fixed inset-0 flex flex-col items-end justify-end gap-2 p-3 select-none">
+    <>
+      {/* Roamies drives the canvas; clicks on it (not on a wrapper) are the globe's. */}
+      <canvas ref={canvas} className="fixed" style={{ imageRendering: 'pixelated' }} />
       {text && (state === 'done' || state === 'error') && (
-        <div {...hover} className="orb-bubble max-w-[300px] rounded-2xl rounded-br-md px-4 py-3 text-[13.5px] leading-snug">
+        <div
+          ref={bubbleRef}
+          className="orb-bubble fixed max-w-[300px] rounded-2xl px-4 py-3 text-[13.5px] leading-snug"
+          style={{
+            top: Math.max(8, at.y - at.r * 1.2 - 64),
+            ...(left ? { right: Math.max(8, window.innerWidth - at.x + at.r * 0.6) } : { left: Math.max(8, at.x + at.r * 0.6) })
+          }}
+          onClick={() => setText('')}
+        >
           {text}
         </div>
       )}
-      <div
-        className="flex items-center gap-2"
-        {...(cfg.follow ? {} : hover)}
-        onMouseLeave={() => {
-          if (press.current) return // mid-drag
-          setOpen(false)
-        }}
-        onMouseEnter={() => !cfg.follow && setOpen(true)}
-      >
-        {open && (
-          <div className="orb-menu flex gap-1 rounded-full p-1">
-            <button className="orb-btn" title="Hide Nova (Ctrl+Alt+N brings it back)" onClick={() => api.bauer.hideOrb()}>
-              Hide
-            </button>
-          </div>
-        )}
-        <button
-          className="nova-orb-btn"
-          title="Click to talk (or hold Ctrl+Alt) · drag to move"
-          aria-label="Talk to Nova"
-          onPointerDown={down}
-          onPointerMove={moveDrag}
-          onPointerUp={up}
-          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && api.bauer.listen()}
-          style={{ touchAction: 'none' }}
-        >
-          <NovaOrb size={cfg.px} mode={mode} level={level} drift={cfg.drift && !cfg.follow} solid />
-        </button>
-      </div>
-    </div>
+      {menu && (
+        <div ref={menuRef} className="orb-menu fixed flex gap-1 rounded-full p-1" style={{ left: Math.min(menu.x + 8, window.innerWidth - 190), top: menu.y + 8 }}>
+          <button
+            className="orb-btn"
+            onClick={() => {
+              setMenu(null)
+              api.bauer.listen()
+            }}
+          >
+            Talk
+          </button>
+          <button className="orb-btn" title="Ctrl+Alt+N brings it back" onClick={() => api.bauer.hideOrb()}>
+            Hide
+          </button>
+        </div>
+      )}
+    </>
   )
 }
 

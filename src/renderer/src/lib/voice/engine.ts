@@ -219,7 +219,7 @@ class Engine {
     const pause = (this.silentFrames * FRAME) / RATE
     if (this.ptt) {
       if (seconds >= 120) void this.finish() // (the talk key is still held after two minutes)
-    } else if ((this.spoke && pause >= 1.7) || seconds >= 45) void this.finish()
+    } else if ((this.spoke && pause >= 1.0) || seconds >= 45) void this.finish() // (a one-second pause ends it, like Roamies)
     else if (!this.spoke && seconds >= 7) {
       this.mode = this.wake ? 'wake' : 'idle'
       this.rec = []

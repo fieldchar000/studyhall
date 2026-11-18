@@ -121,6 +121,49 @@ function RoomLeft({ name, usage, cap, noExtra }: { name: string; usage: ClaudeSt
   )
 }
 
+/** What Nova remembers about you (facts you told it), each with Forget, and a fresh start for the conversation. */
+function MemoryCard({ name }: { name: string }): React.JSX.Element {
+  const [facts, setFacts] = useState<{ id: string; text: string; at: string }[] | null>(null)
+  const [fresh, setFresh] = useState(false)
+  useEffect(() => {
+    void api.nova
+      .facts()
+      .then(setFacts)
+      .catch(() => setFacts([]))
+  }, [])
+  return (
+    <section className="card rounded-2xl p-5">
+      <h2 className="font-semibold">Memory</h2>
+      <p className="mt-1 text-[13px] text-muted">
+        Things you told {name} to remember. They stay on this PC and go along with each request so {name} can use them. Say “forget …” or press Forget.
+      </p>
+      <ul className="mt-2 flex flex-col">
+        {(facts ?? []).map((f) => (
+          <li key={f.id} className="flex items-start gap-2 border-t border-line py-2 text-[13px] first:border-t-0">
+            <span className="min-w-0 flex-1">{f.text}</span>
+            <button className="text-xs text-muted underline hover:text-ink" onClick={() => void api.nova.forgetFact(f.id).then(setFacts)}>
+              Forget
+            </button>
+          </li>
+        ))}
+        {facts && !facts.length && <li className="text-sm text-muted">Nothing yet. Try “remember I’m doing chemistry A-level”.</li>}
+      </ul>
+      <button
+        className="mt-3 text-sm underline"
+        onClick={() => {
+          void api.nova.reset().then(() => {
+            setFresh(true)
+            setTimeout(() => setFresh(false), 2500)
+          })
+        }}
+      >
+        {fresh ? 'Fresh start: the chat so far is forgotten' : 'Start a new conversation'}
+      </button>
+      <p className="mt-1 text-xs text-muted">{name} remembers what you said in the last 15 minutes (so “move it to six” works); this forgets that too.</p>
+    </section>
+  )
+}
+
 function useClaude(): ClaudeStatus | null {
   const [s, setS] = useState<ClaudeStatus | null>(null)
   useEffect(() => {
@@ -582,13 +625,7 @@ export function NovaPage(): React.JSX.Element {
           {!phone && (
             <section className="card rounded-2xl p-5">
               <h2 className="font-semibold">Look</h2>
-              <p className="mb-3 text-[13px] text-muted">The floating orb. It ripples with {name}’s voice, breathes with yours while listening, and spins faster while thinking. It never shows up in screenshots or screen recordings.</p>
-              <div className="mb-2 flex flex-wrap items-center gap-4">
-                <div className="nova-orb-preview">
-                  <NovaOrb size={prefs?.novaOrbSize === 'small' ? 52 : prefs?.novaOrbSize === 'cursor' ? 40 : 76} mode={talking ? 'speaking' : 'idle'} level={voiceLevelRef} drift={prefs?.novaDrift !== false && prefs?.novaOrbSize !== 'cursor'} solid />
-                </div>
-                <span className="text-xs text-muted">Actual size</span>
-              </div>
+              <p className="mb-3 text-[13px] text-muted">A JARVIS globe of pixel lights in your blue (from Roamies). It ripples with {name}’s voice, pulses with yours while listening, and a light sweeps round it while it thinks. It never shows up in screenshots or screen recordings.</p>
               <Row title={`Show ${name}`} hint="Ctrl + Alt + N also shows or hides it">
                 <input type="checkbox" checked={prefs?.bauerOrb ?? true} onChange={(e) => save({ bauerOrb: e.target.checked })} aria-label="Show the orb" />
               </Row>
@@ -603,10 +640,10 @@ export function NovaPage(): React.JSX.Element {
                   onChange={(v) => save({ novaOrbSize: v as Prefs['novaOrbSize'] })}
                 />
               </Row>
-              <Row title="Float gently while idle" hint="A slow bob, inside its own spot (it doesn’t wander around your screen)">
-                <input type="checkbox" checked={prefs?.novaDrift !== false} onChange={(e) => save({ novaDrift: e.target.checked })} aria-label="Float gently" />
+              <Row title="Float around my screen" hint="Off: it rests where you drop it. Either way it hops aside when your mouse comes near, and comes over when you talk.">
+                <input type="checkbox" checked={prefs?.novaDrift !== false} onChange={(e) => save({ novaDrift: e.target.checked })} aria-label="Float around my screen" />
               </Row>
-              <p className="text-xs text-muted">Drag the orb to move it; click it to talk. In “follows my cursor” mode it rides beside your mouse and lets every click through.</p>
+              <p className="text-xs text-muted">Drag it to move it (or fling it); click it to talk; right-click it for Hide. In “follows my cursor” size it shrinks to a little HUD ring beside your mouse.</p>
             </section>
           )}
 
@@ -774,6 +811,7 @@ export function NovaPage(): React.JSX.Element {
               Full log, typing and Undo
             </button>
           </section>
+          {!phone && <MemoryCard name={name} />}
           <section className="card rounded-2xl p-5">
             <h2 className="font-semibold">Try saying</h2>
             <ul className="nova-try mt-2 flex flex-col gap-1.5 text-[13px] text-muted">
@@ -784,6 +822,9 @@ export function NovaPage(): React.JSX.Element {
               <li>“Walk me through making a chart in Excel”</li>
               <li>“Click save for me” (with Hands on)</li>
               <li>“Draft a revision plan for chemistry in Claude Docs” (with connectors on)</li>
+              <li>“I’ll email Sam the notes tomorrow morning” (a promise: it reminds you)</li>
+              <li>“Remember I’m doing chemistry A-level” · “Forget that”</li>
+              <li>Tap Ctrl + Shift to type to {name} beside your cursor</li>
             </ul>
           </section>
         </aside>

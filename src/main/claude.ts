@@ -28,7 +28,7 @@ const EXE = (): string => join(DIR(), 'claude', PKG_VERSION, 'claude.exe')
 const CONFIG = (): string => join(DIR(), 'claude-config')
 const WORK = (): string => join(DIR(), 'work') // an empty folder, so Claude Code never reads a project
 
-type ModelKey = 'haiku' | 'sonnet' | 'opus'
+export type ModelKey = 'haiku' | 'sonnet' | 'opus'
 const MODEL_ID: Record<ModelKey, string> = { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5' }
 
 const exists = async (p: string): Promise<boolean> => !!(await stat(p).catch(() => null))
@@ -128,7 +128,14 @@ async function checkAuth(): Promise<void> {
   }
 }
 
+let checked = false
+/** Has Claude's sign-in been checked since Studyhall started? (Checks once if not.) */
+export async function claudeChecked(): Promise<void> {
+  if (!checked) await claudeStatus()
+}
+
 export async function claudeStatus(): Promise<ClaudeStatus> {
+  checked = true
   const installed = await exists(EXE())
   state.installed = installed
   state.monthCostUsd = getSetting<number>(monthKey()) ?? 0
@@ -579,4 +586,31 @@ export async function listConnectors(): Promise<string[]> {
   } finally {
     q.close()
   }
+}
+
+// ---------- For Nova's conversation (novaBrain.ts) ----------
+
+/** The same locked-down Claude Code as every other request (no files, no connectors, nothing saved), minus the
+ *  tool lists: Nova's conversation brings its own tools. */
+export function claudeBase(): Omit<ReturnType<typeof LOCKED>, 'tools' | 'mcpServers'> {
+  const { tools: _t, mcpServers: _m, ...rest } = LOCKED()
+  return rest
+}
+export const claudeModelId = (m: ModelKey): string => MODEL_ID[m]
+export const claudeReady = (): boolean => state.installed && state.signedIn
+
+/** Limits, sign-in and billing news from any Claude message. */
+export function noteClaudeMessage(m: SdkMessage, prefs: Prefs): void {
+  if (m.type === 'rate_limit_event') noteLimit(m.rate_limit_info, prefs)
+  else if (m.type === 'assistant' && m.error === 'authentication_failed') set({ signedIn: false })
+  else if (m.type === 'assistant' && (m.error === 'billing_error' || m.error === 'rate_limit')) {
+    pausedUntil = Date.now() + 15 * 60_000
+    set({ paused: 'your Claude usage limit was reached' })
+  }
+}
+/** Add a request's cost to this month's total and show it as the last request on the Nova page. */
+export function recordClaudeCost(model: ModelKey, effort: NovaEffort, ms: number, cost: number): void {
+  const month = (getSetting<number>(monthKey()) ?? 0) + cost
+  setSetting(monthKey(), month)
+  set({ last: { model, effort, ms, costUsd: cost, at: new Date().toISOString() }, monthCostUsd: month, error: null })
 }

@@ -26,8 +26,6 @@ export const ORB_SHORTCUT = 'CommandOrControl+Alt+N' // show / hide Nova
 /** Automated tests: windows live far off-screen, nothing is captured, nothing takes focus. */
 const OFFSCREEN = process.env.STUDYHALL_OFFSCREEN === '1'
 
-const ORB_W = 380
-const ORB_H = 300
 const CARDS_W = 320
 
 export function configureBauer(opts: { url: (hash: string) => string; webPreferences: Electron.WebPreferences; startBrief: () => void }): void {
@@ -54,7 +52,11 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
     else if (msg.type === 'listen' && from === orbWin) startBrief()
     else if (msg.type === 'hideOrb' && from === orbWin) orbWin?.hide()
     else if (msg.type === 'ready' && from === orbWin) sendOrbConfig()
-    else if (from === orbWin && orbWin && (msg.type === 'dragStart' || msg.type === 'dragMove' || msg.type === 'dragEnd')) dragOrb(msg.type, Number(msg.x), Number(msg.y))
+    else if (msg.type === 'orbHome' && from === orbWin && orbWin && Number.isFinite(Number(msg.x)) && Number.isFinite(Number(msg.y))) {
+      // Dropped somewhere new: remembered (screen coordinates) for next time.
+      const b = orbWin.getBounds()
+      setSetting('nova_orb_home', { x: Math.round(b.x + Number(msg.x)), y: Math.round(b.y + Number(msg.y)) })
+    }
   })
   setShortcut(true)
   syncOrb()
@@ -76,51 +78,109 @@ function toggleOrb(): void {
     if (!orbWin || orbWin.isDestroyed()) syncOrb(true)
     else orbWin.showInactive()
   }
-  followCursor()
+  watchCursor()
 }
 
-// ---------- Size, drift, following the cursor ----------
+// ---------- The floating Nova: Roamies' JARVIS globe on one see-through layer over your screen ----------
+// The layer covers one screen's work area and lets every click through except on the globe (the page decides, on
+// every mouse move). The globe floats around inside it, comes over beside your cursor when you talk, and flies to
+// whatever it points at; the layer hops to another screen when the globe needs to be there.
 
 type OrbSize = 'small' | 'default' | 'cursor'
 const orbSize = (): OrbSize => (['small', 'default', 'cursor'].includes(String(getPrefs().novaOrbSize)) ? (getPrefs().novaOrbSize as OrbSize) : 'default')
-const ORB_PX: Record<OrbSize, number> = { small: 52, default: 76, cursor: 40 }
-function sendOrbConfig(): void {
-  const size = orbSize()
-  orbWin?.webContents.send('bauer:orbConfig', { px: ORB_PX[size], follow: size === 'cursor', drift: getPrefs().novaDrift !== false })
-  if (orbWin && !orbWin.isDestroyed()) orbWin.setIgnoreMouseEvents(true, { forward: size !== 'cursor' })
-  followCursor()
+let orbDisplay: number | null = null
+type Spot = { x: number; y: number }
+
+/** Is a screen point inside some screen's work area? */
+function onSomeScreen(x: number, y: number): boolean {
+  return screen.getAllDisplays().some((d) => x >= d.workArea.x + 20 && x <= d.workArea.x + d.workArea.width - 20 && y >= d.workArea.y + 20 && y <= d.workArea.y + d.workArea.height - 20)
 }
-let followTimer: NodeJS.Timeout | null = null
-/** In "follows my cursor" mode Nova rides just below-right of the mouse (and never catches clicks). */
-function followCursor(): void {
+/** Where you last left it resting (screen coordinates), if that's still on a screen. */
+function savedHome(): Spot | null {
+  const s = getSetting<Spot>('nova_orb_home')
+  return s && Number.isFinite(s.x) && Number.isFinite(s.y) && onSomeScreen(s.x, s.y) ? s : null
+}
+function layerOn(d: Electron.Display): void {
+  if (!orbWin || orbWin.isDestroyed()) return
+  if (orbDisplay === d.id) return
+  orbDisplay = d.id
+  if (!OFFSCREEN) orbWin.setBounds(d.workArea)
+}
+/** A screen point in the layer's own coordinates. */
+function local(p: Spot): Spot {
+  const b = orbWin && !orbWin.isDestroyed() && !OFFSCREEN ? orbWin.getBounds() : screen.getPrimaryDisplay().workArea
+  return { x: Math.round(p.x - b.x), y: Math.round(p.y - b.y) }
+}
+function sendOrbConfig(): void {
+  if (!orbWin || orbWin.isDestroyed()) return
+  const h = savedHome()
+  const b = OFFSCREEN ? screen.getPrimaryDisplay().workArea : orbWin.getBounds()
+  const homeHere = h && h.x >= b.x && h.x <= b.x + b.width && h.y >= b.y && h.y <= b.y + b.height ? local(h) : null
+  orbWin.webContents.send('bauer:orbConfig', { size: orbSize(), roam: getPrefs().novaDrift !== false, home: homeHere })
+  orbWin.setIgnoreMouseEvents(true, { forward: true })
+  watchCursor()
+}
+
+// In "follows my cursor" size, the layer goes wherever the mouse goes, screen to screen.
+let cursorTimer: NodeJS.Timeout | null = null
+function watchCursor(): void {
   const on = orbSize() === 'cursor' && !!orbWin && !orbWin.isDestroyed() && orbWin.isVisible() && !suspended && !OFFSCREEN
   if (!on) {
-    if (followTimer) {
-      clearInterval(followTimer)
-      followTimer = null
-      // Back to where you left Nova.
-      const saved = getSetting<{ x: number; y: number }>('bauer_orb_pos')
-      if (orbWin && !orbWin.isDestroyed()) {
-        const wa = screen.getPrimaryDisplay().workArea
-        const pos = saved && onSomeScreen(saved.x, saved.y) ? saved : { x: wa.x + wa.width - ORB_W - 8, y: wa.y + wa.height - ORB_H - 8 }
-        orbWin.setPosition(pos.x, pos.y)
-      }
-    }
+    if (cursorTimer) clearInterval(cursorTimer)
+    cursorTimer = null
     return
   }
-  if (followTimer) return
-  let last = ''
-  followTimer = setInterval(() => {
-    if (!orbWin || orbWin.isDestroyed() || !orbWin.isVisible()) return followCursor()
+  if (cursorTimer) return
+  cursorTimer = setInterval(() => {
+    if (!orbWin || orbWin.isDestroyed() || !orbWin.isVisible()) return watchCursor()
+    layerOn(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()))
+  }, 250)
+}
+
+/** Show or hide the globe to match Settings. */
+export function syncOrb(force = false): void {
+  const on = (force || getPrefs().bauerOrb !== false) && !suspended
+  if (!on) {
+    orbWin?.hide()
+    watchCursor()
+    return
+  }
+  if (!orbWin || orbWin.isDestroyed()) {
+    const h = savedHome()
+    const d = h ? screen.getDisplayNearestPoint(h) : screen.getPrimaryDisplay()
+    orbDisplay = d.id
+    orbWin = overlayWindow(d.workArea, '#orb')
+    orbWin.setIgnoreMouseEvents(true, { forward: true })
+    orbWin.on('closed', () => {
+      orbWin = null
+      orbDisplay = null
+    })
+    orbWin.once('ready-to-show', () => {
+      orbWin?.showInactive()
+      watchCursor()
+    })
+  } else {
+    if (!orbWin.isVisible()) orbWin.showInactive()
+    sendOrbConfig()
+  }
+}
+
+/** What Nova is doing, for the globe (listening, thinking, a short line of what it did). When you start talking it
+ *  comes over beside your cursor, on whichever screen that is. */
+export function sendOrb(state: OrbState, text?: string): void {
+  if (!orbWin || orbWin.isDestroyed()) return
+  let cursor: Spot | undefined
+  if (state === 'listening' && !OFFSCREEN) {
     const p = screen.getCursorScreenPoint()
-    const px = ORB_PX.cursor
-    // The orb sits at the window's bottom-right corner (12 px padding).
-    const x = Math.round(p.x + 22 + px / 2 + 12 - ORB_W + px / 2)
-    const y = Math.round(p.y + 22 + px / 2 + 12 - ORB_H + px / 2)
-    const key = `${x},${y}`
-    if (key !== last) orbWin.setPosition(x, y)
-    last = key
-  }, 30)
+    layerOn(screen.getDisplayNearestPoint(p))
+    cursor = local(p)
+  }
+  orbWin.webContents.send('bauer:orb', { state, text, cursor })
+}
+
+/** A little performance from the globe (Nova's emote tags): wave, hype, remind, upset, motivate. */
+export function orbEmote(e: string): void {
+  if (['wave', 'hype', 'remind', 'upset', 'motivate'].includes(e)) orbWin?.webContents.send('bauer:emote', e)
 }
 
 /** Studyhall closed to the tray: hide the orb, cards and circling layer, and free Ctrl+Alt+B. Opened again: bring them back. */
@@ -168,67 +228,6 @@ const overlayWindow = (bounds: Electron.Rectangle, hash: string, focusable = fal
   })
   w.loadURL(loadUrl(hash))
   return w
-}
-
-// ---------- The floating Bauer ----------
-
-/** Show or hide the orb to match Settings. */
-export function syncOrb(force = false): void {
-  const on = (force || getPrefs().bauerOrb !== false) && !suspended
-  if (!on) {
-    orbWin?.hide()
-    followCursor()
-    return
-  }
-  if (!orbWin || orbWin.isDestroyed()) {
-    const wa = screen.getPrimaryDisplay().workArea
-    const saved = getSetting<{ x: number; y: number }>('bauer_orb_pos')
-    const pos = saved && onSomeScreen(saved.x, saved.y) ? saved : { x: wa.x + wa.width - ORB_W - 8, y: wa.y + wa.height - ORB_H - 8 }
-    orbWin = overlayWindow({ ...pos, width: ORB_W, height: ORB_H }, '#orb')
-    orbWin.setIgnoreMouseEvents(true, { forward: true })
-    orbWin.on('closed', () => (orbWin = null))
-    orbWin.once('ready-to-show', () => {
-      orbWin?.showInactive()
-      followCursor()
-    })
-  } else {
-    if (!orbWin.isVisible()) orbWin.showInactive()
-    sendOrbConfig()
-  }
-}
-
-/** Is the orb (bottom-right of its window) on a screen if the window sits at x, y? */
-function onSomeScreen(x: number, y: number): boolean {
-  const orb = { x: x + ORB_W - 40, y: y + ORB_H - 40 }
-  return screen.getAllDisplays().some((d) => orb.x >= d.workArea.x - 10 && orb.x <= d.workArea.x + d.workArea.width - 30 && orb.y >= d.workArea.y - 10 && orb.y <= d.workArea.y + d.workArea.height - 30)
-}
-
-// Dragging the orb: the window follows the mouse, then stays where you leave it (remembered).
-let drag: { wx: number; wy: number; sx: number; sy: number } | null = null
-function dragOrb(type: string, x: number, y: number): void {
-  if (!orbWin || !Number.isFinite(x) || !Number.isFinite(y)) return
-  if (type === 'dragStart') {
-    const [wx, wy] = orbWin.getPosition()
-    drag = { wx, wy, sx: x, sy: y }
-  } else if (type === 'dragMove' && drag) {
-    orbWin.setPosition(Math.round(drag.wx + x - drag.sx), Math.round(drag.wy + y - drag.sy))
-  } else if (type === 'dragEnd' && drag) {
-    drag = null
-    let [wx, wy] = orbWin.getPosition()
-    if (!onSomeScreen(wx, wy)) {
-      // Dropped off the edge: bring him back inside the nearest screen.
-      const wa = screen.getDisplayNearestPoint({ x: wx + ORB_W - 30, y: wy + ORB_H - 30 }).workArea
-      wx = Math.min(Math.max(wx, wa.x - ORB_W + 60), wa.x + wa.width - ORB_W - 8)
-      wy = Math.min(Math.max(wy, wa.y - ORB_H + 60), wa.y + wa.height - ORB_H - 8)
-      orbWin.setPosition(wx, wy)
-    }
-    setSetting('bauer_orb_pos', { x: wx, y: wy })
-  }
-}
-
-/** What Bauer is doing, for the orb (listening, thinking, a short line of what he did). */
-export function sendOrb(state: OrbState, text?: string): void {
-  orbWin?.webContents.send('bauer:orb', { state, text })
 }
 
 // ---------- Cards ----------
@@ -313,38 +312,14 @@ function closeCircle(): void {
 
 // ---------- Pointing (eyes): a ring around one control on your screen ----------
 
-// While Nova points, the orb flies over beside the ring (like a cursor), then home again.
-let orbFlight: NodeJS.Timeout | null = null
-let orbAway = false
-function flyOrb(to: { x: number; y: number }): void {
-  if (!orbWin || orbWin.isDestroyed() || !orbWin.isVisible() || OFFSCREEN || orbSize() === 'cursor') return
-  if (orbFlight) clearInterval(orbFlight)
-  const [x0, y0] = orbWin.getPosition()
-  let i = 0
-  const n = 16
-  orbFlight = setInterval(() => {
-    i++
-    const t = i / n
-    const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2 // ease in-out
-    if (orbWin && !orbWin.isDestroyed()) orbWin.setPosition(Math.round(x0 + (to.x - x0) * e), Math.round(y0 + (to.y - y0) * e))
-    if (i >= n && orbFlight) {
-      clearInterval(orbFlight)
-      orbFlight = null
-    }
-  }, 18)
-}
-/** Put the orb's centre at a screen point (the orb sits at its window's bottom-right corner). */
-function orbTo(p: { x: number; y: number }): void {
-  const px = ORB_PX[orbSize()]
-  orbAway = true
-  flyOrb({ x: Math.round(p.x - (ORB_W - 12 - px / 2)), y: Math.round(p.y - (ORB_H - 12 - px / 2)) })
+// While Nova points, the globe flies over beside the ring (on that screen), then back to what it was doing.
+function orbTo(p: Spot): void {
+  if (!orbWin || orbWin.isDestroyed() || !orbWin.isVisible()) return
+  if (!OFFSCREEN) layerOn(screen.getDisplayNearestPoint(p))
+  orbWin.webContents.send('bauer:orbGo', local(p))
 }
 function orbHome(): void {
-  if (!orbAway) return
-  orbAway = false
-  const wa = screen.getPrimaryDisplay().workArea
-  const saved = getSetting<{ x: number; y: number }>('bauer_orb_pos')
-  flyOrb(saved && onSomeScreen(saved.x, saved.y) ? saved : { x: wa.x + wa.width - ORB_W - 8, y: wa.y + wa.height - ORB_H - 8 })
+  orbWin?.webContents.send('bauer:orbGo', null)
 }
 
 /** Show the pointer around a screen area (DIP). It never catches clicks and never shows in screenshots. */

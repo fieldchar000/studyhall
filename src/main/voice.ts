@@ -390,17 +390,33 @@ function onKey(e: string): void {
   } else if (e === 'ptt-up') send({ type: 'finish' })
   else if (e === 'ptt-cancel') send({ type: 'cancel' })
   else if (e === 'type') {
+    // The ask bar: a small box right beside your cursor (like Roamies'), to type to Nova.
     ensureWindow()
-    place(H_SMALL)
+    placeAtCursor(H_SMALL)
     win!.show()
     win!.focus()
     send({ type: 'type' })
   }
 }
 
+/** Just below-right of the mouse (kept on its screen). */
+let atCursor = false // the ask bar is open beside the mouse: it stays there while it grows
+function placeAtCursor(height: number): void {
+  if (!win) return
+  atCursor = true
+  const p = screen.getCursorScreenPoint()
+  const area = screen.getDisplayNearestPoint(p).workArea
+  const h = Math.min(height, area.height - 32)
+  if (process.env.STUDYHALL_OFFSCREEN === '1') return void win.setBounds({ x: -30000, y: -30000, width: W, height: h }) // automated tests
+  const x = Math.min(Math.max(area.x + 8, p.x + 18), area.x + area.width - W - 8)
+  const y = Math.min(Math.max(area.y + 8, p.y + 22), area.y + area.height - h - 8)
+  win.setBounds({ x: Math.round(x), y: Math.round(y), width: W, height: h })
+}
+
 /** Bottom-right corner of the screen the mouse is on. */
 function place(height: number): void {
   if (!win) return
+  atCursor = false
   const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
   const h = Math.min(height, area.height - 32)
   if (process.env.STUDYHALL_OFFSCREEN === '1') return void win.setBounds({ x: -30000, y: -30000, width: W, height: h }) // automated tests
@@ -420,12 +436,20 @@ export function voiceFromWindow(msg: { type: 'show'; height: number; focus?: boo
     return
   }
   if (msg.type === 'show') {
-    place(Math.max(160, Math.min(900, Math.round(msg.height))))
+    const h = Math.max(160, Math.min(900, Math.round(msg.height)))
+    if (atCursor && win.isVisible() && process.env.STUDYHALL_OFFSCREEN !== '1') {
+      // Beside the mouse: keep its spot, just fit the height (moving up if it would run off the screen).
+      const b = win.getBounds()
+      const area = screen.getDisplayMatching(b).workArea
+      const hh = Math.min(h, area.height - 32)
+      win.setBounds({ ...b, y: Math.min(b.y, area.y + area.height - hh - 8), height: hh })
+    } else place(h)
     if (msg.focus && process.env.STUDYHALL_OFFSCREEN !== '1') {
       win.show()
       win.focus()
     } else if (!win.isVisible()) win.showInactive()
   } else if (msg.type === 'hide') {
+    atCursor = false
     win.hide()
   } else if (msg.type === 'state') {
     state = msg.state

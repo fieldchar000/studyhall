@@ -23,9 +23,9 @@ const BauerScreen = lazy(async () => {
   return { default: screenPart === '#orb' ? m.OrbWindow : screenPart === '#cards' ? m.CardsWindow : screenPart === '#point' ? m.PointWindow : m.CircleWindow }
 })
 if (screenPart) document.documentElement.classList.add('bauer-overlay')
-if (screenPart === '#orb' || screenPart === '#cards') {
-  // These see-through windows catch clicks only while the mouse is over something of Nova's (checked on every move,
-  // like Roamies does), so they can never get stuck blocking your screen.
+if (screenPart === '#cards') {
+  // This see-through window catches clicks only while the mouse is over something of Nova's (checked on every move,
+  // like Roamies does), so it can never get stuck blocking your screen.
   let hot = false
   const setHot = (h: boolean): void => {
     if (h === hot) return
