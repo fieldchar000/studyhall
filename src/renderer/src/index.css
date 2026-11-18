@@ -1579,3 +1579,25 @@ body:has(.space-shell)::before { display: none; }
 .src-url { font-size: 10.5px; }
 .px-close { position: sticky; top: 0; align-self: flex-end; z-index: 5; padding: 5px 9px; font: 10px/1 'Silkscreen', monospace; color: #a8c8ff; background: #081633; box-shadow: 0 -2px 0 0 #3d74e0, 0 2px 0 0 #3d74e0, -2px 0 0 0 #3d74e0, 2px 0 0 0 #3d74e0; }
 .px-close:hover { color: #fff; background: #12306b; }
+
+/* ---------- v0.41: speech bubbles beside the floating globe (yours under it, Nova's above it) ---------- */
+.nova-bub-row { position: fixed; display: flex; pointer-events: none; }
+.nova-bub { position: relative; pointer-events: none; display: block; width: fit-content; max-width: 340px; padding: 9px 13px 10px; font: 500 14px/1.4 'Instrument Sans Variable', 'Segoe UI', sans-serif; color: #e8f0ff; background: rgb(8 22 51 / .86); backdrop-filter: blur(10px); border-radius: 10px; box-shadow: 0 0 0 2px #3d74e0, 0 0 22px rgb(79 134 240 / .32); animation: nova-bub-in .22s steps(4) both; }
+.nova-bub-you { background: rgb(12 30 70 / .82); box-shadow: 0 0 0 2px #a8c8ff, 0 0 16px rgb(168 200 255 / .25); color: #cfe0ff; }
+.nova-bub-who { display: block; margin-bottom: 2px; font: 10px/1 'Silkscreen', monospace; letter-spacing: .06em; color: #a8c8ff; text-transform: lowercase; }
+/* The pixel tail points at the globe: down from Nova's bubble, up from yours (flipped near a screen edge). */
+.nova-bub::after { content: ''; position: absolute; left: calc(var(--tail, 50%) - 6px); width: 12px; height: 8px; background: inherit; }
+.nova-bub-nova::after, .nova-bub-you.flip::after { bottom: -8px; clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.nova-bub-you::after, .nova-bub-nova.flip::after { top: -8px; bottom: auto; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.nova-bub.is-done { animation: nova-bub-out 1.2s ease 6s both; }
+.nova-bub-listen { display: inline-flex; align-items: end; gap: 4px; height: 16px; }
+.nova-bub-listen i { width: 4px; height: 4px; background: #a8c8ff; animation: nova-bub-bar .9s steps(4) infinite; }
+.nova-bub-listen i:nth-child(2) { animation-delay: .15s; } .nova-bub-listen i:nth-child(3) { animation-delay: .3s; } .nova-bub-listen i:nth-child(4) { animation-delay: .45s; } .nova-bub-listen i:nth-child(5) { animation-delay: .6s; }
+@keyframes nova-bub-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes nova-bub-out { to { opacity: 0; } }
+@keyframes nova-bub-bar { 50% { height: 16px; } }
+@media (prefers-reduced-motion: reduce) { .nova-bub, .nova-bub.is-done, .nova-bub-listen i { animation: none; } }
+.nova-mark-in { animation: nova-bub-in .3s steps(4) both; }
+@media (prefers-reduced-motion: reduce) { .nova-mark-in { animation: none; } }
+/* The card Nova is talking about right now. */
+.px-card.px-looking { box-shadow: 0 -4px 0 0 var(--px-hi), 0 4px 0 0 var(--px-hi), -4px 0 0 0 var(--px-hi), 4px 0 0 0 var(--px-hi), 0 0 30px 6px rgb(120 170 255 / .5); transition: box-shadow .2s steps(3); }

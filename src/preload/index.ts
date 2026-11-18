@@ -362,6 +362,7 @@ const api: Api = {
     onPoint: (cb) => {
       const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
       ipcRenderer.on('bauer:point', l)
+      ipcRenderer.send('bauer:window', { type: 'pointReady' }) // (the latest marks, if they came before this page was ready)
       return () => ipcRenderer.removeListener('bauer:point', l)
     },
     micLevel: (v) => ipcRenderer.send('bauer:window', { type: 'mic', v }),
@@ -377,6 +378,14 @@ const api: Api = {
     listen: () => ipcRenderer.send('bauer:window', { type: 'listen' }),
     hideOrb: () => ipcRenderer.send('bauer:window', { type: 'hideOrb' }),
     orbHome: (x, y) => ipcRenderer.send('bauer:window', { type: 'orbHome', x, y }),
+    bubble: (who, text, opts) => ipcRenderer.send('bauer:window', { type: 'bubble', who, text, append: !!opts?.append, done: !!opts?.done }),
+    onBubble: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('bauer:bubble', l)
+      return () => ipcRenderer.removeListener('bauer:bubble', l)
+    },
+    lookMark: (n) => ipcRenderer.send('bauer:window', { type: 'lookMark', n }),
+    cardAt: (r) => ipcRenderer.send('bauer:window', { type: 'cardAt', x: r.x, y: r.y, w: r.width, h: r.height }),
     onOrbGo: (cb) => {
       const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
       ipcRenderer.on('bauer:orbGo', l)

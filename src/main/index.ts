@@ -472,6 +472,7 @@ if (!app.requestSingleInstanceLock()) {
           stopTeach()
         })
         handle('eyes:window', async () => {
+          if (process.env.STUDYHALL_OFFSCREEN === '1') return null // tests never read your real windows
           const r = await eyes({ cmd: 'window', exclude: [process.pid] }).catch(() => null)
           const w = r?.ok ? (r.window as { title: string; app: string }) : null
           return w ? { title: String(w.title ?? ''), app: String(w.app ?? '') } : null

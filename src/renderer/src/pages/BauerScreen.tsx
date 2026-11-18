@@ -16,12 +16,14 @@ const hover = { 'data-hot': '' }
 export function OrbWindow(): React.JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  const bubbleRef = useRef<HTMLDivElement>(null)
   const globe = useRef<NovaGlobe | null>(null)
   const [state, setState] = useState<OrbState>('idle')
-  const [text, setText] = useState('')
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [at, setAt] = useState({ x: -999, y: -999, r: 40 })
+  // Speech bubbles: your words under the globe, Nova's above it (filling in as it speaks).
+  const [you, setYou] = useState<{ text: string; listening: boolean } | null>(null)
+  const [nova, setNova] = useState<{ text: string; done: boolean; at: number } | null>(null)
+  const micLevel = useRef(0)
 
   useEffect(() => {
     if (!canvas.current) return
@@ -42,18 +44,24 @@ export function OrbWindow(): React.JSX.Element {
       onMenu: (x, y) => setMenu({ x, y }),
       onHot: (h) => api.bauer.mouse(h),
       onHome: (x, y) => api.bauer.orbHome(x, y),
-      extraHit: (x, y) => inside(menuRef.current, x, y) || inside(bubbleRef.current, x, y),
+      extraHit: (x, y) => inside(menuRef.current, x, y), // (bubbles never catch clicks)
       home: null
     }).then((g) => {
       if (gone) return
       globe.current = g
       offs.push(
         api.bauer.onOrbConfig((c) => g.setConfig(c)),
-        api.bauer.onLevels((l) => (l.kind === 'voice' ? g.voice(l.env) : g.mic(l.v))),
+        api.bauer.onLevels((l) => {
+          if (l.kind === 'voice') g.voice(l.env)
+          else {
+            g.mic(l.v)
+            micLevel.current = l.v
+          }
+        }),
         api.bauer.onOrbGo((p) => g.goTo(p)),
         api.bauer.onEmote((e) => g.emote(e))
       )
-      // The bubble and menu ride beside the globe.
+      // The bubbles and menu ride along with the globe.
       const track = (): void => {
         const w = g.where()
         setAt((a) => (Math.abs(a.x - w.x) > 0.5 || Math.abs(a.y - w.y) > 0.5 || a.r !== w.r ? w : a))
@@ -70,24 +78,51 @@ export function OrbWindow(): React.JSX.Element {
 
   useEffect(
     () =>
-      api.bauer.onOrb((s) => {
-        setState(s.state)
-        globe.current?.setState(s.state, s.cursor)
-        if (s.text) setText(s.text)
-        else if (s.state === 'listening') setText('')
+      api.bauer.onBubble((b) => {
+        if (b.who === 'you') {
+          if (b.done && !b.text) setYou(null)
+          else setYou({ text: b.text, listening: !b.text })
+          if (!b.text && !b.done) setNova(null) // you're talking: Nova's last words make room
+          return
+        }
+        setNova((n) => {
+          if (b.done) return n ? { ...n, done: true, at: Date.now() } : n
+          const text = b.append && n && !n.done ? `${n.text} ${b.text}`.replace(/\s+/g, ' ').trim() : b.text
+          return { text, done: false, at: Date.now() }
+        })
       }),
     []
   )
-  // The "done" bubble fades after a while.
+  useEffect(
+    () =>
+      api.bauer.onOrb((s) => {
+        setState(s.state)
+        globe.current?.setState(s.state, s.cursor)
+        // Nothing spoken (voice off) or something went wrong: the words still show above the globe.
+        if (s.text && (s.state === 'done' || s.state === 'error'))
+          setNova((n) => (n && Date.now() - n.at < 10_000 && s.state !== 'error' ? n : { text: s.text!, done: true, at: Date.now() }))
+      }),
+    []
+  )
+  // Your words step aside a few seconds after Nova starts answering; Nova's fade a while after it finishes.
+  useEffect(() => {
+    if (!nova || !you || you.listening) return
+    const t = setTimeout(() => setYou(null), 4000)
+    return () => clearTimeout(t)
+  }, [nova, you])
+  useEffect(() => {
+    if (!nova?.done) return
+    const t = setTimeout(() => setNova(null), Math.min(14_000, 5000 + nova.text.length * 45))
+    return () => clearTimeout(t)
+  }, [nova])
   useEffect(() => {
     if (state !== 'done' && state !== 'error') return
     const t = setTimeout(() => {
       setState('idle')
-      setText('')
       globe.current?.setState('idle')
     }, 9000)
     return () => clearTimeout(t)
-  }, [state, text])
+  }, [state])
   // The menu closes when the mouse wanders off for a moment.
   useEffect(() => {
     if (!menu) return
@@ -95,22 +130,43 @@ export function OrbWindow(): React.JSX.Element {
     return () => clearTimeout(t)
   }, [menu])
 
-  const left = at.x > window.innerWidth / 2
+  // Bubbles are centred on the globe (kept on screen); a long answer shows its newest lines.
+  const W = Math.min(340, window.innerWidth - 16)
+  const bx = Math.max(8, Math.min(window.innerWidth - W - 8, at.x - W / 2))
+  // Centred on the globe; near a screen edge the bubble hugs that edge and its tail moves along to the globe.
+  const edge = bx <= 8 ? 'flex-start' : bx >= window.innerWidth - W - 8 ? 'flex-end' : 'center'
+  const tailAt = edge === 'center' ? '50%' : edge === 'flex-start' ? `${Math.max(14, at.x - bx)}px` : `calc(100% - ${Math.max(14, bx + W - at.x)}px)`
+  const roomAbove = at.y - at.r * 1.35 > 90
+  const roomBelow = at.y + at.r * 1.35 < window.innerHeight - 70
+  const novaText = nova ? (nova.text.length > 260 ? `…${nova.text.slice(-260).replace(/^\S*\s/, '')}` : nova.text) : ''
   return (
     <>
       {/* Roamies drives the canvas; clicks on it (not on a wrapper) are the globe's. */}
       <canvas ref={canvas} className="fixed" style={{ imageRendering: 'pixelated' }} />
-      {text && (state === 'done' || state === 'error') && (
-        <div
-          ref={bubbleRef}
-          className="orb-bubble fixed max-w-[300px] rounded-2xl px-4 py-3 text-[13.5px] leading-snug"
-          style={{
-            top: Math.max(8, at.y - at.r * 1.2 - 64),
-            ...(left ? { right: Math.max(8, window.innerWidth - at.x + at.r * 0.6) } : { left: Math.max(8, at.x + at.r * 0.6) })
-          }}
-          onClick={() => setText('')}
-        >
-          {text}
+      {nova && novaText && (
+        <div className="nova-bub-row" style={{ left: bx, width: W, justifyContent: edge, ...(roomAbove ? { bottom: window.innerHeight - (at.y - at.r * 1.35) } : { top: at.y + at.r * 1.35 + (you ? 64 : 0) }) }}>
+          <div className={`nova-bub nova-bub-nova ${nova.done ? 'is-done' : ''} ${roomAbove ? '' : 'flip'}`} style={{ ['--tail' as string]: tailAt }}>
+            <span className="nova-bub-who">{state === 'error' ? 'hmm' : 'nova'}</span>
+            {novaText}
+          </div>
+        </div>
+      )}
+      {you && (
+        <div className="nova-bub-row" style={{ left: bx, width: W, justifyContent: edge, ...(roomBelow ? { top: at.y + at.r * 1.6 } : { bottom: window.innerHeight - (at.y - at.r * 1.35) + (nova ? 70 : 0) }) }}>
+          <div className={`nova-bub nova-bub-you ${roomBelow ? '' : 'flip'}`} style={{ ['--tail' as string]: tailAt }}>
+            <span className="nova-bub-who">you</span>
+            {you.listening ? (
+              <span className="nova-bub-listen" aria-label="Listening">
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+            ) : (
+              `“${you.text}”`
+            )}
+          </div>
         </div>
       )}
       {menu && (
@@ -141,12 +197,37 @@ type PointMsg = {
   step: string
   highlight?: boolean
   arrowTo?: { x: number; y: number } | null
+  marks?: { rect: { x: number; y: number; width: number; height: number }; label: string }[]
 }
 
 export function PointWindow(): React.JSX.Element {
   const [p, setP] = useState<PointMsg | null>(null)
   useEffect(() => api.bauer.onPoint((m) => setP(m as PointMsg | null)), [])
   if (!p) return <div className="fixed inset-0" />
+  // Marks: Nova showing you things while it talks (numbered rings when there are several).
+  if (p.marks?.length) {
+    const many = p.marks.length > 1
+    return (
+      <div className="pointer-events-none fixed inset-0 select-none">
+        {p.marks.map((m, i) => {
+          const pad = 6
+          const r = { x: m.rect.x - pad, y: m.rect.y - pad, w: m.rect.width + pad * 2, h: m.rect.height + pad * 2 }
+          const below = r.y + r.h + 40 < window.innerHeight
+          return (
+            <div key={i} className="nova-mark-in" style={{ animationDelay: `${i * 0.35}s` }}>
+              <div className="nova-ring" style={{ left: r.x, top: r.y, width: r.w, height: r.h }} />
+              {m.label && (
+                <div className="nova-ring-label" style={{ left: Math.max(8, Math.min(window.innerWidth - 260, r.x)), top: below ? r.y + r.h + 8 : r.y - 38 }}>
+                  {many && <span className="nova-ring-step">{i + 1}</span>}
+                  {m.label}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
   // The key bit: an underline and a soft box under the text, a tag, and an arrow to Nova's cards.
   if (p.highlight) {
     const r = p.rect
@@ -184,6 +265,28 @@ export function PointWindow(): React.JSX.Element {
 
 // ---------- Cards beside your work ----------
 
+/** Nova is talking about this card: it lights up, scrolls into view, and the globe floats over beside it. */
+function lookAtCard(id: string): void {
+  let tries = 0
+  const go = (): void => {
+    const el = document.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(id)}"]`)
+    if (!el) {
+      if (tries++ < 10) setTimeout(go, 60) // (it may still be appearing)
+      return
+    }
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    el.classList.remove('px-looking')
+    void el.offsetWidth
+    el.classList.add('px-looking')
+    setTimeout(() => el.classList.remove('px-looking'), 3500)
+    setTimeout(() => {
+      const r = el.getBoundingClientRect()
+      api.bauer.cardAt({ x: r.left, y: r.top, width: r.width, height: Math.min(r.height, 220) })
+    }, 250)
+  }
+  setTimeout(go, 40)
+}
+
 export function CardsWindow(): React.JSX.Element {
   const [cards, setCards] = useState<BauerCard[]>([])
   const [source, setSource] = useState<{ title: string; url: string; image: string | null; sentences: string[] } | null>(null)
@@ -203,6 +306,7 @@ export function CardsWindow(): React.JSX.Element {
         else if (op.op === 'item') setCards((cs) => cs.map((c) => (c.id === op.id ? { ...c, items: [...(c.items ?? []), op.item] } : c)))
         else if (op.op === 'quiz') setCards((cs) => cs.map((c) => (c.id === op.id ? { ...c, quiz: [...(c.quiz ?? []), op.q] } : c)))
         else if (op.op === 'mark') setMark({ n: op.n, tag: op.tag })
+        else if (op.op === 'look') lookAtCard(op.id)
       }),
     []
   )
@@ -254,6 +358,7 @@ export function CardsWindow(): React.JSX.Element {
     }
   })
   const [arrow, setArrow] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  const lastMark = useRef<typeof mark>(null)
   useLayoutEffect(() => {
     if (!mark || !wrap.current) return setArrow(null)
     // Bring the underlined line into view on the source page first.
@@ -262,6 +367,11 @@ export function CardsWindow(): React.JSX.Element {
     const from = wrap.current.querySelector('.src-mark')?.getBoundingClientRect()
     const to = wrap.current.querySelector('.px-card')?.getBoundingClientRect()
     if (!from || !to) return setArrow(null)
+    // The globe floats over to the underlined line (left of the source page).
+    if (lastMark.current !== mark) {
+      lastMark.current = mark
+      api.bauer.cardAt({ x: box.left, y: from.top, width: from.width, height: from.height })
+    }
     setArrow({ x1: from.right - box.left + 4, y1: from.top - box.top + from.height / 2, x2: to.left - box.left - 8, y2: to.top - box.top + 34 })
   }, [mark, cards.length, source])
 
@@ -309,7 +419,7 @@ export function CardsWindow(): React.JSX.Element {
           </button>
         )}
         {cards.map((c) => (
-          <article key={c.id} {...hover} className="px-card shrink-0">
+          <article key={c.id} {...hover} data-card-id={c.id} className="px-card shrink-0">
             <header className="px-bar">
               <i />
               <i />

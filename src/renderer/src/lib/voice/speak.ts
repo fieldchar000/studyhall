@@ -87,9 +87,19 @@ export function pieces(text: string): string[] {
   return out
 }
 
-function play(samples: Float32Array, sampleRate: number, gen: number): Promise<void> {
+/** Nova's words in the bubble above the globe, shown as each piece starts playing (in step with the voice). */
+function bubble(text: string, append: boolean, done = false): void {
+  try {
+    api.bauer.bubble('nova', text, { append, done })
+  } catch {
+    /* no floating globe here (the pad) */
+  }
+}
+
+function play(samples: Float32Array, sampleRate: number, gen: number, text?: string, append = false): Promise<void> {
   return new Promise((resolve) => {
     if (gen !== generation || !samples.length) return resolve()
+    if (text) bubble(text, append)
     ctx ??= new AudioContext()
     const buf = ctx.createBuffer(1, samples.length, sampleRate)
     buf.copyToChannel(samples as Float32Array<ArrayBuffer>, 0)
@@ -127,13 +137,16 @@ export async function speak(text: string, voice?: string, speed?: number): Promi
       const audio = await next
       if (gen !== generation) return true
       if (i + 1 < parts.length) next = api.mouth.speak(parts[i + 1], voice, speed)
-      await play(audio.samples, audio.sampleRate, gen)
+      await play(audio.samples, audio.sampleRate, gen, parts[i], i > 0)
       if (gen !== generation) return true
     }
   } catch (e) {
     console.warn('Nova voice:', e)
   } finally {
-    if (gen === generation) setSpeaking(false)
+    if (gen === generation) {
+      setSpeaking(false)
+      bubble('', true, true)
+    }
   }
   return true
 }
@@ -219,15 +232,27 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
   let ended = false
   let said = false
   const queue: Promise<{ samples: Float32Array; sampleRate: number } | null>[] = []
+  const texts: string[] = [] // what each queued piece says (for the bubble)
   let wake: (() => void) | null = null
   const voiceOk = api.mouth
     .status()
     .then((s) => s.installed)
     .catch(() => false)
+  // "[look N]" cues arrive inside the text (⁣N⁣): the globe floats to mark N as the piece holding it starts playing.
+  const looks: number[][] = []
+  let lookNext: number[] = []
   const enqueue = (piece: string): void => {
-    const p = piece.replace(/[*_#`>]+/g, ' ').replace(/\s+/g, ' ').trim()
+    for (const m of piece.matchAll(/⁣(\d)⁣/g)) lookNext.push(Number(m[1]))
+    const p = piece
+      .replace(/⁣\d⁣/g, ' ')
+      .replace(/[*_#`>]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
     if (!p || !/[\p{L}\p{N}]/u.test(p)) return
     said = true
+    looks[texts.length] = lookNext
+    lookNext = []
+    texts.push(p)
     queue.push(voiceOk.then((ok) => (ok && gen === generation ? api.mouth.speak(p).catch(() => null) : null)))
     wake?.()
   }
@@ -260,13 +285,21 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
   const done = (async () => {
     setSpeaking(true)
     let i = 0
+    let shown = 0
     try {
       for (;;) {
         if (gen !== generation) return
         if (i < queue.length) {
           const audio = await queue[i++]
           if (gen !== generation) return
-          if (audio) await play(audio.samples, audio.sampleRate, gen)
+          for (const n of looks[i - 1] ?? []) {
+            try {
+              api.bauer.lookMark(n)
+            } catch {
+              /* no floating globe here */
+            }
+          }
+          if (audio) await play(audio.samples, audio.sampleRate, gen, texts[i - 1], shown++ > 0)
           continue
         }
         if (ended) return
@@ -274,7 +307,10 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
         wake = null
       }
     } finally {
-      if (gen === generation) setSpeaking(false)
+      if (gen === generation) {
+        setSpeaking(false)
+        if (shown) bubble('', true, true)
+      }
     }
   })()
   return {
@@ -291,6 +327,7 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
       const b = options[Math.floor(Math.random() * options.length)]
       if (!b) return
       lastBeat = b
+      texts.push(b)
       queue.push(Promise.resolve(beatAudio.get(b)!))
       wake?.()
     },

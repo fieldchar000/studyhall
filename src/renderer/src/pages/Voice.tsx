@@ -24,6 +24,14 @@ const currencySymbol = (code: string): string => {
   }
 }
 
+const youSaid = (text: string, done = false): void => {
+  try {
+    api.bauer.bubble('you', text, { done })
+  } catch {
+    /* no floating globe (the pad) */
+  }
+}
+
 export default function VoicePanel(): React.JSX.Element {
   const [phase, setPhase] = useState<Phase>('idle')
   const [heard, setHeard] = useState(false)
@@ -63,6 +71,7 @@ export default function VoicePanel(): React.JSX.Element {
       // Woken by something that only sounded like "Hey Bauer"? Quietly go back to waiting.
       if (woke.current && !wakeWordHeard(t)) {
         console.info('Bauer: no wake word in', JSON.stringify(t))
+        youSaid('', true)
         setPhase('idle')
         return
       }
@@ -70,6 +79,7 @@ export default function VoicePanel(): React.JSX.Element {
       try {
         const r = await handleSpeech(t, 'voice', profile.mode)
         if (r.ignored) {
+          youSaid('', true)
           setPhase('idle')
           return
         }
@@ -98,6 +108,7 @@ export default function VoicePanel(): React.JSX.Element {
           chime()
           setHeard(false)
           setPhase('listening')
+          youSaid('')
         } else if (e.type === 'heard') setHeard(true)
         else if (e.type === 'level') {
           setLevel((l) => l * 0.5 + e.value * 0.5)
@@ -119,7 +130,9 @@ export default function VoicePanel(): React.JSX.Element {
           if (phaseRef.current === 'review') return
           setMessage('I didn’t catch anything.')
           setPhase('nothing')
+          youSaid('', true)
         } else if (e.type === 'transcript') {
+          youSaid(e.text)
           setText(e.text)
           setEdited(false)
           void act(e.text)
@@ -148,6 +161,7 @@ export default function VoicePanel(): React.JSX.Element {
       await engine.listen(pushToTalk)
       chime()
       setPhase('listening')
+      youSaid('')
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e))
       setPhase('error')
@@ -336,6 +350,7 @@ export default function VoicePanel(): React.JSX.Element {
             if (!t) return
             woke.current = false
             setText(t)
+            youSaid(t)
             void act(t)
           }}
         >

@@ -35,7 +35,12 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
   ipcMain.on('bauer:window', (e, msg) => {
     if (!msg || typeof msg !== 'object') return
     const from = BrowserWindow.fromWebContents(e.sender)
-    if (msg.type === 'ready' && from === cardsWin) cardsWin?.webContents.send('bauer:cards', cards)
+    if (msg.type === 'ready' && from === cardsWin) {
+      cardsWin?.webContents.send('bauer:cards', cards)
+      // The page is listening now: the lesson steps that came while it loaded.
+      cardsReady = true
+      for (const op of liveQueue.splice(0)) cardsWin?.webContents.send('bauer:live', op)
+    }
     // The cards window is only as tall as what's in it (never a full-height strip down your screen).
     else if (msg.type === 'cardsHeight' && from === cardsWin && cardsWin && !OFFSCREEN) {
       const b = cardsWin.getBounds()
@@ -44,6 +49,18 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
       if (Math.abs(h - b.height) > 2) cardsWin.setBounds({ ...b, height: h })
     }
     else if (msg.type === 'mouse' && from && (from === orbWin || from === cardsWin)) from.setIgnoreMouseEvents(!msg.over, { forward: true })
+    // A lesson is talking about one card: the globe floats over beside it (left of the cards).
+    else if (msg.type === 'cardAt' && from === cardsWin && cardsWin && [msg.x, msg.y, msg.h].every((v) => Number.isFinite(Number(v)))) {
+      const b = cardsWin.getBounds()
+      orbTo({ x: b.x + Number(msg.x) - 58, y: b.y + Number(msg.y) + Math.min(90, Number(msg.h) / 2) })
+    }
+    else if (msg.type === 'pointReady' && from === pointWin && pointWin) pointWin.webContents.send('bauer:point', lastPoint)
+    else if (msg.type === 'lookMark' && Number.isInteger(Number(msg.n))) lookAtMark(Number(msg.n))
+    // Speech bubbles beside the globe: your words under it, Nova's above it.
+    else if (msg.type === 'bubble' && (msg.who === 'you' || msg.who === 'nova')) {
+      orbWin?.webContents.send('bauer:bubble', { who: msg.who, text: String(msg.text ?? '').slice(0, 2000), append: !!msg.append, done: !!msg.done })
+      if (msg.who === 'you' && !msg.append && marksTimer) hidePointer() // talking again clears the marks from last time
+    }
     else if (msg.type === 'orb') sendOrb(String(msg.state) as OrbState, typeof msg.text === 'string' ? msg.text : undefined)
     // Loudness for the orb's ripples: Nova's voice (a list, every 40 ms) or your microphone (one number).
     else if (msg.type === 'voice' && Array.isArray(msg.env)) orbWin?.webContents.send('bauer:levels', { kind: 'voice', env: msg.env.slice(0, 3000).map((v: unknown) => Math.max(0, Math.min(1, Number(v) || 0))) })
@@ -237,7 +254,11 @@ function ensureCards(): BrowserWindow {
   const wa = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
   cardsWin = overlayWindow({ x: wa.x + wa.width - CARDS_W - 12, y: wa.y + 12, width: CARDS_W, height: wa.height - 24 }, '#cards')
   cardsWin.setIgnoreMouseEvents(true, { forward: true })
-  cardsWin.on('closed', () => (cardsWin = null))
+  cardsReady = false
+  cardsWin.on('closed', () => {
+    cardsWin = null
+    cardsReady = false
+  })
   return cardsWin
 }
 
@@ -322,13 +343,19 @@ function orbHome(): void {
   orbWin?.webContents.send('bauer:orbGo', null)
 }
 
+/** Where the globe hovers to point at something: just right of it (or below it at the screen's edge). */
+function besideRect(rect: Electron.Rectangle): Spot {
+  const d = screen.getDisplayMatching(rect).workArea
+  const right = rect.x + rect.width + 110 < d.x + d.width
+  return right ? { x: rect.x + rect.width + 62, y: rect.y + rect.height / 2 } : { x: rect.x + rect.width / 2, y: Math.min(rect.y + rect.height + 70, d.y + d.height - 60) }
+}
+
 /** Show the pointer around a screen area (DIP). It never catches clicks and never shows in screenshots. */
 export function showPointer(rect: Electron.Rectangle, label: string, step: string): void {
   if (suspended) return
-  // The orb comes over to just right of (or below) the control, like a cursor pointing at it.
-  const d = screen.getDisplayMatching(rect).workArea
-  const right = rect.x + rect.width + 70 < d.x + d.width
-  orbTo(right ? { x: rect.x + rect.width + 46, y: rect.y + rect.height / 2 + 20 } : { x: rect.x + rect.width / 2, y: rect.y + rect.height + 70 })
+  clearMarksSoon(0)
+  // The globe comes over to just right of (or below) the control, like a cursor pointing at it.
+  orbTo(besideRect(rect))
   const display = screen.getDisplayMatching(rect)
   const b = display.bounds
   if (!pointWin || pointWin.isDestroyed()) {
@@ -338,23 +365,81 @@ export function showPointer(rect: Electron.Rectangle, label: string, step: strin
   } else if (!OFFSCREEN) pointWin.setBounds(b)
   const w = pointWin
   const send = (): void => {
-    w.webContents.send('bauer:point', { rect: { x: rect.x - b.x, y: rect.y - b.y, width: rect.width, height: rect.height }, label, step })
+    pointMsg(w, { rect: { x: rect.x - b.x, y: rect.y - b.y, width: rect.width, height: rect.height }, label, step })
     w.showInactive()
   }
   if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)
   else send()
 }
 
+let lastPoint: unknown = null
+function pointMsg(w: BrowserWindow, msg: unknown): void {
+  lastPoint = msg
+  if (!w.isDestroyed()) w.webContents.send('bauer:point', msg)
+}
+
+// ---------- Marks: Nova shows you things on your screen while it talks ----------
+// Rings with short labels (numbered when there are several) around controls or text on your screen; the globe floats
+// over beside the first one. They clear by themselves after a while, or when you talk to Nova again.
+
+let marksTimer: NodeJS.Timeout | null = null
+function clearMarksSoon(ms: number): void {
+  if (marksTimer) clearTimeout(marksTimer)
+  marksTimer = ms ? setTimeout(hidePointer, ms) : null
+}
+
+let lastMarks: Electron.Rectangle[] = []
+export function showMarks(marks: { rect: Electron.Rectangle; label: string }[]): void {
+  if (suspended || !marks.length) return
+  lastMarks = marks.map((m) => m.rect)
+  const display = screen.getDisplayMatching(marks[0].rect)
+  const b = display.bounds
+  const here = marks.filter((m) => screen.getDisplayMatching(m.rect).id === display.id).slice(0, 6)
+  orbTo(besideRect(here[0].rect))
+  if (!pointWin || pointWin.isDestroyed()) {
+    pointWin = overlayWindow(b, '#point')
+    pointWin.setIgnoreMouseEvents(true)
+    pointWin.on('closed', () => (pointWin = null))
+  } else if (!OFFSCREEN) pointWin.setBounds(b)
+  const w = pointWin
+  const send = (): void => {
+    pointMsg(w, {
+      rect: { x: 0, y: 0, width: 0, height: 0 },
+      label: '',
+      step: '',
+      marks: here.map((m) => ({ rect: { x: m.rect.x - b.x, y: m.rect.y - b.y, width: m.rect.width, height: m.rect.height }, label: m.label }))
+    })
+    w.showInactive()
+  }
+  if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)
+  else send()
+  clearMarksSoon(25_000)
+}
+
+/** Fly the globe beside mark n (1-based: the one Nova is talking about now). */
+export function lookAtMark(n: number): void {
+  const r = lastMarks[n - 1]
+  if (r && marksTimer) {
+    orbTo(besideRect(r))
+    clearMarksSoon(25_000)
+  }
+}
+
 export function hidePointer(): void {
+  if (marksTimer) clearTimeout(marksTimer)
+  marksTimer = null
   orbHome()
   if (!pointWin || pointWin.isDestroyed()) return
-  pointWin.webContents.send('bauer:point', null)
+  pointMsg(pointWin, null)
   pointWin.hide()
 }
 
 // ---------- Live lessons: cards appear step by step (and a brief source page beside them) ----------
 
 const LIVE_W = 610 // two columns: the source page and the cards
+let lessonHome: NodeJS.Timeout | null = null
+let cardsReady = false
+const liveQueue: LiveOp[] = []
 
 /** Send one step of a live lesson to the cards window (opening it, two columns wide when there's a source page). */
 export function liveCards(op: LiveOp): void {
@@ -366,12 +451,12 @@ export function liveCards(op: LiveOp): void {
     w.setBounds({ x: wa.x + wa.width - width - 12, y: wa.y + 12, width, height: wa.height - 24 })
   }
   if (op.op === 'start') cards = []
-  const send = (): void => {
-    w.webContents.send('bauer:live', op)
-    if (!w.isVisible()) w.showInactive()
-  }
-  if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)
-  else send()
+  // The lesson's over: the globe stays by the cards a little while (you're reading), then floats off again.
+  if (lessonHome) clearTimeout(lessonHome)
+  lessonHome = op.op === 'end' ? setTimeout(orbHome, 20_000) : null
+  if (cardsReady) w.webContents.send('bauer:live', op)
+  else liveQueue.push(op) // (sent once the page says it's ready)
+  if (!w.isVisible()) w.showInactive()
 }
 
 /** Where the cards window is (for the arrow from the key bit on your screen). */
@@ -391,9 +476,10 @@ export function showHighlight(rect: Electron.Rectangle, tag: string): void {
   } else if (!OFFSCREEN) pointWin.setBounds(b)
   const cb = cardsBounds()
   const arrowTo = cb ? { x: cb.x - b.x, y: Math.min(cb.y + 120, cb.y + cb.height / 2) - b.y } : null
+  orbTo(besideRect(rect)) // the globe floats over to the line it's talking about
   const w = pointWin
   const send = (): void => {
-    w.webContents.send('bauer:point', { rect: { x: rect.x - b.x, y: rect.y - b.y, width: rect.width, height: rect.height }, label: tag, step: '', highlight: true, arrowTo })
+    pointMsg(w, { rect: { x: rect.x - b.x, y: rect.y - b.y, width: rect.width, height: rect.height }, label: tag, step: '', highlight: true, arrowTo })
     w.showInactive()
   }
   if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)

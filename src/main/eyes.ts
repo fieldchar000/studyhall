@@ -6,7 +6,7 @@
 //  4. walkthroughs: Nova waits for your click there, looks again, and shows the next step.
 // Nothing is captured unless you ask; screenshots go only to Claude, with your request.
 
-import { app, desktopCapturer, screen } from 'electron'
+import { app, BrowserWindow, desktopCapturer, screen } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -106,7 +106,14 @@ const toDip = (r: number[]): Electron.Rectangle => {
 
 /** Look at the window you're using (or a given one, for tests). */
 export async function see(opts: { hwnd?: number; offscreen?: boolean; screenshot?: boolean } = {}): Promise<Seen> {
-  const req = { cmd: 'snapshot', exclude: [process.pid], hwnd: opts.hwnd ?? 0, offscreen: !!opts.offscreen }
+  // Automated tests only ever look at Studyhall's own hidden window, never at your real ones.
+  if (process.env.STUDYHALL_OFFSCREEN === '1' && !opts.hwnd) {
+    const main = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('index.html'))
+    if (!main) throw new Error('no test window to look at')
+    const h = main.getNativeWindowHandle()
+    opts = { ...opts, hwnd: Number(h.length >= 8 ? h.readBigUInt64LE(0) : h.readUInt32LE(0)), offscreen: true }
+  }
+  const req ={ cmd: 'snapshot', exclude: [process.pid], hwnd: opts.hwnd ?? 0, offscreen: !!opts.offscreen }
   let r = await eyes(req)
   // Chromium apps (browsers, Studyhall, Discord…) switch their accessibility on when first asked.
   if (r.ok && (r.elements as unknown[]).length < 15) {

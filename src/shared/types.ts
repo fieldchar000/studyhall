@@ -783,6 +783,7 @@ export type LiveOp =
   | { op: 'item'; id: string; item: { label: string; detail?: string; value?: number } }
   | { op: 'quiz'; id: string; q: { q: string; options: string[]; answer: number; why?: string } }
   | { op: 'mark'; n: number; tag: string } // underline sentence n of the source page, with a tag and an arrow
+  | { op: 'look'; id: string } // Nova is talking about this card: the globe floats over beside it
   | { op: 'end' }
 export interface WikiSummary {
   title: string
@@ -1264,6 +1265,14 @@ export interface Api {
     onEmote(cb: (e: 'wave' | 'hype' | 'remind' | 'upset' | 'motivate') => void): () => void
     /** (orb window) dropped somewhere new: its resting spot (window px) */
     orbHome(x: number, y: number): void
+    /** Speech bubbles beside the globe: your words (under it) and Nova's (above it). append adds to the bubble. */
+    bubble(who: 'you' | 'nova', text: string, opts?: { append?: boolean; done?: boolean }): void
+    /** (orb window) */
+    onBubble(cb: (b: { who: 'you' | 'nova'; text: string; append: boolean; done: boolean }) => void): () => void
+    /** Nova is talking about mark n on your screen now: the globe floats beside it */
+    lookMark(n: number): void
+    /** (cards window) where the card Nova is talking about is, in the window */
+    cardAt(rect: { x: number; y: number; width: number; height: number }): void
     /** (orb window) loudness to ripple with: Nova's voice (every 40 ms) or your microphone */
     onLevels(cb: (l: { kind: 'voice'; env: number[] } | { kind: 'mic'; v: number }) => void): () => void
     voiceLevels(env: number[]): void

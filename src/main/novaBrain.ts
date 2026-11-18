@@ -8,7 +8,7 @@
 // Everything still runs through the same locked-down Claude Code as the rest of Nova (claude.ts): none of Claude Code's
 // own tools, no connectors, no project files, nothing saved to your Claude account.
 
-import { app, type WebContents } from 'electron'
+import { app, BrowserWindow, type WebContents } from 'electron'
 import { exec } from 'node:child_process'
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -19,8 +19,8 @@ import { claudeBase, claudeBlocked, claudeChecked, claudeModelId, noteClaudeMess
 import type { NovaEffort } from '@shared/types'
 import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
-import { APP_NAMES, openApp, orbEmote, showCards } from './bauer'
-import { describeControls, eyes, helpOnScreen, see } from './eyes'
+import { APP_NAMES, openApp, orbEmote, showCards, showMarks } from './bauer'
+import { describeControls, eyes, helpOnScreen, see, type Seen, type SeenControl } from './eyes'
 import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { draftWithConnectors } from './claude'
@@ -30,6 +30,8 @@ type Query = import('@anthropic-ai/claude-agent-sdk').Query
 type SdkMessage = import('@anthropic-ai/claude-agent-sdk').SDKMessage
 type UserMsg = { type: 'user'; message: { role: 'user'; content: { type: 'text'; text: string }[] }; parent_tool_use_id: null; session_id: string }
 
+/** A "[look N]" cue as it travels with the speech text (invisible separator, the mark's number, separator). */
+const MARKER = /\u2063\d\u2063/g
 const EMOTES = ['wave', 'hype', 'remind', 'upset', 'motivate'] as const
 const IDLE_MS = 15 * 60_000
 const MAX_TURNS_PER_CONVO = 40
@@ -45,7 +47,7 @@ Lead with the answer, then only the context that makes it useful, then stop. No 
 Before anything slow (a lesson, looking at or working the screen, drafting, reading files, running a command), first say one short beat of 2 to 6 words that shows you heard them ("On it.", "Sure, one sec."), then call the tool in the same reply. No beat when you answer straight away. After a tool, never repeat what you already said; only add what's new (often nothing).
 Personality: warm, a little witty, encouraging. You keep them on track: remind them of what they said they'd do, celebrate what they finish, nudge them when they're putting things off.
 Their messages are usually speech transcripts: expect missing punctuation and misheard words, and act on what they most likely meant. Small talk, half sentences, or talk clearly meant for someone else: reply in a few words or not at all (an empty reply is fine).
-Never claim you did something you didn't. Never invent their details (names, dates, amounts, who someone is); use what they said, what you remember and what's on screen. On a small ambiguity, take the likeliest reading and go.
+Tools are called for real, never written out as text (never write "[call …]"). Never claim you did something you didn't. Never invent their details (names, dates, amounts, who someone is); use what they said, what you remember and what's on screen. On a small ambiguity, take the likeliest reading and go.
 
 How to help (use as few tool calls as the task needs; several independent ones can go in one turn):
 - Anything in Studyhall (tasks, deadlines, calendar events, lectures, study logs, habits, money, journal, check-ins, inbox, opening a page or website): studyhall_actions, with every change in one call. When they say they'll do something ("I'll email Sam tomorrow"), that's a promise: save it as a task with a due time so Studyhall reminds them. Snoozing a reminder is change_task_date. Then say what you did in one short sentence.
@@ -54,6 +56,7 @@ How to help (use as few tool calls as the task needs; several independent ones c
 - How to do something in the app on their screen, where something is, what something on screen means: help_on_screen. It points and walks them through it with its own voice, so say nothing more after it.
 - Clicking, typing or changing something in an app for them: do_on_screen (only when they ask you to do it).
 - A quick look at what's on screen to answer a question ("what's this error?", "summarise this page"): read_screen, then answer.
+- Show, don't just tell: you live on their screen, so when an answer is about things on it (what something is, where something is, which option to pick, the key line in what they're reading, the parts of a form or page), mark them with show_on_screen instead of describing where they are. Use the exact words shown on each thing (read_screen first if you don't know them; skip it if the user said the words). Then talk them through like a person standing beside them: start the sentence about each mark with [look 1], [look 2]… and the globe floats over to it as you say it ("[look 1] This one's your total. [look 2] And this is where you'd change it."). The cue is never spoken.
 - Short factual answers you just know: say them. A list, steps or a comparison: one sentence, then "- " lines. For a richer picture of a fact (a few labelled numbers, a small timeline) use show_card.
 - Writing a document, essay plan, letter or notes into their apps: draft_document.
 - Opening a desktop app: open_app. Files on their PC: list_files, read_file, write_file. A command line task: run_command (it always asks them first).
@@ -117,6 +120,41 @@ function safePath(p: string): string | null {
   if (!(abs === HOME || abs.startsWith(HOME + sep))) return null
   if (BLOCKED.test(abs)) return null
   return abs
+}
+
+// ---------- Finding a thing on screen by its words ----------
+
+let lastSeen: Seen | null = null
+/** Read the window in front. Automated tests read Studyhall's own hidden window instead, never your real ones. */
+function seeHere(): Promise<Seen> {
+  if (process.env.STUDYHALL_OFFSCREEN !== '1') return see({ screenshot: false })
+  const main = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('index.html'))
+  if (!main) return Promise.reject(new Error('no test window'))
+  const h = main.getNativeWindowHandle()
+  return see({ hwnd: Number(h.length >= 8 ? h.readBigUInt64LE(0) : h.readUInt32LE(0)), offscreen: true, screenshot: false })
+}
+/** The control best matching some words: "#12" (an id from the last read), exact words, then words it starts with or
+ *  contains; ties go to the smaller, enabled control (a button rather than the whole panel around it). */
+function findControl(pool: SeenControl[], find: string, seen: Seen | null): SeenControl | null {
+  const id = /^#?(\d+)$/.exec(find.trim())
+  if (id && seen) return seen.controls.find((c) => c.id === Number(id[1])) ?? null
+  const q = find.trim().toLowerCase().replace(/\s+/g, ' ')
+  if (!q) return null
+  let best: SeenControl | null = null
+  let score = 0
+  for (const c of pool) {
+    const n = c.name.toLowerCase().replace(/\s+/g, ' ').trim()
+    if (!n || c.rect.width < 2 || c.rect.height < 2) continue
+    const s = n === q ? 4 : n.startsWith(q) ? 3 : n.includes(q) ? 2 : q.includes(n) && n.length >= 4 ? 1 : 0
+    if (!s) continue
+    const area = c.rect.width * c.rect.height
+    const total = s + (c.enabled ? 0.2 : 0) - Math.min(0.5, area / 2_000_000)
+    if (total > score) {
+      score = total
+      best = c
+    }
+  }
+  return best
 }
 
 // ---------- The tools ----------
@@ -214,13 +252,33 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
         return text(`Result: ${said}`)
       }
     ),
-    tool('read_screen', 'Read the window in front: its title, app, and the text and controls in it.', {}, async () => {
+    tool('read_screen', 'Read the window in front: its title, app, and the text and controls in it (each with an id you can mark with show_on_screen).', {}, async () => {
       if (prefs().novaEyes === 'off') return text('Looking at the screen is switched off on the Nova page.')
       slow()
-      const seen = await see({ screenshot: false }).catch(() => null)
+      const seen = await seeHere().catch(() => null)
       if (!seen) return text('Could not read the screen.')
+      lastSeen = seen
       return text(`Window: "${seen.window.title}" (${seen.window.app})\n${describeControls(seen, 220)}`.slice(0, 14_000))
     }),
+    tool(
+      'show_on_screen',
+      'Show the user things on their screen: rings with short labels around buttons, menus, fields or text (numbered when several), and the globe floats over to them. Use it instead of describing where something is. find = the exact words shown on the thing (from read_screen, or words the user said), or "#id" from read_screen. After calling it, talk them through it and start the sentence about each mark with [look N] so the globe floats to that one as you say it.',
+      { marks: z.array(z.object({ find: z.string(), label: z.string().describe('2 to 5 words') })).min(1).max(6) },
+      async ({ marks }) => {
+        if (prefs().novaEyes === 'off') return text('Looking at the screen is switched off on the Nova page.')
+        const fresh = await seeHere().catch(() => null)
+        const pool = [...(fresh?.controls ?? []), ...(lastSeen?.controls ?? [])]
+        const found: { rect: Electron.Rectangle; label: string }[] = []
+        const missing: string[] = []
+        for (const m of marks) {
+          const c = findControl(pool, String(m.find), lastSeen)
+          if (c) found.push({ rect: c.rect, label: String(m.label).slice(0, 40) })
+          else missing.push(m.find)
+        }
+        if (found.length) showMarks(found)
+        return text(found.length ? `Shown ${found.length} mark${found.length > 1 ? 's' : ''} (numbered 1 to ${found.length} in your order, skipping any not found).${missing.length ? ` Not found on screen: ${missing.join('; ')}.` : ''}` : `None of those were found on screen (${missing.join('; ')}). Use read_screen to see the exact words, or tell them in words.`)
+      }
+    ),
     tool(
       'show_card',
       'Put one pixel card beside the globe: a few labelled points (with optional numbers for a little chart) or a short timeline. For things easier to see than hear.',
@@ -524,6 +582,8 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   const c = convo
   const started = Date.now()
   let spoken = ''
+  let wroteCall = false // the model wrote a tool call as text instead of calling it
+  let retried = false
   let beatDone = false
   const turn: Turn = {
     quiet: false,
@@ -553,8 +613,25 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
         hold = hold.slice(m.index + m[0].length)
         continue
       }
+      // [look 2]: the globe floats to mark 2 when this sentence is SPOKEN (a marker rides along with the words to the
+      // voice, which acts on it as that piece starts playing).
+      const look = /\[look\s*(\d)\]\s*/i.exec(hold)
+      if (look) {
+        split.push(hold.slice(0, look.index))
+        split.push(`\u2063${look[1]}\u2063`)
+        hold = hold.slice(look.index + look[0].length)
+        continue
+      }
+      // Any other [bracketed text] is never spoken (it's a note to itself, or a tool call written out by mistake).
+      const other = /\[[^\]\n]{0,240}\]\s*/.exec(hold)
+      if (other) {
+        split.push(hold.slice(0, other.index))
+        if (/^\[\s*call\b/i.test(other[0])) wroteCall = true
+        hold = hold.slice(other.index + other[0].length)
+        continue
+      }
       const open = hold.lastIndexOf('[')
-      if (open >= 0 && hold.length - open < 12 && !hold.includes(']', open)) {
+      if (open >= 0 && hold.length - open < 240 && !hold.includes(']', open) && !hold.includes('\n', open)) {
         split.push(hold.slice(0, open))
         hold = hold.slice(open)
       } else {
@@ -594,8 +671,21 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
       } else if (m.type === 'assistant') {
         for (const b of m.message.content as { type: string; name?: string }[]) if (b.type === 'tool_use' && b.name) turn.tools.push(b.name.replace(/^mcp__nova__/, ''))
       } else if (m.type === 'result') {
-        cost = m.total_cost_usd ?? 0
+        cost += m.total_cost_usd ?? 0
         if (m.subtype !== 'success') throw new Error(`Claude couldn’t finish (${m.subtype})`)
+        // It wrote a tool call out as text instead of making it: once, ask it to really make the call.
+        if (wroteCall && !turn.tools.length && !retried) {
+          retried = true
+          wroteCall = false
+          c.push({
+            type: 'user',
+            message: { role: 'user', content: [{ type: 'text', text: '(Studyhall: you wrote that tool call as text, so nothing happened. Make the call now for real, and add nothing else.)' }] },
+            parent_tool_use_id: null,
+            session_id: ''
+          })
+          r = c.it.next()
+          continue
+        }
         break
       }
       r = c.it.next()
@@ -604,7 +694,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     close(c)
     const msg = e instanceof Error ? e.message : String(e)
     console.warn('Nova turn failed:', msg)
-    return { text: spoken.trim(), quiet: turn.quiet, tools: turn.tools, error: msg }
+    return { text: spoken.replace(MARKER, '').trim(), quiet: turn.quiet, tools: turn.tools, error: msg }
   } finally {
     if (hold) split.push(hold)
     split.end()
@@ -618,7 +708,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   }
   recordClaudeCost(model, effort, Date.now() - started, cost)
   console.info(`Nova turn: ${model}/${effort} in ${Date.now() - started} ms, tools: ${turn.tools.join(', ') || 'none'}`)
-  return { text: spoken.replace(/\s+/g, ' ').trim(), quiet: turn.quiet, tools: turn.tools }
+  return { text: spoken.replace(MARKER, '').replace(/\s+/g, ' ').trim(), quiet: turn.quiet, tools: turn.tools }
 }
 
 // The promise Nova last reminded you about out loud (so "snooze it" knows what "it" is).
@@ -636,6 +726,7 @@ export function factsBlock(): string {
 
 /** The window in front, for <live-state>. */
 export async function frontWindow(): Promise<string> {
+  if (process.env.STUDYHALL_OFFSCREEN === '1') return '(automated test: none)' // tests never read your real windows
   const r = await eyes({ cmd: 'window', exclude: [process.pid] }, 2000).catch(() => null)
   const w = r?.ok ? (r.window as { title: string; app: string }) : null
   return w ? `"${String(w.title ?? '')}" (${String(w.app ?? '')})` : 'unknown'

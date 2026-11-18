@@ -6,22 +6,29 @@
 import type { AiMessage, BauerCard, LiveOp, Prefs } from '@shared/types'
 import { see, type SeenControl } from './eyes'
 
-const SYSTEM = `You are Nova, teaching a topic live, like a friendly tutor drawing beside the student's screen.
+const SYSTEM = `You are Nova, a friendly tutor and lab assistant floating beside the student's screen. You teach out loud while your cards and drawings appear beside you, the way a good teacher talks at a whiteboard: the board holds the notes, your voice does the explaining.
 Write the lesson as a script, one command per line, exactly in this format (no other text, no markdown, no blank lines):
 SAY: <one or two short spoken sentences>
 CARD <id> <answer|points|timeline|steps|chart> | <title>
-ITEM <id> | <label, 2 to 6 words> | <detail: one short line, or empty> | <number for a chart, or empty>
+ITEM <card id> | <label, 2 to 6 words> | <detail: one short line, or empty> | <number for a chart, or empty>
 DIAGRAM <id> | <title> | <svg on one line>
+LOOK <id>
 MARK <number> | <tag, 2 to 4 words>
-QUIZ <id> | <question> | <option> | <option> | <option> | <index of the right option, 0 to 2> | <why, one short line>
+QUIZ <quiz id> | <question> | <option> | <option> | <option> | <index of the right option, 0 to 2> | <why, one short line>
 
-How to teach:
-- Open with SAY: a one-sentence hook. Then CARD c1 answer with the topic as title, and 3 or 4 ITEMs (short key facts). Put each SAY right before the visuals it talks about, so they appear together.
-- Then a DIAGRAM: a simple labelled drawing of the idea. The svg: one line, viewBox="0 0 320 200", using only rect, circle, ellipse, line, polyline, polygon, path and text; colours #4f86f0, #a8c8ff, #e4eeff and #ffcf7a (for the one thing to notice); no background; text font-size 13 to 16 with short labels. Say what the drawing shows.
-- If the request gives numbered text (a source page or the student's screen), MARK the number of the ONE line that is the key bit, right after a SAY that points to it ("See this line here: ...").
-- Then, if it suits the topic, a timeline (dates in order) or steps (a process) card, with a SAY.
-- Finish with a one-sentence SAY wrap-up, then one QUIZ.
-- 6 to 9 SAY lines, under 130 spoken words in total. Plain language for a university student. Never invent facts, numbers or dates; leave out what you're not sure of.`
+How to teach (this matters most):
+- Your voice explains; the cards are the notes. Never read a card out or repeat its words. The cards hold the terse facts (names, numbers, dates, labels); your SAY lines give the why and the how, the cause and effect, an everyday comparison ("think of it like a drain in a bathtub…"), and what to notice.
+- Talk to the student, warm and natural: "you", "we", "imagine…", "notice how…", "here's the clever bit…", "so what does that mean?". Contractions, plain words, short sentences. Sound like a person thinking it through with them, not an encyclopedia.
+- Point at what you're talking about: refer to your visuals as you go ("see the bright ring on the drawing? that's…", "look at the second step…"). Put LOOK <id> right before a SAY to float over to that card or drawing while you say it (useful when you come back to an earlier one; a new card is looked at automatically).
+- Build it up in order: a hook or a question first, then the core idea with a simple picture, then how it works step by step, then why it matters or a surprising fact, then a one-line recap and a check.
+
+The script:
+- Open with SAY: a hook (a question, or something vivid). Then CARD c1 answer with the topic as title and 3 or 4 ITEMs: short key facts (the notes), each followed or preceded by a SAY that explains it in your own words.
+- A DIAGRAM: a simple labelled drawing of the idea. The svg: one line, viewBox="0 0 320 200", using only rect, circle, ellipse, line, polyline, polygon, path and text; colours #4f86f0, #a8c8ff, #e4eeff and #ffcf7a (for the one thing to notice); no background; text font-size 13 to 16 with short labels. Walk them round it in SAY lines: what each part is and what happens there.
+- If the request gives numbered text (a source page or the student's screen), MARK the number of the ONE line that is the key bit, right after a SAY that points to it ("See this line here: it's saying…") and explain it in plainer words.
+- If it suits the topic, a timeline (dates in order) or steps (a process) card, explained as a story, not read out.
+- Finish with a one-sentence SAY recap, then one QUIZ, then a SAY inviting them to try it.
+- 8 to 12 SAY lines, about 140 to 200 spoken words in total. For a university student. Never invent facts, numbers or dates; leave out what you're not sure of.`
 
 type Beat = { say: string | null; ops: (() => void)[] }
 
@@ -86,6 +93,7 @@ export async function teach(topic: string, onScreen: boolean, wiki = ''): Promis
   let wake: () => void = () => {}
   const cards = new Map<string, BauerCard['kind']>()
   let firstSay = ''
+  let lastCard = '' // the latest points/timeline/steps/chart card
 
   const addOp = (op: () => void): void => {
     const b = beats[beats.length - 1]
@@ -95,6 +103,7 @@ export async function teach(topic: string, onScreen: boolean, wiki = ''): Promis
   const handleLine = (raw: string): void => {
     const line = raw.trim()
     if (!line) return
+    if (process.env.STUDYHALL_OFFSCREEN === '1') console.info('teach>', line.slice(0, 160)) // (automated tests read the script)
     let m: RegExpExecArray | null
     if ((m = /^SAY:\s*(.+)$/i.exec(line))) {
       beats.push({ say: m[1].trim(), ops: [] })
@@ -104,17 +113,30 @@ export async function teach(topic: string, onScreen: boolean, wiki = ''): Promis
       const [, id, kind, title] = m
       const k = (kind.toLowerCase() === 'answer' ? 'points' : kind.toLowerCase()) as BauerCard['kind']
       cards.set(id, k)
+      lastCard = id
       const card: BauerCard = { id, kind: k, title: title.trim(), items: [], source: source ? 'Wikipedia + Claude' : 'Claude', link: source?.url }
-      addOp(() => teachHooks.live({ op: 'card', card }))
+      addOp(() => {
+        teachHooks.live({ op: 'card', card })
+        teachHooks.live({ op: 'look', id })
+      })
     } else if ((m = /^ITEM\s+(\S+)\s*\|\s*([^|]*)\|?\s*([^|]*)\|?\s*([^|]*)$/i.exec(line))) {
-      const [, id, label, detail, num] = m
+      const [, given, label, detail, num] = m
+      // (ITEM lines name their card; one that names something else goes on the latest card.)
+      const id = cards.has(given) ? given : lastCard
+      if (!id) return
       const value = Number(String(num).replace(/[^0-9.-]/g, ''))
       const item = { label: label.trim(), detail: detail.trim() || undefined, value: Number.isFinite(value) && String(num).trim() ? value : undefined }
       if (item.label) addOp(() => teachHooks.live({ op: 'item', id, item }))
     } else if ((m = /^DIAGRAM\s+(\S+)\s*\|\s*([^|]*)\|\s*(<svg[\s\S]*<\/svg>)\s*$/i.exec(line))) {
       const [, id, title, svg] = m
       const card: BauerCard = { id, kind: 'diagram', title: title.trim() || topic, svg: svg.slice(0, 20000), source: 'Claude' }
-      addOp(() => teachHooks.live({ op: 'card', card }))
+      addOp(() => {
+        teachHooks.live({ op: 'card', card })
+        teachHooks.live({ op: 'look', id })
+      })
+    } else if ((m = /^LOOK\s+(\S+)\s*$/i.exec(line))) {
+      const id = m[1]
+      addOp(() => teachHooks.live({ op: 'look', id }))
     } else if ((m = /^MARK\s+(\d+)\s*\|\s*(.+)$/i.exec(line))) {
       const n = Number(m[1])
       const tag = m[2].trim().slice(0, 40)
