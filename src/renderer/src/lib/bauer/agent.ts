@@ -305,7 +305,7 @@ function toActions(list: AiAction[], ctx: BriefContext, said: string, now: Date)
         break
       }
       case 'look_at_screen':
-        if (onPc()) out.push({ ...common(), kind: 'circle' })
+        // (No longer opens the full-screen circle mode by itself: that's only ever your choice, Ctrl+Alt+B.)
         break
       case 'open_app': {
         const name = (a.text || a.title || '').toLowerCase()

@@ -1246,6 +1246,8 @@ export interface Api {
     /** (orb window) loudness to ripple with: Nova's voice (every 40 ms) or your microphone */
     onLevels(cb: (l: { kind: 'voice'; env: number[] } | { kind: 'mic'; v: number }) => void): () => void
     voiceLevels(env: number[]): void
+    /** (cards window) how tall its content is, so the window fits it */
+    cardsHeight(h: number): void
     /** (cards window) a live lesson, step by step */
     onLive(cb: (op: LiveOp) => void): () => void
     /** (pointer window) where to draw the ring, or null to clear it */

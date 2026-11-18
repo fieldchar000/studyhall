@@ -325,6 +325,7 @@ const api: Api = {
       return () => ipcRenderer.removeListener('bauer:levels', l)
     },
     voiceLevels: (env) => ipcRenderer.send('bauer:window', { type: 'voice', env }),
+    cardsHeight: (h) => ipcRenderer.send('bauer:window', { type: 'cardsHeight', h }),
     onLive: (cb) => {
       const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
       ipcRenderer.on('bauer:live', l)

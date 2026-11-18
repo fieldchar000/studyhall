@@ -28,7 +28,7 @@ const OFFSCREEN = process.env.STUDYHALL_OFFSCREEN === '1'
 
 const ORB_W = 380
 const ORB_H = 300
-const CARDS_W = 400
+const CARDS_W = 320
 
 export function configureBauer(opts: { url: (hash: string) => string; webPreferences: Electron.WebPreferences; startBrief: () => void }): void {
   loadUrl = opts.url
@@ -38,6 +38,13 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
     if (!msg || typeof msg !== 'object') return
     const from = BrowserWindow.fromWebContents(e.sender)
     if (msg.type === 'ready' && from === cardsWin) cardsWin?.webContents.send('bauer:cards', cards)
+    // The cards window is only as tall as what's in it (never a full-height strip down your screen).
+    else if (msg.type === 'cardsHeight' && from === cardsWin && cardsWin && !OFFSCREEN) {
+      const b = cardsWin.getBounds()
+      const wa = screen.getDisplayMatching(b).workArea
+      const h = Math.max(80, Math.min(wa.height - 24, Math.round(Number(msg.h) || 0) + 8))
+      if (Math.abs(h - b.height) > 2) cardsWin.setBounds({ ...b, height: h })
+    }
     else if (msg.type === 'mouse' && from && (from === orbWin || from === cardsWin)) from.setIgnoreMouseEvents(!msg.over, { forward: true })
     else if (msg.type === 'orb') sendOrb(String(msg.state) as OrbState, typeof msg.text === 'string' ? msg.text : undefined)
     // Loudness for the orb's ripples: Nova's voice (a list, every 40 ms) or your microphone (one number).
@@ -372,7 +379,7 @@ export function hidePointer(): void {
 
 // ---------- Live lessons: cards appear step by step (and a brief source page beside them) ----------
 
-const LIVE_W = 830 // two columns: the source page and the cards
+const LIVE_W = 610 // two columns: the source page and the cards
 
 /** Send one step of a live lesson to the cards window (opening it, two columns wide when there's a source page). */
 export function liveCards(op: LiveOp): void {

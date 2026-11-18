@@ -8,10 +8,8 @@ import { lookAt, type LookKind } from '@/lib/bauer/look'
 import { say } from '@/lib/bauer/agent'
 import { NovaOrb, type OrbMode } from '@/components/NovaOrb'
 
-const hover = {
-  onMouseEnter: () => api.bauer.mouse(true),
-  onMouseLeave: () => api.bauer.mouse(false)
-}
+/** Marks something of Nova's that takes clicks (see main.tsx: the window only catches clicks over these). */
+const hover = { 'data-hot': '' }
 
 // ---------- The floating Bauer ----------
 
@@ -106,22 +104,15 @@ export function OrbWindow(): React.JSX.Element {
       )}
       <div
         className="flex items-center gap-2"
+        {...(cfg.follow ? {} : hover)}
         onMouseLeave={() => {
-          if (press.current || cfg.follow) return // mid-drag: keep the mouse
+          if (press.current) return // mid-drag
           setOpen(false)
-          api.bauer.mouse(false)
         }}
-        onMouseEnter={() => {
-          if (cfg.follow) return // riding along with the cursor: never catch clicks
-          setOpen(true)
-          api.bauer.mouse(true)
-        }}
+        onMouseEnter={() => !cfg.follow && setOpen(true)}
       >
         {open && (
           <div className="orb-menu flex gap-1 rounded-full p-1">
-            <button className="orb-btn" title="Circle something on screen and ask (Ctrl+Alt+B)" onClick={() => void api.bauer.circle()}>
-              ⭕ Circle
-            </button>
             <button className="orb-btn" title="Hide Nova (Ctrl+Alt+N brings it back)" onClick={() => api.bauer.hideOrb()}>
               Hide
             </button>
@@ -205,6 +196,7 @@ export function CardsWindow(): React.JSX.Element {
   useEffect(
     () =>
       api.bauer.onLive((op) => {
+        if (op.op !== 'end') lastActive.current = Date.now()
         if (op.op === 'start') {
           setCards([])
           setSource(op.source)
@@ -240,6 +232,29 @@ export function CardsWindow(): React.JSX.Element {
 
   // The arrow from the underlined sentence to the first card.
   const wrap = useRef<HTMLDivElement>(null)
+  // The window fits its content; it clears itself after 3 quiet minutes.
+  useEffect(() => {
+    const el = wrap.current
+    if (!el) return
+    const fit = (): void => api.bauer.cardsHeight(el.scrollHeight)
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    for (const c of [...el.children]) ro.observe(c)
+    fit()
+    return () => ro.disconnect()
+  }, [cards.length, source])
+  const lastActive = useRef(Date.now())
+  useEffect(() => {
+    const touch = (): void => void (lastActive.current = Date.now())
+    document.addEventListener('mousemove', touch, { passive: true })
+    const t = setInterval(() => {
+      if ((cards.length || source) && Date.now() - lastActive.current > 180_000) clearAll()
+    }, 5000)
+    return () => {
+      document.removeEventListener('mousemove', touch)
+      clearInterval(t)
+    }
+  })
   const [arrow, setArrow] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   useLayoutEffect(() => {
     if (!mark || !wrap.current) return setArrow(null)
@@ -265,7 +280,7 @@ export function CardsWindow(): React.JSX.Element {
   }
   const count = cards.length + (source ? 1 : 0)
   return (
-    <div ref={wrap} className={`relative flex h-full gap-4 overflow-y-auto overflow-x-hidden p-2.5 ${source ? 'flex-row items-start' : 'flex-col'}`}>
+    <div ref={wrap} className={`relative flex max-h-screen gap-3 overflow-y-auto overflow-x-hidden p-2 ${source ? 'flex-row items-start' : 'flex-col'}`}>
       {source && (
         <article {...hover} className="src-page shrink-0">
           <div className="src-url">en.wikipedia.org/wiki/{source.title.replace(/ /g, '_')}</div>
@@ -289,7 +304,12 @@ export function CardsWindow(): React.JSX.Element {
           </button>
         </article>
       )}
-      <div className={`flex min-w-0 flex-col gap-4 ${source ? 'flex-1' : ''}`}>
+      <div className={`flex min-w-0 flex-col gap-3 ${source ? 'flex-1' : ''}`}>
+        {count > 0 && (
+          <button {...hover} className="px-close" onClick={clearAll} title="Close everything">
+            ✕ CLOSE
+          </button>
+        )}
         {cards.map((c) => (
           <article key={c.id} {...hover} className="px-card shrink-0">
             <header className="px-bar">
@@ -585,12 +605,32 @@ export function CircleWindow(): React.JSX.Element {
     const k = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') close()
     }
+    // Right-click anywhere also cancels (Esc only works if Windows gave this screen the keyboard).
+    const r = (e: MouseEvent): void => {
+      e.preventDefault()
+      close()
+    }
     window.addEventListener('keydown', k)
-    return () => window.removeEventListener('keydown', k)
+    window.addEventListener('contextmenu', r)
+    return () => {
+      window.removeEventListener('keydown', k)
+      window.removeEventListener('contextmenu', r)
+    }
   }, [close])
+  // Left untouched for 40 seconds (nothing circled, nothing asked): it closes itself, so it can never trap you.
+  const touched = useRef(Date.now())
+  useEffect(() => {
+    if (!shot) return
+    touched.current = Date.now()
+    const t = setInterval(() => {
+      if (!busy && Date.now() - touched.current > 40_000) close()
+    }, 1000)
+    return () => clearInterval(t)
+  }, [shot, busy, close])
 
   const down = (e: React.PointerEvent): void => {
-    if (busy || (e.target as HTMLElement).closest('[data-prompt]')) return
+    touched.current = Date.now()
+    if (busy || (e.target as HTMLElement).closest('[data-prompt]') || (e.target as HTMLElement).closest('[data-cancel]')) return
     drawing.current = true
     setBox(null)
     pts.current = [{ x: e.clientX, y: e.clientY }]
@@ -670,9 +710,12 @@ export function CircleWindow(): React.JSX.Element {
       </svg>
       {!box && (
         <div className="circle-hint pointer-events-none absolute top-6 left-1/2 -translate-x-1/2 rounded-full px-5 py-2.5 text-sm">
-          Circle what you want Bauer to look at · Esc to cancel
+          Circle what you want Nova to look at · Esc or right-click to cancel
         </div>
       )}
+      <button data-cancel className="circle-cancel absolute top-5 right-5" onPointerDown={(e) => e.stopPropagation()} onClick={close}>
+        ✕ CANCEL
+      </button>
       {box && (
         <div data-prompt className="circle-prompt absolute w-[480px] max-w-[calc(100vw-24px)] cursor-auto rounded-2xl p-3" style={{ top: promptTop, left: promptLeft }} onPointerDown={(e) => e.stopPropagation()}>
           {eyes === false ? (

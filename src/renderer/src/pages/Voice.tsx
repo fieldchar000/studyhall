@@ -260,6 +260,7 @@ export default function VoicePanel(): React.JSX.Element {
       if (e.key === 'Escape') {
         if (phaseRef.current === 'confirm') answer(false)
         stopSpeaking()
+        void api.bauer.clearCards().catch(() => {}) // Esc closes Nova's cards too
         void api.eyes.stop().catch(() => {})
         close()
       }
