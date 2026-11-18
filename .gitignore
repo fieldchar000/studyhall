@@ -14,3 +14,5 @@ castlabs-signup.cmd
 # built locally by scripts/build-helper.cjs
 build/nova-keys.exe
 build/nova-eyes.exe
+build/roamies-hands.exe
+native/roamies-hands/target/

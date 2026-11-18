@@ -1,0 +1,35 @@
+# Builds Roamies' Windows hands helper (native/roamies-hands, Rust) for Nova: roamies-hands.exe as an artifact.
+# Runs its own checks too: --self-test (the logic) and --smoke (a real run against Notepad, on GitHub's machine).
+# Started by scripts/hands-build.cjs. Free: public repositories get unlimited GitHub Actions minutes.
+name: Nova hands helper
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or tag to build'
+        required: false
+        default: 'main'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Build
+        working-directory: native/roamies-hands
+        run: cargo build --release --locked
+      - name: Self-test
+        working-directory: native/roamies-hands
+        run: ./target/release/roamies-hands.exe --self-test
+      - name: Smoke test (Notepad)
+        working-directory: native/roamies-hands
+        continue-on-error: true
+        run: ./target/release/roamies-hands.exe --smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: roamies-hands
+          path: native/roamies-hands/target/release/roamies-hands.exe
