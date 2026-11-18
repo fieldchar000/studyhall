@@ -8,14 +8,16 @@
 // yes/no question, the promises store), and turns each tool into one of Nova's (Agent SDK) tools.
 
 import { app, clipboard, shell, type WebContents } from 'electron'
+import { fork } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { getPrefs } from './prefs'
 import { get, getProfileId, getSetting, setSetting } from './db'
-import { inkClear, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
-import { reportClicks, voiceConfirm, voiceSay } from './voice'
+import { agentsUi, inkClear, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
+import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
+import { claudeAgentRoute, claudeBlocked, claudeModelId, claudeReady } from './claude'
 import { startFocus, stopFocus } from './buddy'
 import { screen } from 'electron'
 
@@ -40,7 +42,9 @@ export const turnHooks = {
   /** Something to hand to a background agent (a drawing's handoff). */
   handoff: (_task: string): void => {},
   /** The steps checklist (plan_steps). */
-  plan: (_args: Any): void => {}
+  plan: (_args: Any): void => {},
+  /** Can Nova take a request now (its conversation is set up)? */
+  ready: (): boolean => false
 }
 
 // Notes for the next request (a quiz answered on a drawn card, the drawing cleared), told to Nova once.
@@ -160,7 +164,13 @@ inkHooks.event = (msg) => {
     const dir = join(app.getPath('pictures'), 'Nova cards')
     const name = `${String(msg.title ?? 'card').replace(/[^\w -]+/g, '').slice(0, 50) || 'card'} ${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.png`
     void mkdir(dir, { recursive: true }).then(() => writeFile(join(dir, name), Buffer.from(String(msg.data).replace(/^data:image\/\w+;base64,/, ''), 'base64')))
-  } else if (t === 'invoke' && msg.cmd === 'ink_wait') {
+  } else if (t === 'agents_ready') agents?.sync()
+  else if (t === 'agent_stop') agents?.stop(String(msg.id))
+  else if (t === 'agent_answer') agents?.answer(String(msg.id), msg.allow === true)
+  else if (t === 'agent_open') agents?.openFile(String(msg.id), String(msg.path ?? '')).catch(() => {})
+  else if (t === 'agent_folder') agents?.openFolder(String(msg.id), { files: msg.files === true }).catch(() => {})
+  else if (t === 'agent_dismiss') agents?.dismiss(String(msg.id))
+  else if (t === 'invoke' && msg.cmd === 'ink_wait') {
     inkWaiting = !!(msg.args as Any)?.on
     syncClicks()
   }
@@ -224,14 +234,117 @@ export function roamies(): Promise<Any> {
       skipAllow: () => false
     })
     setInterval(() => void reminderTick().catch(() => {}), 15_000).unref()
+    await startAgents()
     return rt
   })()
   return booting
 }
 
+// ---------- Background agents (Roamies' agents.mjs + agentrun.mjs) ----------
+// "Send an agent to make me a revision page": it works on its own, in its own process and its own folder in
+// Documents\Nova Agents, while you carry on. Its row shows in the top-right corner (agent-home.js); when it's done,
+// Nova tells you at the next quiet moment.
+
+let agents: Any = null
+let desk: Any = null
+let requestNo = 0
+/** Is Nova answering something right now (set by novaBrain.ts)? */
+export const agentGates = { busy: (): boolean => false }
+
+/** Where agents work: Documents\Nova Agents (a test copy keeps its own, inside its data folder). */
+export const agentsFolder = (): string => (OFFSCREEN ? join(app.getPath('userData'), 'nova-test', 'Nova Agents') : join(app.getPath('documents'), 'Nova Agents'))
+
+async function startAgents(): Promise<void> {
+  const { createAgents, holdAfterLaunch, newsDesk, wantsAgent: wants } = await import('./roamies/agents.mjs')
+  wantsAgentFull = wants
+  const safety = await import('./roamies/safety.mjs')
+  agents = createAgents({
+    // Each agent is its own Node process (Studyhall's own runtime, as plain Node), so a heavy one never slows Nova.
+    fork: (mod: string, args: string[], opts: Any) => fork(mod, args, { ...opts, env: { ...opts.env, ELECTRON_RUN_AS_NODE: '1' } }),
+    ui: (m: Any) => {
+      if (m.kind === 'agents') agentsUi(m.e)
+    },
+    root: agentsFolder(),
+    userName: userName(),
+    runner: join(__dirname, 'agentrun.js'),
+    safety: { checkRead: safety.checkRead, checkWrite: safety.checkWrite, checkOpen: safety.checkOpen, checkLink: safety.checkLink },
+    log: (kind: string, data: unknown) => {
+      if (OFFSCREEN) console.info(`agents ${kind}>`, JSON.stringify(data))
+    },
+    config: {
+      // Agents run on your Claude sign-in through Claude Code, like Nova: Sonnet (or the model you picked for Nova).
+      model: async () => {
+        const p = getPrefs()
+        const blocked = claudeBlocked(p)
+        if (blocked) throw new Error(`Claude can't run an agent right now: ${blocked}.`)
+        const brain = p.novaBrain ?? 'auto'
+        const key = brain === 'opus' || brain === 'sonnet' ? brain : 'sonnet'
+        return { provider: 'anthropic', model: claudeModelId(key), route: 'claude-code', cc: claudeAgentRoute(), thinking: 'medium', budget: 120_000 }
+      },
+      creds: async () => ({}),
+      allowActions: () => (getPrefs().novaHands ?? 'off') !== 'off',
+      skipAllow: () => false,
+      image: () => null,
+      openUrl: (u: string) => shell.openExternal(u),
+      open: async (p: string) => {
+        await shell.openPath(p)
+      },
+      reveal: async (p: string) => shell.showItemInFolder(p)
+    }
+  })
+  // deliver_to is for another folder they name ("put it on my Desktop"): never the agents' own folder (that made a
+  // second copy), and in a test copy never anywhere outside it.
+  const send = agents.tools.find((t: Any) => t.name === 'send_agent')
+  const launch = send.execute
+  send.execute = async (args: Any, ctx: Any) => {
+    const a = { ...args }
+    if (a.deliver_to) {
+      const to = resolve(String(a.deliver_to).replace(/^~(?=$|[\\/])/, homedir())).toLowerCase()
+      const own = [agentsFolder(), join(app.getPath('documents'), 'Nova Agents')].map((p) => resolve(p).toLowerCase())
+      if (own.some((p) => to === p || to.startsWith(p + sep))) delete a.deliver_to
+      else if (OFFSCREEN) throw new Error('This is a test copy: agents keep everything in their own folder.')
+    }
+    return launch(a, ctx)
+  }
+  rt.tools.push(...agents.tools)
+  holdAfterLaunch(rt.tools, () => requestNo)
+  // News from agents (done, stuck, waiting for a yes): Nova says it at the next quiet moment.
+  desk = newsDesk({
+    gates: () => ({ busy: agentGates.busy(), voice: voiceBusy() }),
+    news: () => agents.news(),
+    markTold: (ids: string[]) => agents.markTold(ids),
+    userName: userName(),
+    enqueue: (text: string, ids: string[]) => {
+      agents.markTold(ids)
+      turnHooks.ask(text)
+    },
+    say: (text: string) => voiceSay(text),
+    signedIn: () => claudeReady() && turnHooks.ready()
+  })
+  setInterval(() => desk.tick(), 1000).unref()
+  app.on('before-quit', () => agents?.stopAll())
+}
+
+/** "Send an agent to…" (Roamies' wantsAgent), checked without waiting for the agents to load. */
+export const wantsAgent = (text: string): boolean => wantsAgentFull?.(String(text ?? '')) ?? false
+let wantsAgentFull: ((t: string) => boolean) | null = null
+/** The agents' corner hatches one while Nova writes the brief (on), or stops (off). */
+export function agentsHatch(on: boolean): void {
+  agentsUi({ type: on ? 'hatch' : 'hatch_off' })
+}
+
+/** The agents part of <live-state>, and news that rides along with what they just said. */
+export function agentsBlock(said: string): string {
+  if (!agents) return ''
+  return [agents.liveText(), desk?.along(said) ?? ''].filter(Boolean).join('\n')
+}
+
 /** A new request starts (what was seen before may be another page by now) / ends (marks of a request that drew
  *  nothing go). */
-export const roamiesTurnStart = (): void => void rt?.nextTurn()
+export const roamiesTurnStart = (): void => {
+  requestNo++
+  void rt?.nextTurn()
+}
 export const roamiesTurnEnd = (): void => void rt?.ink.endRequest()
 
 // ---------- Roamies' tools as Nova's tools ----------

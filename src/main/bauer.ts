@@ -160,6 +160,12 @@ export function inkReminders(msg: Record<string, unknown>): void {
   if (!orbWin.isVisible()) orbWin.showInactive()
   orbWin.webContents.send('bauer:ink', { reminders: msg })
 }
+/** News for the agents' corner (Roamies' agent-home.js): an agent started, moved on, waits for a yes, finished… */
+export function agentsUi(e: unknown): void {
+  if (suspended || !orbWin || orbWin.isDestroyed()) return
+  if (!orbWin.isVisible()) orbWin.showInactive()
+  orbWin.webContents.send('bauer:ink', { agents: e })
+}
 /** The window a drawing was about changed or closed: the drawing fades. */
 export function inkStale(): void {
   orbWin?.webContents.send('bauer:ink', { stale: true })

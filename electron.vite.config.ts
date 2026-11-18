@@ -35,7 +35,9 @@ function voskNoCache(): Plugin {
 export default defineConfig({
   main: {
     // Roamies' tools.mjs imports GG Coder's web tools; Nova provides its own under that name (src/main/ggweb.ts).
-    resolve: { alias: { '@shared': resolve('src/shared'), '@kenkaiiii/ggcoder/web': resolve('src/main/ggweb.ts') } }
+    resolve: { alias: { '@shared': resolve('src/shared'), '@kenkaiiii/ggcoder/web': resolve('src/main/ggweb.ts') } },
+    // agentrun: one background agent, run in its own Node process (Roamies' agentrun.mjs, forked by agents.mjs).
+    build: { rollupOptions: { input: { index: resolve('src/main/index.ts'), agentrun: resolve('src/main/roamies/agentrun.mjs') } } }
   },
   preload: {
     resolve: { alias: { '@shared': resolve('src/shared') } }

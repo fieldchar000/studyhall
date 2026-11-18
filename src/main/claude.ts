@@ -597,6 +597,9 @@ export function claudeBase(): Omit<ReturnType<typeof LOCKED>, 'tools' | 'mcpServ
   return rest
 }
 export const claudeModelId = (m: ModelKey): string => MODEL_ID[m]
+/** What a background agent (Roamies' agentrun, in its own process) runs Claude Code with: the same sign-in and
+ *  privacy settings, no claude.ai connectors. */
+export const claudeAgentRoute = (): { executable: string; env: Record<string, string | undefined> } => ({ executable: EXE(), env: env() })
 export const claudeReady = (): boolean => state.installed && state.signedIn
 
 /** Limits, sign-in and billing news from any Claude message. */

@@ -64,7 +64,7 @@ export default function VoicePanel(): React.JSX.Element {
   const act = useCallback(
     async (t: string): Promise<void> => {
       const [prefs, profile] = await Promise.all([api.prefs.get(), api.profile.get()])
-      if (prefs.bauerConfirm) {
+      if (prefs.bauerConfirm && !t.startsWith('(')) {
         await read(t)
         setPhase('review')
         return
@@ -117,8 +117,11 @@ export default function VoicePanel(): React.JSX.Element {
       api.nova.onAsk((t) => {
         if (!t.trim()) return
         woke.current = false
-        setText(t)
-        youSaid(t)
+        // "(System, not you: news from your background agents…)": Nova passes it on; it isn't shown as yours.
+        if (!t.startsWith('(')) {
+          setText(t)
+          youSaid(t)
+        }
         void act(t)
       }),
     [act]

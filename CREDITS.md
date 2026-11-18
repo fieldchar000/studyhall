@@ -19,6 +19,13 @@ https://github.com/KenKaiii/Roamies
   `store.mjs` and `snooze.mjs` (promises and facts), `pointing.mjs`, `intro.mjs`, `speech.mjs`, `reply.mjs` and
   `platform.mjs`, copied unchanged from Roamies 0.1.41. `src/main/roamiesTools.ts` connects them to Nova.
   `src/main/novaMemory.ts` holds Roamies' memory instructions and checks (from brain.mjs).
+- Background agents: `src/main/roamies/agents.mjs` (the agents manager and their news; Studyhall changes: the folder
+  is Documents\Nova Agents and the names), `agentrun.mjs` (one agent in its own process), `claudecode.mjs` and
+  `agentstream.mjs` (running an agent through Claude Code) and `activity.mjs`, copied from Roamies 0.1.41; they use
+  Ken Kai's GG framework packages `@kenkaiiii/gg-agent`, `gg-ai` and `gg-core` (AGPL-3.0-only). The agents' corner:
+  `src/renderer/src/lib/jarvis/roamies/agent-home.js`, `minis.js`, `glass.js`, `agent-panel.js`, `markdown.js` and
+  `sfx.js`, copied from Roamies 0.1.41 and recoloured to Studyhall's blue. `src/main/ggweb.ts` stands in for GG
+  Coder's web tools with Nova's own.
 - `native/roamies-hands`: Roamies' Windows hands helper (Rust: UI Automation, Windows OCR, screenshots, clicking and
   typing), copied unchanged and built on GitHub Actions.
 - Nova's brain follows Roamies' design. It makes one fast Claude call with Nova's own tools and

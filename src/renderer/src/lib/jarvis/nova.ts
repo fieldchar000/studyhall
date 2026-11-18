@@ -33,7 +33,7 @@ export type NovaGlobe = {
   /** Fly over to a point (CSS px in this window); null: back to what it was doing. */
   goTo(p: { x: number; y: number } | null): void
   /** A drawing (Roamies' ink): play a segment, or clear. */
-  ink(op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number } }): void
+  ink(op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number }; agents?: unknown }): void
   /** Where this layer is on the screen (DIP), so screen places land in the right spot. */
   setOrigin(x: number, y: number): void
   /** Messages from the drawing (a card closed, a quiz answered…). */
@@ -262,6 +262,10 @@ async function boot(opts: {
   await import('./roamies/world.js')
   await import('./roamies/ink3d.js')
   await import('./roamies/ink.js')
+  // Roamies' agents corner (top right): a row per background agent, Allow / Don't allow, and what each one made.
+  await import('./roamies/glass.js')
+  await import('./roamies/minis.js')
+  await import('./roamies/agent-home.js')
   // ink.js shows each spoken line as a caption at the bottom of the screen; Nova's bubble above the globe already
   // shows those words as they're said, so the caption stays hidden (it still paces the drawing).
   for (const el of Array.from(document.body.children))
@@ -358,6 +362,8 @@ async function boot(opts: {
       else if (op.reminders) R.ink?.reminders(op.reminders)
       else if (op.stale) R.ink?.stale()
       else if (op.click) R.ink?.click(op.click.x, op.click.y)
+      else if (op.agents && (op.agents as { type?: string }).type === 'hatch') R.agentHome?.hatch([c.mover.x, c.mover.y])
+      else if (op.agents) R.agentHome?.event(op.agents, { from: [c.mover.x, c.mover.y] })
       R.wake?.()
     },
     setOrigin(x, y) {
@@ -368,6 +374,11 @@ async function boot(opts: {
       R.ink.send = cb
       // ink.js asks its host for things too (e.g. "report clicks while a walkthrough waits"): passed on the same way.
       R.ink.invoke = (cmd: string, args: unknown) => cb({ type: 'invoke', cmd, args })
+      // The agents corner's buttons (Stop, Allow, open a file…) go the same way; it asks for the agents on screen now.
+      if (R.agentHome) {
+        R.agentHome.send = cb
+        cb({ type: 'agents_ready' })
+      }
     },
     where() {
       return { x: c.mover.x, y: c.mover.y, r: kit?.R ?? 40 }

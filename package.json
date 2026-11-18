@@ -1,7 +1,7 @@
 {
   "name": "studyhall",
   "productName": "Studyhall",
-  "version": "0.46.0",
+  "version": "0.47.0",
   "description": "Local-first study and work planner",
   "author": "Studyhall",
   "private": true,
@@ -35,6 +35,9 @@
     "@fullcalendar/react": "^6.1.21",
     "@fullcalendar/timegrid": "^6.1.21",
     "@huggingface/transformers": "^4.3.2",
+    "@kenkaiiii/gg-agent": "5.102.0",
+    "@kenkaiiii/gg-ai": "5.102.0",
+    "@kenkaiiii/gg-core": "5.102.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@mozilla/readability": "^0.6.0",
     "@supabase/supabase-js": "^2.117.3",

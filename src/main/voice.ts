@@ -451,6 +451,9 @@ function place(height: number): void {
 }
 
 /** Messages from the listening window itself. */
+/** Listening, thinking or asking something right now (agent news waits for a quiet moment). */
+export const voiceBusy = (): boolean => state === 'listening' || state === 'thinking' || state === 'review'
+
 export function voiceFromWindow(msg: { type: 'show'; height: number; focus?: boolean } | { type: 'hide' } | { type: 'state'; state: VoiceState } | { type: 'ready' }): void {
   if (!win || win.isDestroyed()) return
   if (msg.type === 'ready') {
