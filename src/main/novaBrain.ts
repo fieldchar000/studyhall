@@ -19,13 +19,13 @@ import { claudeBase, claudeBlocked, claudeChecked, claudeModelId, noteClaudeMess
 import type { NovaEffort } from '@shared/types'
 import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
-import { APP_NAMES, openApp, orbEmote, setSubject, showCards, showMarks } from './bauer'
+import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMarks } from './bauer'
 import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, type Seen, type SeenControl } from './eyes'
 import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { claudeChat, draftWithConnectors } from './claude'
 import { voiceConfirm, voiceSay } from './voice'
-import { agentGates, agentsBlock, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, showPlanCard, turnHooks, wantsAgent } from './roamiesTools'
+import { agentGates, agentsBlock, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, showPlanCard, toolEnded, toolStarted, toolsStopped, turnHooks, wantsAgent } from './roamiesTools'
 import { memoryOnEnd, noteExchange } from './novaMemory'
 import { get, getProfileId } from './db'
 import { briefText, startFocus, stopFocus } from './buddy'
@@ -49,7 +49,7 @@ const IDLE_MS = 15 * 60_000
 function systemPrompt(name: string): string {
   return `You are ${name}, a JARVIS-style assistant: a small glowing globe that floats on the user's screen. You live in Studyhall, their study and life planner on Windows, and you help with their studies, their plans and whatever is on their screen.
 
-You talk out loud: what you write is spoken in your voice, so write for the ear. Say one to three short sentences, the way you'd talk to a friend: plain words, contractions, 6 to 20 words each. What you say has no markdown, emoji, links, file paths or code; name the site, file or app instead. Say numbers, times and money the way people say them. Anything to read rather than hear goes below what you say and is never read out: "- " lines for points, options or steps (3 to 6, one fact each, under 20 words). They show on a card beside the globe and only your sentences are spoken. Never say "here's a list"; a few words pointing to it are enough ("the steps are on screen").
+You talk out loud: what you write is spoken in your voice and shown in a small bubble, so write for the ear. Say one to three short sentences, the way you'd talk to a friend: plain words, contractions, about 6 to 20 words each. What you say has no markdown, emoji, links, file paths or code; name the site, file or app instead. Say numbers, times and money the way people say them. Anything to read rather than hear goes below what you say and is never read out: "- " lines for points, options or steps (3 to 6, one fact each, under 20 words), "> " lines for a draft they'll send or copy (an email, message or post), and a \`\`\` block for code. What they asked to hear (a story, a joke, advice) is spoken, not put on screen: say it, short (a story in 4 to 6 sentences). An explanation is spoken too, in a few sentences, with a drawing beside it when a picture carries it (see "Show, don't just tell"). An answer from the web is said like any other: a quick fact (a score, a date, the weather, who someone is) is just your sentences, no points and no sources. Only when the answer is genuinely a list, steps or a breakdown that's easier to read than hear, say it in one or two sentences, then the "- " points, then, if you used the web, a line "Sources: " with the site names as [name](url) links: those show on a card beside you and only your sentences are spoken. Amounts, a comparison, a place, dates, a process and maths are drawn, not listed: for those use draw (see "Show, don't just tell") and write no "- " lines. Never say "here's a list" or read out what's on screen; a few words pointing to it are enough ("the steps are on screen").
 Your body does the acting: to act out a feeling, start your reply with one body tag, which is never shown or said: [wave] [hype] [remind] [upset] [motivate] (only these five). hype celebrates a win, upset is for when they're dodging work, remind nudges about something they said they'd do, motivate is a push to start, wave is hello or goodbye. Most replies need no body tag.
 Lead with the answer, then only the context that makes it useful, then stop. No opener about checking or looking ("Let me see…", "I found…"), apart from the one short beat before something slow.
 Show, don't just tell: you live on their screen, and the draw tool puts drawings there while you speak. This is what makes you more than a voice. Use it without being asked whenever a picture carries the answer, picking the card by the question: how something works or happens (a physical thing, an organ, a machine): a moving model, with a flow beside it if it runs in stages; a process, a chain of causes or a decision: flow; comparing things: table; how much, biggest, fastest: bars (graph for a curve or a change over time); where a place is: map; when, in what order: timeline; working out maths: math (geometry for a figure); the parts of a thing: see_photo, then a photo with labels; a compound: molecule; "test me" in one go: quiz. Before draw, write one short line (what you're about to show). Not for small talk, an opinion or a yes/no. A "where is", "how does … work", "compare", "how much / how many", "when did" or maths question answered only in words is a missed chance: call draw (one card is enough) and say the answer in its say lines.
@@ -246,7 +246,11 @@ function startJob(brief: string, materials: string, title: string, wc: WebConten
 
 const ACTION_TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page'] as const
 
-type Turn = { onBeat: () => void; quiet: boolean; tools: string[] }
+type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean }
+// An answer that turns into points (or cites sources) reads better on the research card than out loud (Roamies' rule).
+// A [bracketed note] left at the very end of a message is never said.
+const dropTag = (t: string): string => t.replace(/\[[^\]\n]{0,240}\]\s*$/, '')
+const LISTY = /\n\s*(?:[-*•]|\d+[.)])\s+\S|\n\s*sources?\s*:/i
 
 async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): Promise<import('@anthropic-ai/claude-agent-sdk').McpSdkServerConfigWithInstance> {
   const { tool, createSdkMcpServer } = await import('@anthropic-ai/claude-agent-sdk')
@@ -512,6 +516,32 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
     showPlanCard(plan)
   }
   const all = [...tools, ...(await roamiesSdkTools(tool, new Set(), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
+  // Every tool shows what it's doing beside the globe while it runs (Roamies' activity lines).
+  for (const t of all) {
+    const run = t.handler
+    t.handler = (async (args: Record<string, unknown>, extra: unknown) => {
+      const id = toolStarted(t.name, args)
+      const tr = turnRef.current
+      if (tr && (t.name === 'web_search' || t.name === 'web_fetch')) {
+        tr.fromWeb = true
+        if (tr.research) {
+          tr.research = 'looking'
+          let host = ''
+          try {
+            host = new URL(String(args.url ?? '')).hostname.replace(/^www\./, '')
+          } catch {
+            /* not a link */
+          }
+          orbPanel('status', t.name === 'web_fetch' && host ? `Reading ${host}` : 'Searching the web')
+        }
+      }
+      try {
+        return await run(args as never, extra)
+      } finally {
+        toolEnded(id)
+      }
+    }) as typeof run
+  }
   return createSdkMcpServer({ name: 'nova', version: app.getVersion(), tools: all })
 }
 
@@ -529,6 +559,7 @@ interface Convo {
   at: number
   turnRef: { current: Turn | null }
   dead: boolean
+  resumed: boolean // it picked up a saved conversation
 }
 let convo: Convo | null = null
 let allowed = true
@@ -566,6 +597,7 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
       ...(resumeId() ? { resume: resumeId()! } : {})
     }
   })
+  c.resumed = !!resumeId()
   const it = q[Symbol.asyncIterator]()
   Object.assign(c, {
     q,
@@ -666,7 +698,10 @@ class Splitter {
   private head = ''
   screen: string[] = []
   private out = ''
-  constructor(private emit: (t: string) => void) {}
+  constructor(
+    private emit: (t: string) => void,
+    private raw: (t: string) => void = () => {}
+  ) {}
   private say(t: string): void {
     this.out += t
   }
@@ -675,6 +710,7 @@ class Splitter {
     this.out = ''
   }
   push(t: string): void {
+    this.raw(t)
     this.pushChars(t)
     this.flush()
   }
@@ -688,11 +724,13 @@ class Splitter {
         this.head += ch
         const h = this.head.trimStart()
         if (!h) continue
-        if (/^([-*•>|#]|```)/.test(h)) {
+        if (/^(?:[-*•+]\s|\d{1,2}[.)]\s|>|#{1,6}\s|\||sources?\s*:|```)/i.test(h)) {
           this.kind = 'screen'
           this.line = h
           continue
         }
+        // Could still turn into one ("1", "-", "Sourc"): wait for a few more letters.
+        if (h.length < 9 && /^(?:\d{1,2}[.)]?|[-*•+]|#{1,6}|s(?:o(?:u(?:r(?:c(?:e(?:s)?)?)?)?)?)?\s*)$/i.test(h)) continue
         this.kind = 'prose'
         this.say(this.head)
         this.head = ''
@@ -768,6 +806,8 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   const turn: Turn = {
     quiet: false,
     tools: [],
+    research: null,
+    fromWeb: false,
     onBeat: () => {
       // Something slow is starting and nothing's been said yet: a short beat, so you're never left in silence.
       if (beatDone) return
@@ -777,12 +817,34 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   }
   // Emote tags are pulled out of the stream (held back while one might still be arriving).
   let hold = ''
-  const split = new Splitter((t) => {
-    if (turn.quiet) return // a lesson or walkthrough has taken over and speaks for itself
-    spoken += t
-    beatDone = true
-    if (!wc.isDestroyed()) wc.send('nova:speak', { text: t })
-  })
+  let written = ''
+  const split = new Splitter(
+    (t) => {
+      if (turn.quiet) return // a lesson or walkthrough has taken over and speaks for itself
+      spoken += t
+      beatDone = true
+      if (!wc.isDestroyed()) wc.send('nova:speak', { text: t })
+    },
+    (t) => {
+      // The research card: once the answer turns into points or cites sources, all of it streams onto the card.
+      const clean = t.replace(/\u2063\d\u2063/g, '')
+      if (turn.quiet || !clean) return
+      if (turn.research) {
+        if (turn.research === 'looking') {
+          turn.research = 'writing'
+          orbPanel('status', 'Writing it up')
+        }
+        orbPanel('append', clean)
+        return
+      }
+      written += clean
+      if (LISTY.test(`\n${written}`)) {
+        turn.research = 'writing'
+        orbPanel('open', 'Writing it up')
+        orbPanel('append', written.replace(/^\s+/, ''))
+      }
+    }
+  )
   const feed = (t: string): void => {
     hold += t
     for (;;) {
@@ -803,11 +865,23 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
         continue
       }
       // Any other [bracketed text] is never spoken (it's a note to itself, or a tool call written out by mistake).
-      const other = /\[[^\]\n]{0,240}\]\s*/.exec(hold)
+      const other = /\[[^\]\n]{0,240}\]/.exec(hold)
       if (other) {
+        const end = other.index + other[0].length
+        // A link ([name](https://…), on the research card's Sources line) stays; wait for the next letter to know.
+        if (end === hold.length) {
+          split.push(hold.slice(0, other.index))
+          hold = hold.slice(other.index)
+          return
+        }
+        if (hold[end] === '(') {
+          split.push(hold.slice(0, end))
+          hold = hold.slice(end)
+          continue
+        }
         split.push(hold.slice(0, other.index))
         if (/^\[\s*call\b/i.test(other[0])) wroteCall = true
-        hold = hold.slice(other.index + other[0].length)
+        hold = hold.slice(end).replace(/^\s+/, '')
         continue
       }
       const open = hold.lastIndexOf('[')
@@ -850,7 +924,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
         if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) feed(ev.delta.text)
         if (ev.type === 'message_stop') {
           // End of one model message (more may follow after a tool): finish its last line.
-          if (hold) split.push(hold)
+          if (hold) split.push(dropTag(hold))
           hold = ''
           split.end()
         }
@@ -859,7 +933,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
       } else if (m.type === 'result') {
         cost += m.total_cost_usd ?? 0
         // The conversation's id, so it can be picked up again after a pause or a restart.
-        if (m.session_id) setSetting('nova_session', { id: m.session_id, at: Date.now() })
+        if (m.session_id && process.env.STUDYHALL_OFFSCREEN !== '1') setSetting('nova_session', { id: m.session_id, at: Date.now() })
         if (m.subtype !== 'success') throw new Error(`Claude couldn’t finish (${m.subtype})`)
         // It wrote a tool call out as text instead of making it: once, ask it to really make the call.
         if (wroteCall && !turn.tools.length && !retried) {
@@ -882,21 +956,27 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     close(c)
     const msg = e instanceof Error ? e.message : String(e)
     console.warn('Nova turn failed:', msg)
+    if (turn.research) orbPanel('fail', msg)
+    toolsStopped()
+    if (agentish) agentsHatch(false)
+    // The saved conversation couldn't be picked up (its file is gone, or it's broken): start a fresh one and try again.
+    if (c.resumed && c.turns <= 1 && !spoken && !turn.tools.length) {
+      setSetting('nova_session', null)
+      return doTurn(wc, said, liveState)
+    }
     return { text: spoken.replace(MARKER, '').trim(), quiet: turn.quiet, tools: turn.tools, error: msg }
   } finally {
-    if (hold) split.push(hold)
+    if (hold) split.push(dropTag(hold))
     split.end()
     c.turnRef.current = null
     c.at = Date.now()
   }
   // Read-on-screen lines go on a card beside the globe.
-  if (split.screen.length) {
-    const first = spoken.trim().split(/(?<=[.!?])\s/)[0] ?? ''
-    showCards([{ id: `n${Date.now()}`, kind: 'points', title: first.slice(0, 70) || 'Nova', items: split.screen.slice(0, 8).map((l) => ({ label: l.slice(0, 160) })) }])
-  }
+  if (turn.research) orbPanel('end', turn.fromWeb ? 'From the web' : 'Answer')
   recordClaudeCost(model, effort, Date.now() - started, cost)
   console.info(`Nova turn: ${model}/${effort} in ${Date.now() - started} ms, tools: ${turn.tools.join(', ') || 'none'}`)
   roamiesTurnEnd()
+  toolsStopped()
   if (agentish) agentsHatch(false)
   const reply = spoken.replace(MARKER, '').replace(/\s+/g, ' ').trim()
   noteExchange(said, reply, userName())

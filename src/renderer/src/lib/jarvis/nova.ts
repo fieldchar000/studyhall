@@ -27,13 +27,15 @@ const PAL = [
 export type NovaGlobe = {
   /** cursor: where your mouse is (CSS px in this window), when you start talking */
   setState(s: NovaState, cursor?: { x: number; y: number }): void
-  setConfig(c: { size: NovaSize; roam: boolean; home: { x: number; y: number } | null }): void
+  setConfig(c: { size: NovaSize; roam: boolean; home: { x: number; y: number } | null; sounds?: boolean; hideIdle?: boolean }): void
+  /** Disappear (Roamies' materialize / CRT / drop, in turn); show it again with setConfig or by talking to it. */
+  hide(): void
   voice(env: number[]): void
   mic(v: number): void
   /** Fly over to a point (CSS px in this window); null: back to what it was doing. */
   goTo(p: { x: number; y: number } | null): void
   /** A drawing (Roamies' ink): play a segment, or clear. */
-  ink(op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number }; agents?: unknown }): void
+  ink(op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number }; agents?: unknown; panel?: { op: 'open' | 'status' | 'append' | 'end' | 'fail' | 'close'; text?: string } }): void
   /** Where this layer is on the screen (DIP), so screen places land in the right spot. */
   setOrigin(x: number, y: number): void
   /** Messages from the drawing (a card closed, a quiz answered…). */
@@ -64,13 +66,15 @@ async function boot(opts: {
 }): Promise<NovaGlobe> {
   const W = window as Any
   // Roamies' scripts set up window.Roamie as they load, in this order.
+  // Roamies' little chiptune sounds (on the Nova page you can switch them off); they may play without a click first.
+  W.ROAMIE_AUTOSOUND = true
   await import('./roamies/core.js')
   await import('./roamies/jarvis.js')
   const R = W.Roamie
 
   // ---- What Nova is doing ----
   let state: NovaState = 'idle'
-  let cfg: { size: NovaSize; roam: boolean } = { size: 'default', roam: true }
+  let cfg: { size: NovaSize; roam: boolean; hideIdle: boolean } = { size: 'default', roam: true, hideIdle: false }
   const voice = { env: [] as number[], at: 0 }
   const micv = { v: 0, at: 0 }
   const talking = (): boolean => {
@@ -152,6 +156,23 @@ async function boot(opts: {
     else m.anchor = { x: m.x, y: m.y, r: kit.R * 0.35 }
   }
 
+  // ---- Appearing and disappearing (Roamies' entrances, in turn) ----
+  const ORDER = ['materialize', 'crt', 'drop']
+  let entranceN = 0
+  let lastActive = 0
+  const nextVariant = (): string => ORDER[entranceN++ % ORDER.length]
+  const shownNow = (): boolean => !!kit && (kit.presence === 'shown' || kit.presence === 'in')
+  /** Back on screen (beside your cursor when you're talking to it, else where it lives). */
+  const showUp = (): void => {
+    lastActive = now
+    if (!kit || shownNow()) return
+    let v = nextVariant()
+    const near = mouse.active && (state === 'listening' || state === 'thinking')
+    if (v === 'drop' && near) v = nextVariant() // beside the cursor it pops up in place, never drops in
+    const [x, y] = near ? besideCursor() : home ? [home.x, home.y] : [m.x, m.y]
+    kit.appear(v, x, y)
+  }
+
   const plugin = (k: Any): Any => {
     kit = k
     m = k.m
@@ -172,6 +193,12 @@ async function boot(opts: {
         now += dt
         if (env.mouse?.active) mouse = { x: env.mouse.x, y: env.mouse.y, active: true }
         else mouse.active = false
+        // Hide when idle (a setting, off unless you turn it on): gone a few seconds after it's done, back when needed.
+        if (cfg.hideIdle) {
+          const hover = mouse.active && Math.hypot(mouse.x - m.x, mouse.y - m.y) < k.R * 1.5
+          if (engaged() || state !== 'idle' || target || m.dragging || m.flung || hover) lastActive = now
+          if (k.presence === 'shown' && now - lastActive > 6) k.vanish(nextVariant())
+        }
         if (k.presence !== 'shown') return
         const held = m.dragging || m.flung
         // Size "follows my cursor": it rides beside the mouse (and lets every click through).
@@ -244,6 +271,7 @@ async function boot(opts: {
     }
   }
 
+  await import('./roamies/sfx.js')
   await import('./roamies/10-dither.js')
   R.register(
     R.ditherKit({ id: 'nova', label: 'Nova', matrix: true, pixel: 1.3, glow: 0.55, speed: 80, pal: PAL, plugin })
@@ -266,6 +294,11 @@ async function boot(opts: {
   await import('./roamies/glass.js')
   await import('./roamies/minis.js')
   await import('./roamies/agent-home.js')
+  // Roamies' research card: an answer that turns into points or cites sources streams onto it, links and all.
+  await import('./roamies/markdown.js')
+  await import('./roamies/agent-panel.js')
+  const cardHit = R.panelHit
+  R.panelHit = (x: number, y: number) => opts.extraHit(x, y) || !!cardHit?.(x, y)
   // ink.js shows each spoken line as a caption at the bottom of the screen; Nova's bubble above the globe already
   // shows those words as they're said, so the caption stays hidden (it still paces the drawing).
   for (const el of Array.from(document.body.children))
@@ -275,6 +308,9 @@ async function boot(opts: {
     c.mover.y = home.y
   }
   settle()
+  // It arrives the way Roamies do (materialize first, then CRT, then dropping in, in turn).
+  c.vanish(null, true)
+  showUp()
 
   // A plain click on the globe talks to Nova (Roamies' "boop" is a click without a drag).
   const boop = c.boop.bind(c)
@@ -318,12 +354,18 @@ async function boot(opts: {
         byCursor = true
         quietUntil = now + 4
       }
-      if (s === 'listening' || s === 'thinking') idleSince = now
+      if (s === 'listening' || s === 'thinking') {
+        idleSince = now
+        showUp()
+      }
       R.wake?.()
     },
     setConfig(n) {
       const sizeChanged = n.size !== cfg.size
-      cfg = { size: n.size, roam: n.roam }
+      cfg = { size: n.size, roam: n.roam, hideIdle: n.hideIdle === true }
+      if (R.sfx && n.sounds !== undefined) R.sfx.enabled = n.sounds
+      // Shown again (its window came back): it reappears, unless it's set to stay hidden until needed.
+      if (!cfg.hideIdle) showUp()
       if (n.home) home = n.home
       if (sizeChanged) {
         c.setForm(n.size)
@@ -335,7 +377,10 @@ async function boot(opts: {
     voice(env) {
       voice.env = env
       voice.at = performance.now()
-      if (env.length) idleSince = now
+      if (env.length) {
+        idleSince = now
+        showUp()
+      }
       R.wake?.()
     },
     mic(v) {
@@ -354,15 +399,29 @@ async function boot(opts: {
       R.wake?.()
     },
     emote(e) {
+      showUp()
       kit?.startAct?.(e)
     },
     ink(op) {
-      if (op.play) R.ink?.play(op.play)
+      if (op.play) {
+        showUp()
+        R.ink?.play(op.play)
+      }
       else if (op.clear) R.ink?.clear(op.clear)
       else if (op.reminders) R.ink?.reminders(op.reminders)
       else if (op.stale) R.ink?.stale()
       else if (op.click) R.ink?.click(op.click.x, op.click.y)
-      else if (op.agents && (op.agents as { type?: string }).type === 'hatch') R.agentHome?.hatch([c.mover.x, c.mover.y])
+      else if (op.panel && R.panel) {
+        const p = op.panel
+        if (p.op === 'open') {
+          showUp()
+          R.panel.open({ status: p.text ?? 'Writing it up', near: { cursor: [mouse.x > -1e3 ? mouse.x : c.mover.x, mouse.y > -1e3 ? mouse.y : c.mover.y], buddy: { x: c.mover.x, y: c.mover.y, r: kit?.R ?? 40 } } })
+        } else if (p.op === 'status') R.panel.status(p.text ?? '')
+        else if (p.op === 'append') R.panel.append(p.text ?? '')
+        else if (p.op === 'end') R.panel.end(p.text)
+        else if (p.op === 'fail') R.panel.fail(p.text ?? '')
+        else if (p.op === 'close') R.panel.close()
+      } else if (op.agents && (op.agents as { type?: string }).type === 'hatch') R.agentHome?.hatch([c.mover.x, c.mover.y])
       else if (op.agents) R.agentHome?.event(op.agents, { from: [c.mover.x, c.mover.y] })
       R.wake?.()
     },
@@ -375,10 +434,15 @@ async function boot(opts: {
       // ink.js asks its host for things too (e.g. "report clicks while a walkthrough waits"): passed on the same way.
       R.ink.invoke = (cmd: string, args: unknown) => cb({ type: 'invoke', cmd, args })
       // The agents corner's buttons (Stop, Allow, open a file…) go the same way; it asks for the agents on screen now.
+      // A link clicked on the research card opens in your browser (web links only; checked again in Studyhall).
+      if (R.panel) R.panel.onLink = (url: string) => cb({ type: 'open_link', url })
       if (R.agentHome) {
         R.agentHome.send = cb
         cb({ type: 'agents_ready' })
       }
+    },
+    hide() {
+      if (shownNow()) kit.vanish(nextVariant())
     },
     where() {
       return { x: c.mover.x, y: c.mover.y, r: kit?.R ?? 40 }

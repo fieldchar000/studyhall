@@ -195,10 +195,18 @@ export async function speakAndWait(text: string, voice?: string, speed?: number)
 // so Nova starts talking about a second after you stop, not after the whole reply. Before something slow starts,
 // a short "beat" ("One sec.") plays at once; beats are made once and kept, so they play instantly.
 
-const BEATS = ['One sec.', 'On it.', 'Sure, one sec.', 'Okay, one moment.', 'Got it.', 'Right, on it.', 'Let me see.', 'Two secs.']
+// Roamies' 34 beats (speaker.mjs, by Ken Kai, AGPL-3.0): one or two words each, so a beat never sounds canned; any of
+// them fits before a search, a page, the screen or a drawing.
+const BEATS = [
+  'One sec.', 'On it.', 'Hang on.', 'Hold on.', 'Got it.', 'Okay.', 'Sure.', 'Right.', 'Alright.', 'Gotcha.',
+  'Checking.', "Let's see.", 'Sure thing.', 'Coming up.', 'Sec.', 'One moment.', 'Bear with.', 'Hmm, okay.', 'Got you.', 'Right, sec.',
+  'Sure, sec.', 'Okay, sec.', 'Roger.', 'Yep.', 'Yep, sec.', 'Two secs.', 'Hold tight.', 'Mm-hmm.', 'Will do.', 'Righto.',
+  'Moment.', 'Okay, checking.', 'Sure, checking.', 'Okie-dokie.'
+]
+const RECENT = 8 // a beat isn't picked again until this many others have played
 const beatAudio = new Map<string, { samples: Float32Array; sampleRate: number }>()
 let beatsMaking = false
-let lastBeat = ''
+let recentBeats: string[] = []
 /** Make the beats in Nova's voice once (in the background), so they can play the moment they're needed. */
 export async function warmBeats(): Promise<void> {
   if (beatsMaking || beatAudio.size >= BEATS.length) return
@@ -323,10 +331,10 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
     beat() {
       if (said || gen !== generation) return
       said = true
-      const options = BEATS.filter((b) => b !== lastBeat && beatAudio.has(b))
+      const options = BEATS.filter((b) => !recentBeats.includes(b) && beatAudio.has(b))
       const b = options[Math.floor(Math.random() * options.length)]
       if (!b) return
-      lastBeat = b
+      recentBeats = [...recentBeats, b].slice(-RECENT)
       texts.push(b)
       queue.push(Promise.resolve(beatAudio.get(b)!))
       wake?.()

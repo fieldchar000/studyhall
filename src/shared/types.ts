@@ -996,6 +996,8 @@ export interface Prefs {
   novaOffline?: boolean // fall back to the model on this PC when Claude can't answer (default on)
   novaNoExtra?: boolean // never use paid extra usage on your Claude account (default on)
   novaCap?: number // pause Claude when your weekly Claude usage reaches this % (default 80)
+  novaSounds?: boolean // Roamies' little sound effects on the globe, drawings and agents (default on)
+  novaHideIdle?: boolean // the globe disappears when it's not needed and comes back when you talk to it (default off)
   novaVoice?: string // Kokoro voice (default af_heart)
   novaSpeed?: number // how fast Nova talks, 0.8–1.3 (default 1.05)
   novaOrbSize?: 'small' | 'default' | 'cursor' // the floating orb (default default)
@@ -1264,7 +1266,7 @@ export interface Api {
     onCards(cb: (cards: BauerCard[] | null) => void): () => void
     onOrb(cb: (s: { state: OrbState; text?: string; cursor?: { x: number; y: number } }) => void): () => void
     /** (orb window) size and behaviour from the Nova page */
-    onOrbConfig(cb: (c: { size: 'small' | 'default' | 'cursor'; roam: boolean; home: { x: number; y: number } | null }) => void): () => void
+    onOrbConfig(cb: (c: { size: 'small' | 'default' | 'cursor'; roam: boolean; home: { x: number; y: number } | null; sounds?: boolean; hideIdle?: boolean }) => void): () => void
     /** (orb window) fly over to a point in the window (pointing at something), or null: back to what it was doing */
     onOrbGo(cb: (p: { x: number; y: number } | null) => void): () => void
     /** (orb window) a little performance: wave, hype, remind, upset, motivate */
@@ -1276,7 +1278,7 @@ export interface Api {
     /** (orb window) */
     onBubble(cb: (b: { who: 'you' | 'nova'; text: string; append: boolean; done: boolean }) => void): () => void
     /** (orb window) a drawing to play (Roamies' ink segment), or clear */
-    onInk(cb: (op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number }; agents?: unknown }) => void): () => void
+    onInk(cb: (op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number }; agents?: unknown; activity?: string | null; panel?: { op: 'open' | 'status' | 'append' | 'end' | 'fail' | 'close'; text?: string } }) => void): () => void
     /** (orb window) where its layer is on the screen (DIP) */
     onLayer(cb: (b: { x: number; y: number }) => void): () => void
     /** (orb window) news from a drawing: a card closed, a quiz answered, a segment started */

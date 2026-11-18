@@ -15,7 +15,7 @@ import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { getPrefs } from './prefs'
 import { get, getProfileId, getSetting, setSetting } from './db'
-import { agentsUi, inkClear, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
+import { agentsUi, orbActivity, orbPanel, inkClear, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
 import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
 import { claudeAgentRoute, claudeBlocked, claudeModelId, claudeReady } from './claude'
 import { startFocus, stopFocus } from './buddy'
@@ -135,6 +135,7 @@ export function roamiesClick(): void {
 export function roamiesEsc(): void {
   rt?.ink.stop(true)
   inkClear({ all: true, stop: true })
+  orbPanel('close')
 }
 
 // News from the overlay (ink.js): a drawing started, a wait finished, a card closed or pinned, a button pressed…
@@ -191,6 +192,7 @@ export function roamies(): Promise<Any> {
       for (const f of old) if (f?.text) await store.addFact(f.text)
       setSetting('nova_facts', null)
     }
+    ;({ describe } = await import('./roamies/activity.mjs'))
     const { createTools } = await import('./roamies/tools.mjs')
     rt = createTools({
       allowActions: () => (getPrefs().novaHands ?? 'off') !== 'off',
@@ -339,6 +341,51 @@ export function agentsBlock(said: string): string {
   return [agents.liveText(), desk?.along(said) ?? ''].filter(Boolean).join('\n')
 }
 
+// ---------- What Nova is doing (Roamies' activity.mjs), as a tag beside the globe ----------
+
+// Nova's own study tools, in the same words Roamies uses for its tools: [while it runs, once it's done].
+const NOVA_DOING: Record<string, [string, string]> = {
+  studyhall_actions: ['Updating Studyhall', 'Updated Studyhall'],
+  my_studyhall: ['Checking Studyhall', 'Checked Studyhall'],
+  my_day: ['Looking at your day', 'Looked at your day'],
+  teach: ['Getting a lesson ready', 'Got a lesson ready'],
+  find_material: ['Looking through your study files', 'Looked through your study files'],
+  read_material: ['Reading your notes', 'Read your notes'],
+  quiz_me: ['Making your quiz', 'Made your quiz'],
+  save_flashcards: ['Saving flashcards', 'Saved flashcards'],
+  youtube: ['Searching YouTube', 'Searched YouTube'],
+  play_music: ['Starting your music', 'Started your music'],
+  read_clipboard: ['Reading what you copied', 'Read what you copied'],
+  arrange_windows: ['Arranging your windows', 'Arranged your windows'],
+  video_transcript: ['Reading the video', 'Read the video'],
+  save_note: ['Saving a note', 'Saved a note'],
+  start_job: ['Starting a job', 'Started a job'],
+  draft_document: ['Drafting it', 'Drafted it'],
+  send_agent: ['Sending an agent', 'Sent an agent']
+}
+let describe: ((name: string, args: unknown) => [string, string] | null) | null = null
+const running = new Map<string, string>()
+let actSeq = 0
+const showDoing = (): void => orbActivity([...running.values()].at(-1) ?? null)
+/** A tool started: its line ("Searching the web") shows beside the globe until it ends. Returns the id to end it with. */
+export function toolStarted(name: string, args: unknown): string {
+  const id = 't' + ++actSeq
+  const d = NOVA_DOING[name] ?? describe?.(name, args ?? {}) ?? null
+  if (d) {
+    running.set(id, d[0])
+    showDoing()
+  }
+  return id
+}
+export function toolEnded(id: string): void {
+  if (running.delete(id)) showDoing()
+}
+/** The request ended (or was stopped): nothing is running any more. */
+export function toolsStopped(): void {
+  running.clear()
+  showDoing()
+}
+
 /** A new request starts (what was seen before may be another page by now) / ends (marks of a request that drew
  *  nothing go). */
 export const roamiesTurnStart = (): void => {
@@ -355,6 +402,7 @@ let abort = new AbortController()
 export function roamiesAbort(): void {
   abort.abort()
   abort = new AbortController()
+  toolsStopped()
 }
 
 const shapeOf = (t: Any, drawShape: Any): Any => t.parameters?.shape ?? (t.name === 'draw' ? drawShape : (t.parameters?.out ?? t.parameters?._def?.out)?.shape) ?? {}

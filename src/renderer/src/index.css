@@ -1598,6 +1598,11 @@ body:has(.space-shell)::before { display: none; }
 @keyframes nova-bub-bar { 50% { height: 16px; } }
 @media (prefers-reduced-motion: reduce) { .nova-bub, .nova-bub.is-done, .nova-bub-listen i { animation: none; } }
 .nova-mark-in { animation: nova-bub-in .3s steps(4) both; }
+/* v0.48: what Nova is doing right now (Roamies' activity lines), a small tag beside the globe. */
+.nova-doing { position: fixed; pointer-events: none; display: flex; align-items: center; gap: 7px; max-width: 240px; padding: 5px 10px 5px 8px; font: 11px/1.2 'Silkscreen', monospace; letter-spacing: .03em; color: #cfe0ff; background: rgb(8 22 51 / .82); backdrop-filter: blur(8px); border-radius: 6px; box-shadow: 0 0 0 1.5px #3d74e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: nova-bub-in .2s steps(4) both; }
+.nova-doing i { flex: none; width: 6px; height: 6px; background: #7aaaff; animation: nova-doing-blink 1s steps(2) infinite; }
+@keyframes nova-doing-blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .nova-doing, .nova-doing i { animation: none; } }
 @media (prefers-reduced-motion: reduce) { .nova-mark-in { animation: none; } }
 /* The card Nova is talking about right now. */
 .px-card.px-looking { box-shadow: 0 -4px 0 0 var(--px-hi), 0 4px 0 0 var(--px-hi), -4px 0 0 0 var(--px-hi), 4px 0 0 0 var(--px-hi), 0 0 30px 6px rgb(120 170 255 / .5); transition: box-shadow .2s steps(3); }

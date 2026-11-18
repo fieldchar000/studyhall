@@ -25,6 +25,8 @@ export function OrbWindow(): React.JSX.Element {
   const [you, setYou] = useState<{ text: string; listening: boolean } | null>(null)
   const [nova, setNova] = useState<{ text: string; done: boolean; at: number } | null>(null)
   const micLevel = useRef(0)
+  // What Nova is doing right now ("Searching the web"), beside the globe while a tool runs.
+  const [doing, setDoing] = useState<string | null>(null)
 
   useEffect(() => {
     if (!canvas.current) return
@@ -62,7 +64,10 @@ export function OrbWindow(): React.JSX.Element {
         }),
         api.bauer.onOrbGo((p) => g.goTo(p)),
         api.bauer.onEmote((e) => g.emote(e)),
-        api.bauer.onInk((op) => g.ink(op)),
+        api.bauer.onInk((op) => {
+          if ('activity' in op) setDoing(op.activity ?? null)
+          else g.ink(op)
+        }),
         api.bauer.onLayer((b) => g.setOrigin(b.x, b.y))
       )
       // The bubbles and menu ride along with the globe.
@@ -148,6 +153,12 @@ export function OrbWindow(): React.JSX.Element {
       {/* Roamies drives the canvas; clicks on it (not on a wrapper) are the globe's. */}
       <canvas ref={canvas} className="fixed" style={{ imageRendering: 'pixelated' }} />
       <NovaPen />
+      {doing && at.x > -900 && (
+        <div className="nova-doing" style={at.x + at.r * 1.2 + 250 < window.innerWidth ? { left: at.x + at.r * 1.15, top: at.y - 12 } : { right: window.innerWidth - (at.x - at.r * 1.15), top: at.y - 12 }}>
+          <i />
+          {doing}…
+        </div>
+      )}
       {nova && novaText && (
         <div className="nova-bub-row" style={{ left: bx, width: W, justifyContent: edge, ...(roomAbove ? { bottom: window.innerHeight - (at.y - at.r * 1.35) } : { top: at.y + at.r * 1.35 + (you ? 64 : 0) }) }}>
           <div className={`nova-bub nova-bub-nova ${nova.done ? 'is-done' : ''} ${roomAbove ? '' : 'flip'}`} style={{ ['--tail' as string]: tailAt }}>
@@ -185,7 +196,16 @@ export function OrbWindow(): React.JSX.Element {
           >
             Talk
           </button>
-          <button className="orb-btn" title="Ctrl+Alt+N brings it back" onClick={() => api.bauer.hideOrb()}>
+          <button
+            className="orb-btn"
+            title="Ctrl+Alt+N brings it back"
+            onClick={() => {
+              setMenu(null)
+              // It disappears the way Roamies do, then its window goes.
+              globe.current?.hide()
+              setTimeout(() => api.bauer.hideOrb(), 800)
+            }}
+          >
             Hide
           </button>
         </div>

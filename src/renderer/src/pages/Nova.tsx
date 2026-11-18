@@ -659,6 +659,12 @@ export function NovaPage(): React.JSX.Element {
               <Row title="Float around my screen" hint="Off: it rests where you drop it. When you drop it somewhere, it stays there for a few minutes either way; it comes over when you talk.">
                 <input type="checkbox" checked={prefs?.novaDrift !== false} onChange={(e) => save({ novaDrift: e.target.checked })} aria-label="Float around my screen" />
               </Row>
+              <Row title="Hide when idle" hint="It disappears a few seconds after it's done and comes back when you talk to it, it speaks, or it draws something.">
+                <input type="checkbox" checked={prefs?.novaHideIdle === true} onChange={(e) => save({ novaHideIdle: e.target.checked })} aria-label="Hide when idle" />
+              </Row>
+              <Row title="Sound effects" hint="Little chiptune sounds when it appears, draws, and when an agent starts or finishes.">
+                <input type="checkbox" checked={prefs?.novaSounds !== false} onChange={(e) => save({ novaSounds: e.target.checked })} aria-label="Sound effects" />
+              </Row>
               <p className="text-xs text-muted">Drag it to move it (or fling it); click it to talk; right-click it for Hide. In “follows my cursor” size it shrinks to a little HUD ring beside your mouse.</p>
             </section>
           )}

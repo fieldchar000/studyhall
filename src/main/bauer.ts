@@ -160,6 +160,17 @@ export function inkReminders(msg: Record<string, unknown>): void {
   if (!orbWin.isVisible()) orbWin.showInactive()
   orbWin.webContents.send('bauer:ink', { reminders: msg })
 }
+/** What Nova is doing right now ("Searching the web"), shown beside the globe; null when nothing is running. */
+export function orbActivity(text: string | null): void {
+  if (suspended || !orbWin || orbWin.isDestroyed()) return
+  orbWin.webContents.send('bauer:ink', { activity: text })
+}
+/** The research card (Roamies' agent-panel.js): open it, say what's being checked, stream the answer, finish. */
+export function orbPanel(op: 'open' | 'status' | 'append' | 'end' | 'fail' | 'close', text?: string): void {
+  if (suspended || !orbWin || orbWin.isDestroyed()) return
+  if (op === 'open' && !orbWin.isVisible()) orbWin.showInactive()
+  orbWin.webContents.send('bauer:ink', { panel: { op, ...(text !== undefined ? { text } : {}) } })
+}
 /** News for the agents' corner (Roamies' agent-home.js): an agent started, moved on, waits for a yes, finished… */
 export function agentsUi(e: unknown): void {
   if (suspended || !orbWin || orbWin.isDestroyed()) return
@@ -199,7 +210,7 @@ function sendOrbConfig(): void {
   const h = savedHome()
   const b = OFFSCREEN ? screen.getPrimaryDisplay().workArea : orbWin.getBounds()
   const homeHere = h && h.x >= b.x && h.x <= b.x + b.width && h.y >= b.y && h.y <= b.y + b.height ? local(h) : null
-  orbWin.webContents.send('bauer:orbConfig', { size: orbSize(), roam: getPrefs().novaDrift !== false, home: homeHere })
+  orbWin.webContents.send('bauer:orbConfig', { size: orbSize(), roam: getPrefs().novaDrift !== false, home: homeHere, sounds: getPrefs().novaSounds !== false, hideIdle: getPrefs().novaHideIdle === true })
   sendLayer()
   orbWin.setIgnoreMouseEvents(true, { forward: true })
   watchCursor()
@@ -342,7 +353,8 @@ const overlayWindow = (bounds: Electron.Rectangle, hash: string, focusable = fal
     focusable,
     title: 'Bauer',
     backgroundColor: '#00000000',
-    webPreferences: { ...webPrefs, backgroundThrottling: false, spellcheck: false }
+    // (Roamies' little sounds play without a click first.)
+    webPreferences: { ...webPrefs, backgroundThrottling: false, spellcheck: false, autoplayPolicy: 'no-user-gesture-required' }
   })
   w.setAlwaysOnTop(true, 'screen-saver')
   w.setContentProtection(true) // Nova never shows up in screenshots or recordings (or in its own circle-to-ask)

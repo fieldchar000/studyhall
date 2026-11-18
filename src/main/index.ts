@@ -525,7 +525,7 @@ if (!app.requestSingleInstanceLock()) {
       },
       onPrefs: (patch) => {
         if ('voiceWake' in patch || 'voiceSensitivity' in patch || 'novaName' in patch) syncVoiceWindow()
-        if ('bauerOrb' in patch || 'novaOrbSize' in patch || 'novaDrift' in patch) syncOrb()
+        if ('bauerOrb' in patch || 'novaOrbSize' in patch || 'novaDrift' in patch || 'novaSounds' in patch || 'novaHideIdle' in patch) syncOrb()
         if ('bauerOnlyWhenOpen' in patch) bauerAway(!mainWindow?.isVisible())
       }
     })
