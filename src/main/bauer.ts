@@ -47,6 +47,7 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
       from.setIgnoreMouseEvents(!msg.over, { forward: true })
     }
     else if (msg.type === 'penDone' && from === orbWin && orbWin) penDone(msg.rect)
+    else if (msg.type === 'inkEvent' && from === orbWin && msg.msg && typeof msg.msg === 'object') inkHooks.event(msg.msg as Record<string, unknown>)
     else if (msg.type === 'penCancel' && from === orbWin) setPen(null)
     // A lesson is talking about one card: the globe floats over beside it (left of the cards).
     else if (msg.type === 'cardAt' && from === cardsWin && cardsWin && [msg.x, msg.y, msg.h].every((v) => Number.isFinite(Number(v)))) {
@@ -122,6 +123,39 @@ function layerOn(d: Electron.Display): void {
   if (orbDisplay === d.id) return
   orbDisplay = d.id
   if (!OFFSCREEN) orbWin.setBounds(d.workArea)
+  sendLayer()
+}
+/** Tell the globe's page where its layer is, so drawings on screen places land in the right spot. */
+function sendLayer(): void {
+  if (!orbWin || orbWin.isDestroyed()) return
+  const b = OFFSCREEN ? screen.getPrimaryDisplay().workArea : orbWin.getBounds()
+  orbWin.webContents.send('bauer:layer', { x: b.x, y: b.y })
+}
+
+// ---------- Drawings (Roamies' ink) on the globe's layer ----------
+export const inkHooks = { event: (_msg: Record<string, unknown>): void => {} }
+/** Play a drawing segment (screen places in DIP), on the screen the drawing is about. */
+export function inkPlay(seg: unknown, near?: { x: number; y: number } | null): void {
+  if (suspended || !orbWin || orbWin.isDestroyed()) return
+  if (near && !OFFSCREEN) layerOn(screen.getDisplayNearestPoint(near))
+  if (!orbWin.isVisible()) orbWin.showInactive()
+  orbWin.webContents.send('bauer:ink', { play: seg })
+}
+/** The globe floats beside a big drawing (an in-depth explanation's card in the middle of the screen), then off again. */
+let drawHome: NodeJS.Timeout | null = null
+export function orbBesideDrawing(on: boolean): void {
+  if (drawHome) clearTimeout(drawHome)
+  drawHome = null
+  if (!orbWin || orbWin.isDestroyed()) return
+  if (!on) {
+    drawHome = setTimeout(orbHome, 15_000)
+    return
+  }
+  const b = OFFSCREEN ? screen.getPrimaryDisplay().workArea : orbWin.getBounds()
+  orbTo({ x: b.x + 80, y: b.y + b.height / 2 - 40 }) // the left edge: big cards sit in the middle
+}
+export function inkClear(e: Record<string, unknown> = {}): void {
+  orbWin?.webContents.send('bauer:ink', { clear: e })
 }
 /** A screen point in the layer's own coordinates. */
 function local(p: Spot): Spot {
@@ -134,6 +168,7 @@ function sendOrbConfig(): void {
   const b = OFFSCREEN ? screen.getPrimaryDisplay().workArea : orbWin.getBounds()
   const homeHere = h && h.x >= b.x && h.x <= b.x + b.width && h.y >= b.y && h.y <= b.y + b.height ? local(h) : null
   orbWin.webContents.send('bauer:orbConfig', { size: orbSize(), roam: getPrefs().novaDrift !== false, home: homeHere })
+  sendLayer()
   orbWin.setIgnoreMouseEvents(true, { forward: true })
   watchCursor()
 }

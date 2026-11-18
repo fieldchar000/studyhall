@@ -32,6 +32,12 @@ export type NovaGlobe = {
   mic(v: number): void
   /** Fly over to a point (CSS px in this window); null: back to what it was doing. */
   goTo(p: { x: number; y: number } | null): void
+  /** A drawing (Roamies' ink): play a segment, or clear. */
+  ink(op: { play?: unknown; clear?: Record<string, unknown> }): void
+  /** Where this layer is on the screen (DIP), so screen places land in the right spot. */
+  setOrigin(x: number, y: number): void
+  /** Messages from the drawing (a card closed, a quiz answered…). */
+  onInk(cb: (msg: Record<string, unknown>) => void): void
   emote(e: Emote): void
   /** The globe's centre and radius (CSS px), for placing a bubble or menu beside it. */
   where(): { x: number; y: number; r: number }
@@ -251,6 +257,15 @@ async function boot(opts: {
   const tile = R.tiles[0]
   const c = tile.creature
   c.setLook('jarvis') // the globe of LED points with a lit heart
+  // Roamies' drawings (maps, flowcharts, moving models, bars, tables, maths, rings and labels on your screen): its own
+  // canvas on this layer, driven by drawings from Nova's draw tool (R.ink.play), clicks on its cards through R.inkHit.
+  await import('./roamies/world.js')
+  await import('./roamies/ink3d.js')
+  await import('./roamies/ink.js')
+  // ink.js shows each spoken line as a caption at the bottom of the screen; Nova's bubble above the globe already
+  // shows those words as they're said, so the caption stays hidden (it still paces the drawing).
+  for (const el of Array.from(document.body.children))
+    if (el instanceof HTMLDivElement && el.style.transform === 'translateX(-50%)' && el.style.pointerEvents === 'none') el.style.display = 'none'
   if (home) {
     c.mover.x = home.x
     c.mover.y = home.y
@@ -333,6 +348,17 @@ async function boot(opts: {
     },
     emote(e) {
       kit?.startAct?.(e)
+    },
+    ink(op) {
+      if (op.play) R.ink?.play(op.play)
+      else if (op.clear) R.ink?.clear(op.clear)
+      R.wake?.()
+    },
+    setOrigin(x, y) {
+      R.setSafe?.({ ...(R.safe ?? {}), ox: x, oy: y })
+    },
+    onInk(cb) {
+      if (R.ink) R.ink.send = cb
     },
     where() {
       return { x: c.mover.x, y: c.mover.y, r: kit?.R ?? 40 }

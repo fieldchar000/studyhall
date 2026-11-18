@@ -389,6 +389,17 @@ const api: Api = {
       ipcRenderer.on('bauer:subject', l)
       return () => ipcRenderer.removeListener('bauer:subject', l)
     },
+    onInk: (cb) => {
+      const l = (_e: unknown, op: Parameters<typeof cb>[0]): void => cb(op)
+      ipcRenderer.on('bauer:ink', l)
+      return () => ipcRenderer.removeListener('bauer:ink', l)
+    },
+    onLayer: (cb) => {
+      const l = (_e: unknown, b: Parameters<typeof cb>[0]): void => cb(b)
+      ipcRenderer.on('bauer:layer', l)
+      return () => ipcRenderer.removeListener('bauer:layer', l)
+    },
+    inkEvent: (msg) => ipcRenderer.send('bauer:window', { type: 'inkEvent', msg }),
     onPen: (cb) => {
       const l = (_e: unknown, p: Parameters<typeof cb>[0]): void => cb(p)
       ipcRenderer.on('bauer:pen', l)

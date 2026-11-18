@@ -1272,6 +1272,12 @@ export interface Api {
     bubble(who: 'you' | 'nova', text: string, opts?: { append?: boolean; done?: boolean }): void
     /** (orb window) */
     onBubble(cb: (b: { who: 'you' | 'nova'; text: string; append: boolean; done: boolean }) => void): () => void
+    /** (orb window) a drawing to play (Roamies' ink segment), or clear */
+    onInk(cb: (op: { play?: unknown; clear?: Record<string, unknown> }) => void): () => void
+    /** (orb window) where its layer is on the screen (DIP) */
+    onLayer(cb: (b: { x: number; y: number }) => void): () => void
+    /** (orb window) news from a drawing: a card closed, a quiz answered, a segment started */
+    inkEvent(msg: Record<string, unknown>): void
     /** (orb window) the pen is on (draw what you mean) or off */
     onPen(cb: (p: { on: boolean; once: boolean }) => void): () => void
     /** (orb window) the pen's marks covered this box (window coordinates), or null if nothing was drawn */

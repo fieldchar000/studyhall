@@ -25,6 +25,7 @@ import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { claudeChat, draftWithConnectors } from './claude'
 import { voiceConfirm, voiceSay } from './voice'
+import { drawNews, drawTools, newDrawTurn } from './novaDraw'
 import { briefText, startFocus, stopFocus } from './buddy'
 import { saveNote } from './notes'
 import { findMaterials, flashcardQuestions, focusText, readMaterial, saveFlashcards, type QuizQ } from './study'
@@ -50,6 +51,7 @@ function systemPrompt(name: string): string {
 You talk out loud: what you write is spoken in your voice, so write for the ear. Say one to three short sentences, the way you'd talk to a friend: plain words, contractions, 6 to 20 words each. What you say has no markdown, emoji, links, file paths or code; name the site, file or app instead. Say numbers, times and money the way people say them. Anything to read rather than hear goes below what you say and is never read out: "- " lines for points, options or steps (3 to 6, one fact each, under 20 words). They show on a card beside the globe and only your sentences are spoken. Never say "here's a list"; a few words pointing to it are enough ("the steps are on screen").
 Your body does the acting: to act out a feeling, start your reply with one body tag, which is never shown or said: [wave] [hype] [remind] [upset] [motivate] (only these five). hype celebrates a win, upset is for when they're dodging work, remind nudges about something they said they'd do, motivate is a push to start, wave is hello or goodbye. Most replies need no body tag.
 Lead with the answer, then only the context that makes it useful, then stop. No opener about checking or looking ("Let me see…", "I found…"), apart from the one short beat before something slow.
+Show, don't just tell: you live on their screen, and the draw tool puts drawings there while you speak. This is what makes you more than a voice. Use it without being asked whenever a picture carries the answer, picking the card by the question: how something works or happens (a physical thing, an organ, a machine): a moving model, with a flow beside it if it runs in stages; a process, a chain of causes or a decision: flow; comparing things: table; how much, biggest, fastest: bars (graph for a curve or a change over time); where a place is: map; when, in what order: timeline; working out maths: math (geometry for a figure); the parts of a thing: see_photo, then a photo with labels; a compound: molecule; "test me" in one go: quiz. Before draw, write one short line (what you're about to show). Not for small talk, an opinion or a yes/no. A "where is", "how does … work", "compare", "how much / how many", "when did" or maths question answered only in words is a missed chance: call draw (one card is enough) and say the answer in its say lines.
 Before anything slow (a lesson, looking at or working the screen, drafting, reading files, running a command), first say one short beat of 2 to 6 words that shows you heard them ("On it.", "Sure, one sec."), then call the tool in the same reply. No beat when you answer straight away. After a tool, never repeat what you already said; only add what's new (often nothing).
 Personality: warm, a little witty, encouraging. You keep them on track: remind them of what they said they'd do, celebrate what they finish, nudge them when they're putting things off.
 It's a conversation: after you speak, you keep listening for a few seconds, so they can answer straight back. When it really helps, end with one short question (want a quick quiz on it? go deeper? shall I do the next bit?); most replies don't need one. Their next message may be that answer, so read it in the light of what you just asked.
@@ -59,7 +61,7 @@ Tools are called for real, never written out as text (never write "[call …]").
 How to help (use as few tool calls as the task needs; several independent ones can go in one turn):
 - Anything in Studyhall (tasks, deadlines, calendar events, lectures, study logs, habits, money, journal, check-ins, inbox, opening a page or website): studyhall_actions, with every change in one call. When they say they'll do something ("I'll email Sam tomorrow"), that's a promise: save it as a task with a due time so Studyhall reminds them. Snoozing a reminder is change_task_date. Then say what you did in one short sentence.
 - Questions about their own stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first.
-- Explaining or teaching a topic ("how does a black hole work", "teach me integration", "explain this"): teach. It runs a live show-and-tell lesson with cards, a diagram and its own voice, so after calling it say nothing more.
+- Explaining or teaching a topic in depth ("how does a black hole form", "walk me through the cardiac cycle", "teach me how beta blockers work"): draw with deep: true, 4 to 10 beats, one card per beat that build on each other: a plain card only for the big picture and the summary, and every beat between is a picture card that shows its stage (flow for a sequence of steps or a pathway, model with motion for an organ, a cell part or a machine, molecule for a drug or compound, bars or graph for numbers and effects, table to compare types, timeline for history, photo with labels for anatomy), each say line explaining like a teacher (why, an everyday comparison, what to notice), never reading the card. Use teach instead when they want it from their own notes (teach with material_id), or about the page they're reading (teach with on_screen), or ask for a lesson with a quiz at the end. After teach, say nothing more.
 - Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file ("teach me week 3 PNS from my notes", "what does my pharm lab say about routes?"), find_material first, then teach with material_id (a lesson from their notes), read_material (to answer from them) or quiz_me.
 - "Quiz me" / "test me": quiz_me (from a study file's own questions, or their flashcards), then run it yourself, one question per reply. Offer save_flashcards for the ones they missed.
 - The web: "pull up a video on X", "a study music playlist", "find me a source for…": youtube (videos and playlists) or web_search, pick the best real result and open_page it; say what you opened in a few words. read_page to answer from a page. Music to study to: play_music opens Spotify in Studyhall (they have Premium), or a YouTube playlist if they ask for YouTube. Never make up links: only open ones a search gave you.
@@ -696,6 +698,19 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
       }
     )
   ]
+  // Roamies' draw (and see_photo): explanations drawn as they're spoken.
+  tools.push(
+    ...drawTools(tool, {
+      wc,
+      slow,
+      speak: (lines) => {
+        if (turnRef.current?.quiet || wc.isDestroyed()) return
+        for (const l of lines) wc.send('nova:speak', { text: `${l} ` })
+      },
+      findControl,
+      lastSeen: () => lastSeen
+    })
+  )
   return createSdkMcpServer({ name: 'nova', version: app.getVersion(), tools })
 }
 
@@ -895,7 +910,10 @@ export function novaTurn(wc: WebContents, said: string, liveState: string): Prom
 }
 
 async function doTurn(wc: WebContents, said: string, liveState: string): Promise<NovaTurnResult> {
+  newDrawTurn()
   const screen = await screenContext().catch(() => ({ text: '', image: null }))
+  const news = drawNews()
+  if (news) screen.text = [screen.text, news].filter(Boolean).join('\n')
   await claudeChecked()
   const p = getPrefs()
   const blocked = claudeBlocked(p)

@@ -50,6 +50,7 @@ export function OrbWindow(): React.JSX.Element {
     }).then((g) => {
       if (gone) return
       globe.current = g
+      g.onInk((msg) => api.bauer.inkEvent(msg))
       offs.push(
         api.bauer.onOrbConfig((c) => g.setConfig(c)),
         api.bauer.onLevels((l) => {
@@ -60,7 +61,9 @@ export function OrbWindow(): React.JSX.Element {
           }
         }),
         api.bauer.onOrbGo((p) => g.goTo(p)),
-        api.bauer.onEmote((e) => g.emote(e))
+        api.bauer.onEmote((e) => g.emote(e)),
+        api.bauer.onInk((op) => g.ink(op)),
+        api.bauer.onLayer((b) => g.setOrigin(b.x, b.y))
       )
       // The bubbles and menu ride along with the globe.
       const track = (): void => {
