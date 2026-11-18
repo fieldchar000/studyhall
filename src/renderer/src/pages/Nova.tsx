@@ -709,6 +709,9 @@ export function NovaPage(): React.JSX.Element {
                 </tbody>
               </table>
             )}
+            <Row title="Background agents" hint="Auto: Sonnet when an agent makes something (a page, a document, slides), Haiku when it finds things out or tidies files, which uses much less of your plan.">
+              <Seg<'auto' | 'haiku' | 'sonnet'> value={prefs?.novaAgents ?? 'auto'} options={[['auto', 'Auto'], ['haiku', 'Haiku'], ['sonnet', 'Sonnet']]} onChange={(v) => save({ novaAgents: v })} />
+            </Row>
             <Row title="Offline backup" hint="Use the model on this PC when Claude isn’t connected, there’s no internet, or Claude is paused (slower)">
               <input type="checkbox" checked={prefs?.novaOffline ?? true} onChange={(e) => save({ novaOffline: e.target.checked })} aria-label="Offline backup" />
             </Row>

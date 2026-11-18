@@ -270,6 +270,7 @@ const api: Api = {
   nova: {
     turn: (said, studyhall) => ipcRenderer.invoke('nova:turn', said, studyhall),
     offlineExplain: (said) => ipcRenderer.invoke('nova:offlineExplain', said),
+    remember: (text, due) => ipcRenderer.invoke('nova:remember', text, due),
     warm: () => ipcRenderer.invoke('nova:warm'),
     reset: () => ipcRenderer.invoke('nova:reset'),
     facts: () => ipcRenderer.invoke('nova:facts'),

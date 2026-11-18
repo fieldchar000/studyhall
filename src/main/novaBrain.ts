@@ -478,20 +478,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
         const id = startJob(String(brief), materials ? String(materials) : '', String(title), wc)
         return text(`Started (job ${id}). It runs in the background; say so in a few words, they'll hear when it's ready.`)
       }
-    ), tool(
-      'show_card',
-      'Put one pixel card beside the globe: a few labelled points (with optional numbers for a little chart) or a short timeline. For things easier to see than hear.',
-      {
-        title: z.string(),
-        kind: z.enum(['points', 'timeline', 'chart', 'steps']),
-        items: z.array(z.object({ label: z.string(), detail: z.string().optional(), value: z.number().optional() })).max(8),
-        unit: z.string().optional()
-      },
-      async ({ title, kind, items, unit }) => {
-        showCards([{ id: `n${Date.now()}`, kind, title: String(title).slice(0, 80), items: items.slice(0, 8), unit } as BauerCard])
-        return text('Shown.')
-      }
-    ),
+    ), 
     tool(
       'draft_document',
       'Write a document, essay plan, letter or notes into their apps with their Claude connectors (asks them first).',
@@ -553,6 +540,10 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
       }
     }) as typeof run
   }
+  // Automated tests: how big each tool's description and schema is (what every request sends).
+  if (process.env.STUDYHALL_OFFSCREEN === '1')
+    (globalThis as unknown as { __novaSizes: unknown }).__novaSizes = () =>
+      [{ name: '(system prompt)', desc: systemPrompt('Nova').length, schema: 0 }, ...all.map((t) => ({ name: t.name, desc: String(t.description ?? '').length, schema: JSON.stringify(z.toJSONSchema(z.object(t.inputSchema as z.ZodRawShape))).length }))]
   return createSdkMcpServer({ name: 'nova', version: app.getVersion(), tools: all })
 }
 
@@ -571,6 +562,8 @@ interface Convo {
   turnRef: { current: Turn | null }
   dead: boolean
   resumed: boolean // it picked up a saved conversation
+  costSeen: number // Claude Code reports the conversation's running total; each turn's own cost is the difference
+  lastSteady: string // the unchanging part of the last <live-state> sent (sent again only when it changes)
 }
 let convo: Convo | null = null
 let allowed = true
@@ -595,7 +588,8 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
       ...claudeBase(),
       model: claudeModelId(model),
       effort,
-      thinking: effort === 'low' ? { type: 'disabled' } : { type: 'adaptive' },
+      // Thinking only when you pick high effort: it makes every reply slower and costs more.
+      thinking: effort === 'high' ? { type: 'adaptive' } : { type: 'disabled' },
       systemPrompt: systemPrompt(getPrefs().novaName ?? 'Nova'),
       tools: [], // none of Claude Code's own tools: only Nova's
       mcpServers: { nova: server },
@@ -609,6 +603,8 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
     }
   })
   c.resumed = !!resumeId()
+  c.costSeen = 0
+  c.lastSteady = ''
   const it = q[Symbol.asyncIterator]()
   Object.assign(c, {
     q,
@@ -633,7 +629,9 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
 // The conversation to pick up: the last one, if it was within the last 12 hours and not reset.
 const resumeId = (): string | null => {
   const s = getSetting<{ id: string; at: number }>('nova_session')
-  return s?.id && Date.now() - s.at < 12 * 3600_000 ? s.id : null
+  // Within half an hour it carries on; after a longer pause a fresh conversation starts with a short recap of the
+  // last few exchanges (free), instead of resending hours of history with every message.
+  return s?.id && Date.now() - s.at < 30 * 60_000 ? s.id : null
 }
 
 function close(c: Convo | null): void {
@@ -773,6 +771,32 @@ export interface NovaTurnResult {
   tools: string[]
   error?: string
   notice?: string // Claude can't answer right now: why, and when it's back (said out loud)
+}
+
+// ---------- Sending less with each message ----------
+// <live-state>'s first lines (the time, the window in front, what's allowed) change all the time; the rest (their
+// Studyhall, memory, focus) rarely does, so it's sent again only when it changed (Roamies does the same).
+function liveFor(c: Convo, live: string): string {
+  const lines = live.split('\n')
+  const head = lines.slice(0, 4)
+  const steady = lines.slice(4, -1).join('\n')
+  if (steady && steady === c.lastSteady) return [...head, '(Their Studyhall, memory and the rest are as in the last <live-state>.)', '</live-state>'].join('\n')
+  c.lastSteady = steady
+  return live
+}
+// The last few exchanges, kept on this PC, so a fresh conversation (after a long pause or a restart) still knows
+// what you were just talking about, without resending the old conversation itself.
+type Exchange = { said: string; reply: string; at: number }
+function rememberExchange(said: string, reply: string): void {
+  if (said.startsWith('(') || !reply) return
+  const list = [...(getSetting<Exchange[]>('nova_recent') ?? []), { said: said.slice(0, 240), reply: reply.slice(0, 300), at: Date.now() }].slice(-6)
+  setSetting('nova_recent', list)
+}
+function recapFor(c: Convo): string {
+  if (c.resumed || c.turns > 1) return ''
+  const list = (getSetting<Exchange[]>('nova_recent') ?? []).filter((x) => Date.now() - x.at < 24 * 3600_000)
+  if (!list.length) return ''
+  return `(Earlier, before this conversation; for context only:\n${list.map((x) => `They: ${x.said}\nYou: ${x.reply}`).join('\n')})\n\n`
 }
 
 let turnChain: Promise<unknown> = Promise.resolve()
@@ -916,7 +940,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     message: {
       role: 'user',
       content: [
-        { type: 'text', text: `${liveState}${screen.text ? `\n${screen.text}` : ''}\n\n${said}${agentish ? '\n(They asked for an agent: call send_agent.)' : ''}` },
+        { type: 'text', text: `${recapFor(c)}${liveFor(c, liveState)}${screen.text ? `\n${screen.text}` : ''}\n\n${said}${agentish ? '\n(They asked for an agent: call send_agent.)' : ''}` },
         ...(screen.image ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: screen.image.replace(/^data:image\/\w+;base64,/, '') } }] : [])
       ]
     },
@@ -945,7 +969,9 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
         trailSettle() // a model turn ended: the step trail ticks off what it did
         for (const b of m.message.content as { type: string; name?: string }[]) if (b.type === 'tool_use' && b.name) turn.tools.push(b.name.replace(/^mcp__nova__/, ''))
       } else if (m.type === 'result') {
-        cost += m.total_cost_usd ?? 0
+        const total = m.total_cost_usd ?? 0
+        cost += Math.max(0, total - c.costSeen)
+        c.costSeen = total
         // The conversation's id, so it can be picked up again after a pause or a restart.
         if (m.session_id && process.env.STUDYHALL_OFFSCREEN !== '1') setSetting('nova_session', { id: m.session_id, at: Date.now() })
         if (m.subtype !== 'success') throw new Error(`Claude couldn’t finish (${m.subtype})`)
@@ -989,13 +1015,14 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   // Read-on-screen lines go on a card beside the globe.
   if (turn.research) orbPanel('end', turn.fromWeb ? 'From the web' : /\n\s*>/.test(`\n${written}`) ? 'Draft' : 'Answer')
   recordClaudeCost(model, effort, Date.now() - started, cost)
-  console.info(`Nova turn: ${model}/${effort} in ${Date.now() - started} ms, tools: ${turn.tools.join(', ') || 'none'}`)
+  console.info(`Nova turn: ${model}/${effort} in ${Date.now() - started} ms, cost $${cost.toFixed(5)}, tools: ${turn.tools.join(', ') || 'none'}`)
   roamiesTurnEnd()
   trailEnd()
   stageDone()
   if (agentish) agentsHatch(false)
   const reply = spoken.replace(MARKER, '').replace(/\s+/g, ' ').trim()
   noteExchange(said, reply, userName())
+  rememberExchange(said, reply)
   return { text: reply, quiet: turn.quiet, tools: turn.tools }
 }
 

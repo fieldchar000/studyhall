@@ -291,12 +291,14 @@ async function startAgents(): Promise<void> {
     },
     config: {
       // Agents run on your Claude sign-in through Claude Code, like Nova: Sonnet (or the model you picked for Nova).
-      model: async () => {
+      model: async (type?: string) => {
         const p = getPrefs()
         const blocked = claudeBlocked(p)
         if (blocked) throw new Error(`Claude can't run an agent right now: ${blocked}.`)
-        const brain = p.novaBrain ?? 'auto'
-        const key = brain === 'opus' || brain === 'sonnet' ? brain : 'sonnet'
+        // Agents: Haiku finds things out and tidies (cheap and quick), Sonnet makes things (pages, documents, slides),
+        // unless one model is picked for all of them on Nova's page.
+        const choice = p.novaAgents ?? 'auto'
+        const key = choice === 'haiku' || choice === 'sonnet' ? choice : type === 'maker' ? 'sonnet' : 'haiku'
         return { provider: 'anthropic', model: claudeModelId(key), route: 'claude-code', cc: claudeAgentRoute(), thinking: 'medium', budget: 120_000 }
       },
       creds: async () => ({}),

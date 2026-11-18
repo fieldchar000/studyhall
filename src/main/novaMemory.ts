@@ -62,7 +62,7 @@ export function noteExchange(said: string, reply: string, name: string): void {
   turns.push({ said: said.slice(0, 2000), reply: reply.slice(0, 2000) })
   if (turns.length > 12) turns.splice(0, turns.length - 12)
   sinceLast++
-  if (sinceLast >= 6 || /\bremember\b|\bdon'?t forget\b|\bkeep in mind\b/i.test(said)) void memoryPass(name)
+  if (sinceLast >= 12 || /\bremember\b|\bdon'?t forget\b|\bkeep in mind\b/i.test(said)) void memoryPass(name)
 }
 
 /** The conversation is ending (closed, or "new conversation"): learn from what's left. */

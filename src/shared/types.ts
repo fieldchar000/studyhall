@@ -997,6 +997,7 @@ export interface Prefs {
   novaNoExtra?: boolean // never use paid extra usage on your Claude account (default on)
   novaCap?: number // pause Claude when your weekly Claude usage reaches this % (default 80)
   novaSounds?: boolean // Roamies' little sound effects on the globe, drawings and agents (default on)
+  novaAgents?: 'auto' | 'haiku' | 'sonnet' // which model background agents use (auto: Sonnet to make things, Haiku otherwise)
   novaHideIdle?: boolean // the globe disappears when it's not needed and comes back when you talk to it (default off)
   novaVoice?: string // Kokoro voice (default af_heart)
   novaSpeed?: number // how fast Nova talks, 0.8–1.3 (default 1.05)
@@ -1220,6 +1221,8 @@ export interface Api {
     turn(said: string, studyhall: string): Promise<{ text: string; quiet: boolean; tools: string[]; error?: string; notice?: string }>
     /** Claude is paused: the vision model on this PC looks at the window in front and explains it (null if it can't). */
     offlineExplain(said: string): Promise<string | null>
+    /** A reminder on Nova's own list (due: YYYY-MM-DDTHH:mm, local time). */
+    remember(text: string, due: string): Promise<string | null>
     warm(): Promise<void>
     reset(): Promise<void>
     facts(): Promise<{ id: string; text: string; at: string }[]>

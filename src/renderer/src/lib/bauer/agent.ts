@@ -639,6 +639,68 @@ async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: M
   }
 }
 
+
+// ---------- Simple commands, done on this PC (no Claude: instant, and it costs nothing) ----------
+// Only requests that are clearly one of these, said plainly; anything else (or anything the rules don't fully read)
+// goes to Nova's conversation as before.
+const QUICK_STUDYHALL =
+  /^(?:(?:please\s+)?(?:add|create|new|schedule)\s+(?:a\s+|an\s+|my\s+)?(?:task|to-?do|event|lecture|class|exam|deadline|meeting|tutorial|lab)\b|(?:mark|tick|complete|finish(?:ed)?)\b.+\b(?:done|complete|completed|finished)\b|(?:i\s+)?(?:log(?:ged)?|studied)\s+\d|(?:i\s+)?(?:spent|paid)\s+\$?\d|(?:move|reschedule|push)\b.+\b(?:to|until|till)\b|(?:cancel|delete|remove)\s+(?:my\s+|the\s+)?(?:task|event|class|lecture|meeting|tutorial|lab)\b)/i
+const QUICK_KINDS = new Set(['task', 'task_done', 'task_move', 'task_cancel', 'event', 'event_move', 'event_cancel', 'log', 'habit', 'money', 'journal'])
+const QUICK_REMIND = /^(?:please\s+)?(?:remind me|set (?:a|me a) reminder)\b/i
+const QUICK_DUE = /^(?:what(?:'s| is)|anything|what do i have)\s+(?:due|on)(?:\s+(today|tomorrow))?\s*\??$/i
+
+async function quickCommand(text: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null } | null> {
+  const t = text.trim().replace(/[.!]+$/, '')
+  // "What's due today?" / "what do I have on tomorrow?": from your own Studyhall.
+  const due = QUICK_DUE.exec(t)
+  if (due) {
+    const ctx = await loadBriefContext()
+    const day = new Date()
+    if ((due[1] ?? 'today').toLowerCase() === 'tomorrow') day.setDate(day.getDate() + 1)
+    const key = ymd(day)
+    const tasks = ctx.tasks.filter((x) => x.due_at && ymd(new Date(x.due_at)) === key)
+    const events = ctx.events.filter((x) => (x.start_at.length === 10 ? x.start_at : ymd(new Date(x.start_at))) === key)
+    const label = key === ymd(new Date()) ? 'today' : 'tomorrow'
+    const list = (xs: string[]): string => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`)
+    const parts = [
+      tasks.length ? `due ${label}: ${list(tasks.slice(0, 6).map((x) => x.title))}` : '',
+      events.length ? `on ${label}: ${list(events.slice(0, 6).map((x) => `${x.title}${x.start_at.length > 10 ? ` at ${new Date(x.start_at).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(':00', '').replace(' ', '')}` : ''}`))}` : ''
+    ].filter(Boolean)
+    const reply = parts.length ? `${parts.join('. ').replace(/^./, (c) => c.toUpperCase())}.` : `Nothing's due ${label}.`
+    await logAnswer(text, reply, source)
+    return { reply, actions: [], logId: null }
+  }
+  // "Remind me at 5 to call mum": straight onto Nova's own list (with a time; without one, Nova asks when).
+  if (QUICK_REMIND.test(t)) {
+    const ctx = await loadBriefContext()
+    const asTask = parseBrief(t.replace(QUICK_REMIND, 'add a task').replace(/\bto\s+(?=\w)/i, ''), ctx, new Date()).find((a) => a.kind === 'task') as Extract<BriefAction, { kind: 'task' }> | undefined
+    if (!asTask?.due) return null
+    const d = new Date(asTask.due)
+    if (d.getHours() === 23 && d.getMinutes() === 59) return null // a day without a time: let Nova ask
+    const local = `${ymd(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    const title = asTask.title.replace(/^(?:a\s+)?task\s+/i, '').trim()
+    if (title.length < 2) return null
+    const ok = await api.nova.remember(title, local).catch(() => null)
+    if (!ok) return null
+    const when = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(':00', '').replace(' ', '')
+    const reply = `Okay, I'll remind you ${ymd(d) === ymd(new Date()) ? '' : `on ${d.toLocaleDateString('en-GB', { weekday: 'long' })} `}at ${when}.`
+    await logAnswer(text, reply, source)
+    return { reply, actions: [], logId: null }
+  }
+  // Studyhall: tasks, events, study logs, habits, money, journal, read by Studyhall's own rules.
+  if (QUICK_STUDYHALL.test(t)) {
+    const ctx = await loadBriefContext()
+    const actions = parseBrief(t, ctx, new Date()).filter((a) => a.on)
+    if (!actions.length || actions.length > 3 || !actions.every((a) => QUICK_KINDS.has(a.kind))) return null
+    await fillMoveEnds(actions)
+    const { undo } = await applyBrief(actions, mode)
+    const reply = plainReply(actions)
+    const logId = await writeLog(text, reply, actions, undo, source, 'rules')
+    return { reply, actions, logId }
+  }
+  return null
+}
+
 // Claude can't answer right now (the weekly cap, a limit, not connected): why, from the last try. Said out loud before
 // the answer (at most once an hour, so it doesn't nag), and requests about the screen go to the eyes on this PC.
 let paused: string | null = null
@@ -659,6 +721,11 @@ async function handleSpeechInner(raw: string, source: 'voice' | 'typed' | 'pad',
   // Small talk, one word, half a sentence: say nothing, do nothing, log nothing.
   const nothing = { reply: source === 'typed' ? 'I didn’t find anything to do in that.' : '', actions: [] as BriefAction[], logId: null, ignored: true }
   if (isChitChat(text)) return nothing
+  // Clear, simple commands are done right here, without Claude (instant, and free).
+  if (onPc()) {
+    const q = await quickCommand(text, source, mode).catch((e) => (console.warn('Nova: quick command failed', e), null))
+    if (q) return q
+  }
   // With Claude on the PC: the one-call conversation (fast, remembers, speaks as it goes).
   if (onPc() && (await claudeReady())) {
     const r = await converse(text, source, mode).catch((e) => (console.warn('Nova conversation:', e), null))

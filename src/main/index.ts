@@ -54,7 +54,7 @@ import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
 import { eyes, helpOnScreen, pointerHooks, see, stopEyes, stopWalkthrough } from './eyes'
 import { forgetNovaFactById, listNovaFacts } from './novaMemory'
-import { roamiesAbort, roamiesClick, roamiesEsc, testWindowShot } from './roamiesTools'
+import { roamies, roamiesAbort, roamiesClick, roamiesEsc, testWindowShot } from './roamiesTools'
 import { factsBlock, frontWindow, noteCircle, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova } from './novaBrain'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
@@ -442,6 +442,12 @@ if (!app.requestSingleInstanceLock()) {
             700
           ).catch(() => '')
           return answer.trim() || null
+        })
+        // A reminder said plainly ("remind me at 5 to call mum"), saved on Nova's own list without asking Claude.
+        handle('nova:remember', async (_e, text: string, due: string) => {
+          const r = await roamies()
+          const t = r.tools.find((x: { name: string }) => x.name === 'remember_commitment')
+          return t ? String(await t.execute({ text: String(text).slice(0, 200), due: String(due), kind: 'reminder' }, {})) : null
         })
         handle('nova:turn', async (e, said: string, studyhall: string) => {
           const p = getPrefs()

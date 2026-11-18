@@ -1,4 +1,4 @@
-// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/agents.mjs). Studyhall changes: the folder is root itself (Documents\Nova Agents) and the app is named Studyhall/Nova.
+// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/agents.mjs). Studyhall changes: the folder is root itself (Documents\Nova Agents), the app is named Studyhall/Nova, and config.model gets the agent type.
 // Background agents: a request like "send an agent to make me a landing page" runs as its own process
 // (agentrun.mjs) while the chat carries on. Each one works in its own folder under ~/Roamies/Agents, shows as a row
 // in the overlay's corner (roamies/agent-home.js), and ends with a short result: one line and the files it made.
@@ -296,7 +296,7 @@ export function createAgents({ fork, ui, config, root, userName = 'The user', ru
     if (!AGENT_TYPES.includes(type)) throw new Error(`type must be one of ${AGENT_TYPES.join(', ')}.`);
     if (returns != null && !RETURNS.includes(returns)) throw new Error(`returns must be one of ${RETURNS.join(', ')}.`);
     if (!String(brief ?? '').trim()) throw new Error('The brief is empty: say everything the agent needs, it sees none of this conversation.');
-    const md = await config.model();
+    const md = await config.model(type); // (Studyhall: the model can depend on the kind of agent)
     const cap = md.provider === 'local' ? LIMITS.local : LIMITS.running, busy = running().length;
     if (busy >= cap) throw new Error(`${busy} agent${busy === 1 ? ' is' : 's are'} already working, and ${cap} at once is the most${md.provider === 'local' ? ' on a local model' : ''}. Tell ${userName}: they can stop one (or wait for one to finish) and ask again.`);
     let to = null;
