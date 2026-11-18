@@ -452,13 +452,15 @@ if (!app.requestSingleInstanceLock()) {
         handle('nova:turn', async (e, said: string, studyhall: string) => {
           const p = getPrefs()
           const now = new Date()
+          // The window in front and the memory part, read at the same time.
+          const [front, facts] = await Promise.all([frontWindow(), factsBlock(String(said ?? ''))])
           const live = [
             '<live-state>',
             `Now: ${now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, ${now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`,
-            `Window in front: ${await frontWindow()}`,
+            `Window in front: ${front}`,
             `Allowed: looking at the screen ${p.novaEyes === 'off' ? 'off' : 'on'}; working their apps ${p.novaHands ?? 'off'}; drafting with connectors ${p.novaConnectors ? 'on' : 'off'}`,
             String(studyhall ?? '').slice(0, 12_000),
-            await factsBlock(String(said ?? '')),
+            facts,
             focusState(),
             lastOffered(),
             '</live-state>'

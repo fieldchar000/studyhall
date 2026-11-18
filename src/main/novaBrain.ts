@@ -72,7 +72,7 @@ How to help (use as few tool calls as the task needs; independent ones can go in
   After a live lesson, stop: the drawing speaks its lines. Offer one next step in a few words only if it helps ("Want me to quiz you on it?").
 - Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file, find_material first, then read_material (to answer or teach from them) or quiz_me.
 - "Quiz me" / "test me": quiz_me (from a study file's own questions, or their flashcards), then run it yourself, one question per reply. Offer save_flashcards for the ones they missed.
-- The web: "pull up a video on X", "a study music playlist": youtube, then open the best real result. "Find me a source for…", facts that change: web_search, then web_fetch to read a page (offset reads on). Music to study to: play_music (Spotify in Studyhall; they have Premium), or a YouTube playlist if they ask for YouTube. Never make up links: only open ones a search gave you.
+- The web: "pull up a video on X", "a study music playlist": youtube, then open the best real result. "Find me a source for…", facts that change: WebSearch, then web_fetch to read a page (offset reads on). Music to study to: play_music (Spotify in Studyhall; they have Premium), or a YouTube playlist if they ask for YouTube. Never make up links: only open ones a search gave you.
 - Notes from a video or page: video_transcript (YouTube) or web_fetch, then save_note (and save_flashcards if they want cards). A revision sheet or summary from their own study files, saved into Studyhall's Notes ("make a revision sheet from all my week 3 notes"): start_job with a full brief; just say you're on it.
 - "Summarise what I copied", "turn this into flashcards": read_clipboard first. "Notes on the left, lecture on the right": list_windows if you need the names, then arrange_windows. A document into their apps with their Claude connectors: draft_document.
 - Focus ("focus on chemistry for 45 minutes", "help me stay on task"): start_focus (stop_focus ends it).
@@ -508,7 +508,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
   turnHooks.ready = () => !wc.isDestroyed()
   // plan_steps: Roamies' step trail beside the globe, ticking off as each part's tool calls succeed.
   turnHooks.plan = (args) => trailPlan(args)
-  const all = [...tools, ...(await roamiesSdkTools(tool, new Set(), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
+  const all = [...tools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
   // Every tool shows what it's doing beside the globe while it runs (Roamies' activity lines).
   for (const t of all) {
     const run = t.handler
@@ -591,9 +591,11 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
       // Thinking only when you pick high effort: it makes every reply slower and costs more.
       thinking: effort === 'high' ? { type: 'adaptive' } : { type: 'disabled' },
       systemPrompt: systemPrompt(getPrefs().novaName ?? 'Nova'),
-      tools: [], // none of Claude Code's own tools: only Nova's
+      tools: ['WebSearch'], // of Claude Code's own tools, only its web search
       mcpServers: { nova: server },
-      allowedTools: ['mcp__nova__*'], // (Claude Code's own tools are off: tools: [])
+      // Claude Code's own web search runs inside this conversation (much faster than a separate search); everything
+      // else is Nova's own tools.
+      allowedTools: ['mcp__nova__*', 'WebSearch'],
       includePartialMessages: true,
       maxTurns: 12,
       // The conversation is saved on this PC (never to your Claude account) so it carries on after a pause or a
@@ -815,13 +817,13 @@ export function novaTurn(wc: WebContents, said: string, liveState: string): Prom
 
 async function doTurn(wc: WebContents, said: string, liveState: string): Promise<NovaTurnResult> {
   roamiesTurnStart()
-  const screen = await screenContext().catch(() => ({ text: '', image: null }))
+  // What's highlighted or circled, and Claude's sign-in check, at the same time (not one after the other).
+  const [screen] = await Promise.all([screenContext().catch(() => ({ text: '', image: null })), claudeChecked()])
   const news = [roamiesNotes(), said.startsWith('(') ? '' : agentsBlock(said)].filter(Boolean).join('\n')
   if (news) screen.text = [screen.text, news].filter(Boolean).join('\n')
   // "Send an agent to…": the agents' corner hatches one while the brief is written (as in Roamies).
   const agentish = !said.startsWith('(') && wantsAgent(said)
   if (agentish) agentsHatch(true)
-  await claudeChecked()
   const p = getPrefs()
   const blocked = claudeBlocked(p)
   if (blocked) {
@@ -854,6 +856,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   // Emote tags are pulled out of the stream (held back while one might still be arriving).
   let hold = ''
   let written = ''
+  let webStage: string | null = null // Claude Code's web search, while it runs
   const split = new Splitter(
     (t) => {
       if (turn.quiet) return // a lesson or walkthrough has taken over and speaks for itself
@@ -959,6 +962,21 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
       if (m.type === 'stream_event') {
         const ev = m.event as { type?: string; delta?: { type?: string; text?: string } }
         if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) feed(ev.delta.text)
+        // Claude Code's web search: the beat, its performance on the globe ("searching the web"), the card's status.
+        const block = (ev as { content_block?: { type?: string; name?: string } }).content_block
+        if (ev.type === 'content_block_start' && block?.type === 'tool_use' && block.name === 'WebSearch') {
+          turn.onBeat()
+          turn.fromWeb = true
+          webStage = stageTool('web_search', {})
+          if (turn.research) {
+            turn.research = 'looking'
+            orbPanel('status', 'Searching the web')
+          }
+        }
+        if (ev.type === 'message_start' && webStage) {
+          stageToolEnd(webStage, false)
+          webStage = null
+        }
         if (ev.type === 'message_stop') {
           // End of one model message (more may follow after a tool): finish its last line.
           if (hold) split.push(dropTag(hold))

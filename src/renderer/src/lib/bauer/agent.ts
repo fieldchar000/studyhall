@@ -585,7 +585,11 @@ async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: M
   let actions: BriefAction[] = []
   let logId: string | null = null
   const stream = speechStream((t) => say(t))
+  // Nothing said yet a moment after you stop talking: a short beat right away ("Mm-hmm.", "On it."), so there's
+  // never a silence while Claude starts (it's skipped if the answer has already begun).
+  const quickBeat = setTimeout(() => stream.beat(), 700)
   const offs = [
+    { off: () => clearTimeout(quickBeat) }.off,
     api.nova.onSpeak((t) => stream.push(t)),
     api.nova.onBeat(() => stream.beat()),
     api.nova.onTool(async ({ id, name, input }) => {
