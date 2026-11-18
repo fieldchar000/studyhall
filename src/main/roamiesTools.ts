@@ -7,7 +7,7 @@
 // This file is Studyhall's side: it gives tools.mjs what Roamies' app gives it (its hands helper, the overlay, a
 // yes/no question, the promises store), and turns each tool into one of Nova's (Agent SDK) tools.
 
-import { app, BrowserWindow, clipboard, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, clipboard, nativeImage, shell, type WebContents } from 'electron'
 import { fork } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -15,8 +15,9 @@ import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { getPrefs } from './prefs'
 import { get, getProfileId, getSetting, setSetting } from './db'
-import { agentsUi, orbActivity, orbPanel, inkClear, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
+import { agentsUi, orbPanel, inkClear, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
 import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
+import { stageDone } from './novaStage'
 import { claudeAgentRoute, claudeBlocked, claudeModelId, claudeReady } from './claude'
 import { startFocus, stopFocus } from './buddy'
 import { screen } from 'electron'
@@ -194,7 +195,6 @@ export function roamies(): Promise<Any> {
       for (const f of old) if (f?.text) await store.addFact(f.text)
       setSetting('nova_facts', null)
     }
-    ;({ describe } = await import('./roamies/activity.mjs'))
     const { createTools } = await import('./roamies/tools.mjs')
     rt = createTools({
       allowActions: () => (getPrefs().novaHands ?? 'off') !== 'off',
@@ -235,7 +235,21 @@ export function roamies(): Promise<Any> {
       onInkGone: (why: string) => notes.push(`The drawing on screen went away (${why}).`),
       workdir: homedir(),
       pointScale: () => 'pixels',
-      skipAllow: () => false
+      skipAllow: () => false,
+      // Automated tests: the screenshot is of a test window (placed, for drawing, as if at the top left of the main
+      // screen), never your real screen.
+      ...(OFFSCREEN
+        ? {
+            hostShot: async ({ file }: { file: string }) => {
+              const shot = await testWindowShot()
+              if (!shot) return { ok: false, error: 'Screen capture failed.' }
+              await writeFile(file, Buffer.from(shot.data, 'base64'))
+              const wa = screen.getPrimaryDisplay().workArea
+              const img = nativeImage.createFromBuffer(Buffer.from(shot.data, 'base64')).getSize()
+              return { ok: true, pixels: [img.width, img.height], bounds: [wa.x, wa.y, shot.width, shot.height], title: `"${shot.title}"` }
+            }
+          }
+        : {})
     })
     setInterval(() => void reminderTick().catch(() => {}), 15_000).unref()
     await startAgents()
@@ -343,49 +357,9 @@ export function agentsBlock(said: string): string {
   return [agents.liveText(), desk?.along(said) ?? ''].filter(Boolean).join('\n')
 }
 
-// ---------- What Nova is doing (Roamies' activity.mjs), as a tag beside the globe ----------
-
-// Nova's own study tools, in the same words Roamies uses for its tools: [while it runs, once it's done].
-const NOVA_DOING: Record<string, [string, string]> = {
-  studyhall_actions: ['Updating Studyhall', 'Updated Studyhall'],
-  my_studyhall: ['Checking Studyhall', 'Checked Studyhall'],
-  my_day: ['Looking at your day', 'Looked at your day'],
-  teach: ['Getting a lesson ready', 'Got a lesson ready'],
-  find_material: ['Looking through your study files', 'Looked through your study files'],
-  read_material: ['Reading your notes', 'Read your notes'],
-  quiz_me: ['Making your quiz', 'Made your quiz'],
-  save_flashcards: ['Saving flashcards', 'Saved flashcards'],
-  youtube: ['Searching YouTube', 'Searched YouTube'],
-  play_music: ['Starting your music', 'Started your music'],
-  read_clipboard: ['Reading what you copied', 'Read what you copied'],
-  arrange_windows: ['Arranging your windows', 'Arranged your windows'],
-  video_transcript: ['Reading the video', 'Read the video'],
-  save_note: ['Saving a note', 'Saved a note'],
-  start_job: ['Starting a job', 'Started a job'],
-  draft_document: ['Drafting it', 'Drafted it'],
-  send_agent: ['Sending an agent', 'Sent an agent']
-}
-let describe: ((name: string, args: unknown) => [string, string] | null) | null = null
-const running = new Map<string, string>()
-let actSeq = 0
-const showDoing = (): void => orbActivity([...running.values()].at(-1) ?? null)
-/** A tool started: its line ("Searching the web") shows beside the globe until it ends. Returns the id to end it with. */
-export function toolStarted(name: string, args: unknown): string {
-  const id = 't' + ++actSeq
-  const d = NOVA_DOING[name] ?? describe?.(name, args ?? {}) ?? null
-  if (d) {
-    running.set(id, d[0])
-    showDoing()
-  }
-  return id
-}
-export function toolEnded(id: string): void {
-  if (running.delete(id)) showDoing()
-}
-/** The request ended (or was stopped): nothing is running any more. */
+/** Stop what's showing: the globe's tool performances end (talking to Nova again, Esc). */
 export function toolsStopped(): void {
-  running.clear()
-  showDoing()
+  stageDone()
 }
 
 /** A new request starts (what was seen before may be another page by now) / ends (marks of a request that drew
@@ -449,16 +423,12 @@ export async function roamiesSdkTools(tool: Tool, skip: Set<string>, onSlow: (na
         // The full check Roamies' agent framework runs before a tool (it also tidies small slips in how a call is written).
         let input = args
         const parsed = t.parameters?.safeParse?.(args)
+        if (parsed && !parsed.success && OFFSCREEN) console.info(`tool ${t.name} invalid>`, JSON.stringify(parsed.error.issues.slice(0, 6)).slice(0, 600))
         if (parsed && !parsed.success) return { content: [{ type: 'text', text: `That call doesn't fit: ${parsed.error.issues.slice(0, 6).map((i: Any) => `${i.path.join('.')}: ${i.message}`).join('; ')}` }], isError: true }
         if (parsed?.success) input = parsed.data
         // Automated tests never touch your real PC: nothing is opened, run, read from your files or captured from
         // your screen (a screenshot shows Studyhall's own hidden test window instead).
         if (OFFSCREEN && TEST_STUB[t.name]) return { content: [{ type: 'text', text: TEST_STUB[t.name] }] }
-        if (OFFSCREEN && t.name === 'take_screenshot') {
-          const shot = await testWindowShot()
-          if (!shot) return { content: [{ type: 'text', text: 'Screen capture failed.' }], isError: true }
-          return { content: [{ type: 'text', text: `Screenshot of "${shot.title}" (${shot.width}x${shot.height}, automated test window).` }, { type: 'image', data: shot.data, mimeType: 'image/jpeg' }] }
-        }
         try {
           const out = await t.execute(input, { toolCallId: `r${++callSeq}`, signal: abort.signal })
           if (OFFSCREEN) console.info(`tool ${t.name}>`, typeof out === 'string' ? out.slice(0, 400) : '[content]')
@@ -472,20 +442,4 @@ export async function roamiesSdkTools(tool: Tool, skip: Set<string>, onSlow: (na
         }
       })
     )
-}
-
-/** Promises → Studyhall tasks happen only when asked; this shows Nova's own steps checklist (plan_steps). */
-export function showPlanCard(state: { id: string; title: string; steps: string[]; now: number[]; skipped: { step: number; why: string }[]; done: Set<number> }): void {
-  showCards([
-    {
-      id: state.id,
-      kind: 'steps',
-      title: state.title,
-      items: state.steps.map((s, i) => {
-        const n = i + 1
-        const skip = state.skipped.find((x) => x.step === n)
-        return { label: s, detail: skip ? `✗ ${skip.why}` : state.done.has(n) ? '✓ done' : state.now.includes(n) ? '… now' : undefined }
-      })
-    }
-  ])
 }

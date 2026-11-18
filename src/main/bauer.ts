@@ -141,29 +141,17 @@ export function inkPlay(seg: unknown, near?: { x: number; y: number } | null): v
   if (!orbWin.isVisible()) orbWin.showInactive()
   orbWin.webContents.send('bauer:ink', { play: seg })
 }
-/** The globe floats beside a big drawing (an in-depth explanation's card in the middle of the screen), then off again. */
-let drawHome: NodeJS.Timeout | null = null
-export function orbBesideDrawing(on: boolean): void {
-  if (drawHome) clearTimeout(drawHome)
-  drawHome = null
-  if (!orbWin || orbWin.isDestroyed()) return
-  if (!on) {
-    drawHome = setTimeout(orbHome, 15_000)
-    return
-  }
-  const b = OFFSCREEN ? screen.getPrimaryDisplay().workArea : orbWin.getBounds()
-  orbTo({ x: b.x + 80, y: b.y + b.height / 2 - 40 }) // the left edge: big cards sit in the middle
-}
 /** Roamies' reminders card (today / later), on the globe's layer. */
 export function inkReminders(msg: Record<string, unknown>): void {
   if (suspended || !orbWin || orbWin.isDestroyed()) return
   if (!orbWin.isVisible()) orbWin.showInactive()
   orbWin.webContents.send('bauer:ink', { reminders: msg })
 }
-/** What Nova is doing right now ("Searching the web"), shown beside the globe; null when nothing is running. */
-export function orbActivity(text: string | null): void {
+/** The globe acts out what Nova is doing (Roamies' agent layer): a tool's performance and task tag, the step trail,
+ *  the start and end of a request (see novaStage.ts). */
+export function orbAgent(e: Record<string, unknown>): void {
   if (suspended || !orbWin || orbWin.isDestroyed()) return
-  orbWin.webContents.send('bauer:ink', { activity: text })
+  orbWin.webContents.send('bauer:ink', { agent: e })
 }
 /** The research card (Roamies' agent-panel.js): open it, say what's being checked, stream the answer, finish. */
 export function orbPanel(op: 'open' | 'status' | 'append' | 'end' | 'fail' | 'close', text?: string): void {

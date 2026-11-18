@@ -19,13 +19,14 @@ import { claudeBase, claudeBlocked, claudeChecked, claudePauseNotice, claudeMode
 import type { NovaEffort } from '@shared/types'
 import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
-import { APP_NAMES, openApp, orbActivity, orbEmote, orbPanel, setSubject, showCards, showMarks } from './bauer'
+import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMarks } from './bauer'
+import { stageDone, stageStart, stageTool, stageToolEnd, trailEnd, trailPlan, trailSettle } from './novaStage'
 import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, type Seen, type SeenControl } from './eyes'
 import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { claudeChat, draftWithConnectors } from './claude'
 import { voiceConfirm, voiceSay } from './voice'
-import { agentGates, agentsBlock, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, showPlanCard, toolEnded, toolStarted, toolsStopped, turnHooks, wantsAgent } from './roamiesTools'
+import { agentGates, agentsBlock, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent } from './roamiesTools'
 import { memoryOnEnd, noteExchange } from './novaMemory'
 import { get, getProfileId } from './db'
 import { briefText, startFocus, stopFocus } from './buddy'
@@ -62,8 +63,14 @@ Tools are called for real, never written out as text (never write "[call …]").
 How to help (use as few tool calls as the task needs; independent ones can go in one turn, in the order given):
 - Anything in Studyhall (tasks, deadlines, calendar events, lectures, study logs, habits, money, journal, check-ins, inbox, a Studyhall page): studyhall_actions, with every change in one call, then say what you did in one short sentence.
 - Questions about their own Studyhall stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first. "What's my day?": my_day.
-- Explaining or teaching a topic in depth ("how does a black hole form", "walk me through the cardiac cycle", "teach me how beta blockers work"): draw with deep: true, 4 to 10 beats, one card per beat that build on each other: a plain card only for the big picture and the summary, and every beat between is a picture card that shows its stage (flow for a sequence of steps or a pathway, model with motion for an organ, a cell part or a machine, molecule for a drug or compound, bars or graph for numbers and effects, table to compare types, timeline for history, photo with labels for anatomy), each say line explaining like a teacher (why, an everyday comparison, what to notice), never reading the card. Use teach instead when they want it from their own notes (teach with material_id), or about the page they're reading (teach with on_screen), or ask for a lesson with a quiz at the end. After teach, reply with just the word: Okay.
-- Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file, find_material first, then teach with material_id, read_material (to answer from them) or quiz_me.
+- Explaining: match how they ask. You're a live tutor beside them, not a textbook: talk it through, and let the pen show it.
+  • "Explain X", "what is X", "how does X work" (a plain ask): the short version. Two to four spoken sentences, the main idea first. One quick drawing only if a picture says it better than words (one card, or one small flow); no lesson, no pile of cards.
+  • "ELI5", "explain like I'm five", "simply", "dumb it down", "I don't get it": simple words and one everyday comparison that carries the whole idea (a thermostat, a lock and key, traffic lights), three to five sentences, said like a friend. A drawing only if it's the comparison itself.
+  • "Teach me X", "walk me through X", "in depth", "properly", "step by step": the live lesson. One draw call with deep: true, 3 to 7 beats that build on each other. Each beat is one stage on its own picture card (flow for steps or a pathway, model with motion for an organ, a cell part or a machine, molecule for a drug or compound, bars or graph for numbers and effects, table to compare, timeline for history, photo with labels for anatomy; a plain card only for the big picture and the wrap-up), and its say line explains that stage like a teacher: why it happens, how it connects to the last one, an everyday comparison where it helps, what to notice. Never read the card out. Say one short line first ("Let's build it up."), then draw.
+  • "Explain this", "what am I looking at", "this slide", "I'm confused by this", "what does this diagram mean" (something on their screen): take_screenshot of that window first, then one draw call that walks through what's actually there, pointing at it: 3 to 7 beats, each beat's marks on the real part of the slide or page (ring or underline the words, an arrow along the diagram's arrow, a label beside a box), placed by where they are in the screenshot, with a say line that explains that part (what it means, why it's there, how it connects to the part before). The last beat ties it together in one sentence they can remember. Add a card only for something the slide leaves out (a missing step, a quick example). Never read the slide out word for word; explain it.
+  • From their own study files (they name their notes, a week, a module or a file): find_material, then read_material, then teach it the same live way (draw beats from what their notes say), or teach with material_id when they ask for a lesson with a quiz at the end.
+  After a live lesson, stop: the drawing speaks its lines. Offer one next step in a few words only if it helps ("Want me to quiz you on it?").
+- Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file, find_material first, then read_material (to answer or teach from them) or quiz_me.
 - "Quiz me" / "test me": quiz_me (from a study file's own questions, or their flashcards), then run it yourself, one question per reply. Offer save_flashcards for the ones they missed.
 - The web: "pull up a video on X", "a study music playlist": youtube, then open the best real result. "Find me a source for…", facts that change: web_search, then web_fetch to read a page (offset reads on). Music to study to: play_music (Spotify in Studyhall; they have Premium), or a YouTube playlist if they ask for YouTube. Never make up links: only open ones a search gave you.
 - Notes from a video or page: video_transcript (YouTube) or web_fetch, then save_note (and save_flashcards if they want cards). A revision sheet or summary from their own study files, saved into Studyhall's Notes ("make a revision sheet from all my week 3 notes"): start_job with a full brief; just say you're on it.
@@ -75,7 +82,7 @@ You can really help on their PC: look at the screen or just one app's window, op
 When you need to see a specific app they mention ("my browser", "this form", "Word"), look at just that app (read_window or take_screenshot with its name), not the whole screen.
 Be fast: every tool call is a round trip. To point at or click something whose exact words you know (they said them, or you've seen them), use draw or act_in_app click_text with that text right away, with no read_window or screenshot first. Don't guess words: for "the version number" or "the settings icon" you don't know what's written, so look first. read_window and act_in_app results include the text on screen (and text scrolled out of view), so read pages from them; take_screenshot only when you need to see something words can't tell you (pictures, layout, colours, text inside images or PDFs).
 Show, don't just tell on their screen too: when they ask how to do something in an app, walk them through it with draw (one call: a beat per step, each a target on that step's control with a label and wait 'click'; the next step is found after they click). When they ask what they're looking at or where something is, mark it with draw (ring, frame, label, point) instead of describing where it is.
-The screen keeps changing: they switch pages, tabs, apps and windows between messages. For every new request about the screen ("this page", "here", "where's X"), work from a fresh look, never from what you saw for an earlier request. If they say you marked the wrong thing, look again before retrying. Trust your earlier answers: old screenshots are trimmed from the conversation after a while; that doesn't make an earlier answer wrong.
+The screen keeps changing: they switch pages, tabs, apps and windows between messages. For every new request about the screen ("this page", "here", "where's X"), work from a fresh look, never from what you saw for an earlier request. Just look again without saying so (never "let me check the screen again" or "the slide has changed"). If they say you marked the wrong thing, look again before retrying. Trust your earlier answers: old screenshots are trimmed from the conversation after a while; that doesn't make an earlier answer wrong.
 Several things in one request ("do x, then y, then z"): do every one, in order. With 3 or more parts, show them with plan_steps (it rides along with your other tool calls). If a step is blocked, refused or fails, still do the ones after it that don't depend on it, then say which step didn't happen and why. Before your final reply, check from the tool results that each step was really done.
 A cookie or consent banner, sign-up pop-up or "open in app" prompt in the way of the task: close it and carry on (for cookies pick reject or essential-only, else close; never accept on their behalf), and mention it in a few words.
 Name apps and things the way they know them (Word, the Downloads folder, "that button"), never your tools or steps (no "read_window", "act_in_app", "I'll take a screenshot").
@@ -303,7 +310,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
     ),
     tool(
       'teach',
-      'Teach or explain a topic live: cards, a pixel diagram, the key line underlined on their screen, their own notes or a source page, and its own voice. With material_id (from find_material) it teaches from THEIR study file. After calling it, reply with just the word: Okay. (It is not said out loud.)',
+      'A ready-made lesson with a quiz at the end, from THEIR study file (material_id from find_material), only when they ask for a lesson with a quiz. For explaining a topic or what is on their screen, use draw instead (see Explaining). After calling it, reply with just the word: Okay. (It is not said out loud.)',
       {
         topic: z.string().describe('the subject in a few words'),
         wiki: z.string().describe('exact English Wikipedia article title that best covers it, or "" (ignored with material_id)'),
@@ -512,21 +519,14 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
   // A drawing's "hand it off" button: a background agent, as Roamies does.
   turnHooks.handoff = (task) => turnHooks.ask(`Send an agent to: ${task}`)
   turnHooks.ready = () => !wc.isDestroyed()
-  turnHooks.plan = (args) => {
-    if (args.steps?.length) plan = { id: `plan${Date.now()}`, title: 'Steps', steps: args.steps.map(String), now: [], skipped: [], done: new Set() }
-    if (!plan) return
-    const now: number[] = Array.isArray(args.now) ? args.now : []
-    for (const n of plan.now) if (!now.includes(n)) plan.done.add(n) // the steps it moved on from are done
-    plan.now = now
-    if (Array.isArray(args.skipped)) plan.skipped = [...plan.skipped, ...args.skipped]
-    showPlanCard(plan)
-  }
+  // plan_steps: Roamies' step trail beside the globe, ticking off as each part's tool calls succeed.
+  turnHooks.plan = (args) => trailPlan(args)
   const all = [...tools, ...(await roamiesSdkTools(tool, new Set(), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
   // Every tool shows what it's doing beside the globe while it runs (Roamies' activity lines).
   for (const t of all) {
     const run = t.handler
     t.handler = (async (args: Record<string, unknown>, extra: unknown) => {
-      const id = toolStarted(t.name, args)
+      const id = stageTool(t.name, args)
       const tr = turnRef.current
       if (tr && (t.name === 'web_search' || t.name === 'web_fetch')) {
         tr.fromWeb = true
@@ -541,10 +541,15 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
           orbPanel('status', t.name === 'web_fetch' && host ? `Reading ${host}` : 'Searching the web')
         }
       }
+      let failed = true
+      let said = ''
       try {
-        return await run(args as never, extra)
+        const out = (await run(args as never, extra)) as { isError?: boolean; content?: { type: string; text?: string }[] }
+        failed = !!out?.isError
+        said = out?.content?.find((c) => c.type === 'text')?.text ?? ''
+        return out as never
       } finally {
-        toolEnded(id)
+        stageToolEnd(id, failed, said)
       }
     }) as typeof run
   }
@@ -797,8 +802,6 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   const blocked = claudeBlocked(p)
   if (blocked) {
     if (agentish) agentsHatch(false)
-    orbActivity('Offline: Claude is paused')
-    setTimeout(() => orbActivity(null), 7000)
     return { text: '', quiet: false, tools: [], error: blocked, notice: claudePauseNotice(p) ?? undefined }
   }
   const { model, effort } = settingsFor()
@@ -905,6 +908,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     }
   }
   c.turnRef.current = turn
+  stageStart(agentish)
   c.turns++
   c.at = Date.now()
   c.push({
@@ -938,6 +942,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
           split.end()
         }
       } else if (m.type === 'assistant') {
+        trailSettle() // a model turn ended: the step trail ticks off what it did
         for (const b of m.message.content as { type: string; name?: string }[]) if (b.type === 'tool_use' && b.name) turn.tools.push(b.name.replace(/^mcp__nova__/, ''))
       } else if (m.type === 'result') {
         cost += m.total_cost_usd ?? 0
@@ -966,7 +971,8 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     const msg = e instanceof Error ? e.message : String(e)
     console.warn('Nova turn failed:', msg)
     if (turn.research) orbPanel('fail', msg)
-    toolsStopped()
+    trailEnd()
+    stageDone()
     if (agentish) agentsHatch(false)
     // The saved conversation couldn't be picked up (its file is gone, or it's broken): start a fresh one and try again.
     if (c.resumed && c.turns <= 1 && !spoken && !turn.tools.length) {
@@ -985,7 +991,8 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   recordClaudeCost(model, effort, Date.now() - started, cost)
   console.info(`Nova turn: ${model}/${effort} in ${Date.now() - started} ms, tools: ${turn.tools.join(', ') || 'none'}`)
   roamiesTurnEnd()
-  toolsStopped()
+  trailEnd()
+  stageDone()
   if (agentish) agentsHatch(false)
   const reply = spoken.replace(MARKER, '').replace(/\s+/g, ' ').trim()
   noteExchange(said, reply, userName())

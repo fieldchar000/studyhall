@@ -18,15 +18,7 @@ export function OrbWindow(): React.JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const globe = useRef<NovaGlobe | null>(null)
-  const [state, setState] = useState<OrbState>('idle')
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
-  const [at, setAt] = useState({ x: -999, y: -999, r: 40 })
-  // Speech bubbles: your words under the globe, Nova's above it (filling in as it speaks).
-  const [you, setYou] = useState<{ text: string; listening: boolean } | null>(null)
-  const [nova, setNova] = useState<{ text: string; done: boolean; at: number } | null>(null)
-  const micLevel = useRef(0)
-  // What Nova is doing right now ("Searching the web"), beside the globe while a tool runs.
-  const [doing, setDoing] = useState<string | null>(null)
 
   useEffect(() => {
     if (!canvas.current) return
@@ -36,7 +28,6 @@ export function OrbWindow(): React.JSX.Element {
       return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
     }
     const offs: (() => void)[] = []
-    let raf = 0
     let gone = false
     void startGlobe({
       canvas: canvas.current,
@@ -47,92 +38,32 @@ export function OrbWindow(): React.JSX.Element {
       onMenu: (x, y) => setMenu({ x, y }),
       onHot: (h) => api.bauer.mouse(h),
       onHome: (x, y) => api.bauer.orbHome(x, y),
-      extraHit: (x, y) => inside(menuRef.current, x, y), // (bubbles never catch clicks)
+      extraHit: (x, y) => inside(menuRef.current, x, y),
       home: null
     }).then((g) => {
       if (gone) return
       globe.current = g
       g.onInk((msg) => api.bauer.inkEvent(msg))
+      // Everything Nova does reaches the character (Roamies' agent layer) through the globe: its state, the words for
+      // its bubbles (yours while you talk, Nova's as they're said), voice and mic levels, emotes, drawings and cards.
       offs.push(
         api.bauer.onOrbConfig((c) => g.setConfig(c)),
-        api.bauer.onLevels((l) => {
-          if (l.kind === 'voice') g.voice(l.env)
-          else {
-            g.mic(l.v)
-            micLevel.current = l.v
-          }
-        }),
+        api.bauer.onLevels((l) => (l.kind === 'voice' ? g.voice(l.env) : g.mic(l.v))),
         api.bauer.onOrbGo((p) => g.goTo(p)),
         api.bauer.onEmote((e) => g.emote(e)),
-        api.bauer.onInk((op) => {
-          if ('activity' in op) setDoing(op.activity ?? null)
-          else g.ink(op)
-        }),
+        api.bauer.onInk((op) => g.ink(op)),
         api.bauer.onLayer((b) => g.setOrigin(b.x, b.y)),
-        api.bauer.onCursor((p) => g.cursor(p.x, p.y))
+        api.bauer.onCursor((p) => g.cursor(p.x, p.y)),
+        api.bauer.onBubble((b) => g.bubble(b)),
+        api.bauer.onOrb((s) => g.setState(s.state, s.cursor, s.text))
       )
-      // The bubbles and menu ride along with the globe.
-      const track = (): void => {
-        const w = g.where()
-        setAt((a) => (Math.abs(a.x - w.x) > 0.5 || Math.abs(a.y - w.y) > 0.5 || a.r !== w.r ? w : a))
-        raf = requestAnimationFrame(track)
-      }
-      raf = requestAnimationFrame(track)
     })
     return () => {
       gone = true
       for (const off of offs) off()
-      cancelAnimationFrame(raf)
     }
   }, [])
 
-  useEffect(
-    () =>
-      api.bauer.onBubble((b) => {
-        if (b.who === 'you') {
-          if (b.done && !b.text) setYou(null)
-          else setYou({ text: b.text, listening: !b.text })
-          if (!b.text && !b.done) setNova(null) // you're talking: Nova's last words make room
-          return
-        }
-        setNova((n) => {
-          if (b.done) return n ? { ...n, done: true, at: Date.now() } : n
-          const text = b.append && n && !n.done ? `${n.text} ${b.text}`.replace(/\s+/g, ' ').trim() : b.text
-          return { text, done: false, at: Date.now() }
-        })
-      }),
-    []
-  )
-  useEffect(
-    () =>
-      api.bauer.onOrb((s) => {
-        setState(s.state)
-        globe.current?.setState(s.state, s.cursor)
-        // Nothing spoken (voice off) or something went wrong: the words still show above the globe.
-        if (s.text && (s.state === 'done' || s.state === 'error'))
-          setNova((n) => (n && Date.now() - n.at < 10_000 && s.state !== 'error' ? n : { text: s.text!, done: true, at: Date.now() }))
-      }),
-    []
-  )
-  // Your words step aside a few seconds after Nova starts answering; Nova's fade a while after it finishes.
-  useEffect(() => {
-    if (!nova || !you || you.listening) return
-    const t = setTimeout(() => setYou(null), 4000)
-    return () => clearTimeout(t)
-  }, [nova, you])
-  useEffect(() => {
-    if (!nova?.done) return
-    const t = setTimeout(() => setNova(null), Math.min(14_000, 5000 + nova.text.length * 45))
-    return () => clearTimeout(t)
-  }, [nova])
-  useEffect(() => {
-    if (state !== 'done' && state !== 'error') return
-    const t = setTimeout(() => {
-      setState('idle')
-      globe.current?.setState('idle')
-    }, 9000)
-    return () => clearTimeout(t)
-  }, [state])
   // The menu closes when the mouse wanders off for a moment.
   useEffect(() => {
     if (!menu) return
@@ -140,52 +71,11 @@ export function OrbWindow(): React.JSX.Element {
     return () => clearTimeout(t)
   }, [menu])
 
-  // Bubbles are centred on the globe (kept on screen); a long answer shows its newest lines.
-  const W = Math.min(340, window.innerWidth - 16)
-  const bx = Math.max(8, Math.min(window.innerWidth - W - 8, at.x - W / 2))
-  // Centred on the globe; near a screen edge the bubble hugs that edge and its tail moves along to the globe.
-  const edge = bx <= 8 ? 'flex-start' : bx >= window.innerWidth - W - 8 ? 'flex-end' : 'center'
-  const tailAt = edge === 'center' ? '50%' : edge === 'flex-start' ? `${Math.max(14, at.x - bx)}px` : `calc(100% - ${Math.max(14, bx + W - at.x)}px)`
-  const roomAbove = at.y - at.r * 1.35 > 90
-  const roomBelow = at.y + at.r * 1.35 < window.innerHeight - 70
-  const novaText = nova ? (nova.text.length > 260 ? `…${nova.text.slice(-260).replace(/^\S*\s/, '')}` : nova.text) : ''
   return (
     <>
       {/* Roamies drives the canvas; clicks on it (not on a wrapper) are the globe's. */}
       <canvas ref={canvas} className="fixed" style={{ imageRendering: 'pixelated' }} />
       <NovaPen />
-      {doing && at.x > -900 && (
-        <div className="nova-doing" style={at.x + at.r * 1.2 + 250 < window.innerWidth ? { left: at.x + at.r * 1.15, top: at.y - 12 } : { right: window.innerWidth - (at.x - at.r * 1.15), top: at.y - 12 }}>
-          <i />
-          {doing}…
-        </div>
-      )}
-      {nova && novaText && (
-        <div className="nova-bub-row" style={{ left: bx, width: W, justifyContent: edge, ...(roomAbove ? { bottom: window.innerHeight - (at.y - at.r * 1.35) } : { top: at.y + at.r * 1.35 + (you ? 64 : 0) }) }}>
-          <div className={`nova-bub nova-bub-nova ${nova.done ? 'is-done' : ''} ${roomAbove ? '' : 'flip'}`} style={{ ['--tail' as string]: tailAt }}>
-            <span className="nova-bub-who">{state === 'error' ? 'hmm' : 'nova'}</span>
-            {novaText}
-          </div>
-        </div>
-      )}
-      {you && (
-        <div className="nova-bub-row" style={{ left: bx, width: W, justifyContent: edge, ...(roomBelow ? { top: at.y + at.r * 1.6 } : { bottom: window.innerHeight - (at.y - at.r * 1.35) + (nova ? 70 : 0) }) }}>
-          <div className={`nova-bub nova-bub-you ${roomBelow ? '' : 'flip'}`} style={{ ['--tail' as string]: tailAt }}>
-            <span className="nova-bub-who">you</span>
-            {you.listening ? (
-              <span className="nova-bub-listen" aria-label="Listening">
-                <i />
-                <i />
-                <i />
-                <i />
-                <i />
-              </span>
-            ) : (
-              `“${you.text}”`
-            )}
-          </div>
-        </div>
-      )}
       {menu && (
         <div ref={menuRef} className="orb-menu fixed flex gap-1 rounded-full p-1" style={{ left: Math.min(menu.x + 8, window.innerWidth - 190), top: menu.y + 8 }}>
           <button

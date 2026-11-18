@@ -1280,7 +1280,7 @@ export interface Api {
     /** (orb window) */
     onBubble(cb: (b: { who: 'you' | 'nova'; text: string; append: boolean; done: boolean }) => void): () => void
     /** (orb window) a drawing to play (Roamies' ink segment), or clear */
-    onInk(cb: (op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number }; agents?: unknown; activity?: string | null; pen?: unknown; panel?: { op: 'open' | 'status' | 'append' | 'end' | 'fail' | 'close'; text?: string } }) => void): () => void
+    onInk(cb: (op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number }; agents?: unknown; agent?: Record<string, unknown>; pen?: unknown; panel?: { op: 'open' | 'status' | 'append' | 'end' | 'fail' | 'close'; text?: string } }) => void): () => void
     /** (orb window) where its layer is on the screen (DIP) */
     /** Where your mouse is on the globe's layer (watched by Studyhall itself, so the globe can always be grabbed). */
     onCursor(cb: (p: { x: number; y: number }) => void): () => void

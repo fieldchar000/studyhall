@@ -1,4 +1,4 @@
-// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/tools.mjs, unchanged)
+// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/tools.mjs). Studyhall change: an optional hostShot (the host takes the screenshot, as on Linux), used by automated test copies so they never capture your real screen.
 // The agent's tools: screen capture, reading and working other apps (the "hands" helper), files, commands,
 // web pages and memory. Every file, command, URL and open goes through safety.mjs first.
 import { execFile, spawn } from 'node:child_process';
@@ -231,7 +231,7 @@ export function sideSearchFor(route) {
 // Every request and redirect hop of web_fetch goes through safety.mjs, by name and by the addresses it resolves to.
 export const guardFetch = async (url) => { const v = await checkFetch(url); return v.level === BLOCK ? `Blocked for safety: ${v.reason}` : null; };
 
-export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false }) {
+export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null }) {
   // Relative paths (and run_command) start in workdir: the home folder for the chat, its own folder for an agent.
   const at = (p) => { const s = String(p ?? ''); return /^~(?=$|\/|\\)/.test(s) || path.isAbsolute(s) || /^[a-z]:[\\/]/i.test(s) ? s : path.join(workdir, s); };
   const where = workdir === HOME ? "the user's home folder" : `its working folder (${workdir})`;
@@ -339,6 +339,14 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
     // Windows without the helper (or when it fails on the whole screen): PowerShell's screenshot below.
     const viaHands = process.platform === 'darwin' || (process.platform === 'win32' && HANDS);
     const t = String(target || 'screen').trim();
+    // Studyhall: a screenshot the host takes (automated tests: a test window, never your real screen).
+    if (hostShot) {
+      const res = await hostShot({ file, target: t });
+      if (!res?.ok) throw new Error(res?.error || 'Screen capture failed.');
+      const [iw, ih] = res.pixels, b = res.bounds, scale = pointScale();
+      lastShot = { ...shotMap(b, iw, ih, scale), bounds: b, win: null, turn };
+      return { content: [{ type: 'text', text: `Screenshot of ${res.title ?? 'the window'}${shotUnits(iw, ih, scale, 'draw')}.` }, await imageBlock(file, 'image/jpeg')] };
+    }
     const shot = viaHands ? await handsShot(file, t).catch((e) => { if (process.platform === 'win32' && t === 'screen') return null; throw e; }) : null;
     if (shot) return shot;
     if (process.platform === 'win32') {

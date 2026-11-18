@@ -26,6 +26,11 @@ https://github.com/KenKaiii/Roamies
   `src/renderer/src/lib/jarvis/roamies/agent-home.js`, `minis.js`, `glass.js`, `agent-panel.js`, `markdown.js` and
   `sfx.js`, copied from Roamies 0.1.41 and recoloured to Studyhall's blue. `src/main/ggweb.ts` stands in for GG
   Coder's web tools with Nova's own.
+- The character on screen: `src/renderer/src/lib/jarvis/roamies/agent.js` (its speech, listening and thinking bubbles, the task
+  tag, and the pen it turns into to draw while it explains), `agent-tools.js` (a little performance for each tool),
+  `agent-cards.js` (the step trail) and `pen.js` (your Ctrl+Alt pen trail), copied from Roamies 0.1.41 and recoloured;
+  `src/main/novaStage.ts` ports Roamies' tool-to-performance map and step trail, and `src/renderer/src/lib/jarvis/nova.ts`
+  its host (host.js). `src/main/penTrail.ts` rewrites its Windows pen helper's loop detection (voice-win ink.rs).
 - `native/roamies-hands`: Roamies' Windows hands helper (Rust: UI Automation, Windows OCR, screenshots, clicking and
   typing), copied unchanged and built on GitHub Actions.
 - Nova's brain follows Roamies' design. It makes one fast Claude call with Nova's own tools and
