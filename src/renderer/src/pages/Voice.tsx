@@ -10,7 +10,7 @@ import { wakeWordHeard } from '@/lib/bauer/heard'
 import { applyBrief, loadBriefContext } from '@/lib/briefApply'
 import { api } from '@/lib/data'
 import { chime, engine } from '@/lib/voice/engine'
-import { stopSpeaking } from '@/lib/voice/speak'
+import { speakAndWait, stopSpeaking } from '@/lib/voice/speak'
 import { BriefReview } from '@/components/BriefReview'
 import { Icon } from '@/components/ui'
 
@@ -78,7 +78,8 @@ export default function VoicePanel(): React.JSX.Element {
         setDid({ reply: r.reply, actions: r.actions, logId: r.logId, undone: false })
         setPhase('did')
         chime(false)
-        if (prefs.bauerTalk !== false) say(r.reply)
+        // (A live lesson speaks for itself, sentence by sentence.)
+        if (prefs.bauerTalk !== false && !r.quiet) say(r.reply)
       } catch (e) {
         setMessage(e instanceof Error ? e.message : String(e))
         setPhase('error')
@@ -166,7 +167,10 @@ export default function VoicePanel(): React.JSX.Element {
               setMessage(`“Hey ${c.name ?? 'Nova'}” couldn’t start: ${e instanceof Error ? e.message : String(e)}`)
               setPhase('error')
             })
-        } else if (c.type === 'listen') void listen(!!c.ptt)
+        } else if (c.type === 'listen') {
+          void api.eyes.stop().catch(() => {}) // talking to Nova stops a lesson or walkthrough
+          void listen(!!c.ptt)
+        }
         else if (c.type === 'stop') engine.cancel()
         else if (c.type === 'wake') engine.externalWake()
         else if (c.type === 'confirm') {
@@ -174,9 +178,12 @@ export default function VoicePanel(): React.JSX.Element {
           setPhase('confirm')
           chime()
         } else if (c.type === 'say') {
-          // The next step of a walkthrough: say it, and show it on the floating orb.
+          // A walkthrough step or a lesson beat: say it, and show it on the floating orb.
           api.bauer.orb('done', c.text)
-          say(c.text)
+          if (c.id != null) {
+            const id = c.id
+            void speakAndWait(c.text).finally(() => api.voice.said(id))
+          } else say(c.text)
         }
         else if (c.type === 'finish') void engine.finish()
         else if (c.type === 'cancel') {

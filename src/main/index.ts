@@ -47,10 +47,11 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   } else if (why !== 'not connected' && prefs.novaOffline === false) throw new Error(`Nova is paused because ${why}.`)
   return aiChat(messages, schema, maxTokens)
 }
-import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer } from './bauer'
-import { startKeys, stopKeys, voiceAnswer, voiceConfirm, voiceSay } from './voice'
+import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro } from './bauer'
+import { startKeys, stopKeys, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
+import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
-import { helpOnScreen, pointerHooks, stopEyes, stopWalkthrough } from './eyes'
+import { eyes, helpOnScreen, pointerHooks, stopEyes, stopWalkthrough } from './eyes'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
@@ -254,6 +255,7 @@ function bauerAway(away: boolean): void {
   setBauerSuspended(off)
   setClaudeWarm(!off) // no Claude sessions waiting while Studyhall is closed
   if (off) {
+    stopTeach()
     stopHands()
     stopEyes()
   }
@@ -447,6 +449,19 @@ if (!app.requestSingleInstanceLock()) {
         handle('eyes:stop', () => {
           stopWalkthrough()
           stopHands()
+          stopTeach()
+        })
+        handle('eyes:window', async () => {
+          const r = await eyes({ cmd: 'window', exclude: [process.pid] }).catch(() => null)
+          const w = r?.ok ? (r.window as { title: string; app: string }) : null
+          return w ? { title: String(w.title ?? ''), app: String(w.app ?? '') } : null
+        })
+        // A live lesson. Resolves once Nova starts talking (the rest carries on); null without Claude.
+        handle('eyes:teach', async (_e, topic: string, onScreen: boolean, wiki: string) => {
+          const p = getPrefs()
+          if (claudeBlocked(p)) return null
+          const r = await teach(String(topic).slice(0, 200), !!onScreen && p.novaEyes !== 'off', String(wiki ?? '').slice(0, 120))
+          return r.started ? r.first || 'Here you go.' : null
         })
         handle('mouth:status', () => mouthStatus())
         handle('mouth:install', () => installMouth())
@@ -489,6 +504,10 @@ if (!app.requestSingleInstanceLock()) {
     // Messages from the Bauer panel window (show / hide / what it's doing).
     ipcMain.on('voice:window', (e, msg) => {
       if (!isVoiceContents(e.sender) || !msg || typeof msg !== 'object') return
+      if (msg.type === 'said') {
+        voiceSaid(Number(msg.id))
+        return
+      }
       if (msg.type === 'confirm') {
         voiceAnswer(Number(msg.id), !!msg.ok)
         return
@@ -515,6 +534,13 @@ if (!app.requestSingleInstanceLock()) {
     handsHooks.show = showPointer
     handsHooks.hide = hidePointer
     handsHooks.confirm = voiceConfirm
+    teachHooks.ask = (messages, onText) => claudeChat(messages, undefined, getPrefs(), 'explain', onText)
+    teachHooks.prefs = getPrefs
+    teachHooks.live = liveCards
+    teachHooks.highlight = showHighlight
+    teachHooks.hideHighlight = hidePointer
+    teachHooks.sayAndWait = voiceSayAndWait
+    teachHooks.source = wikiIntro
     configureAi((st) => broadcast('ai:status', st))
     configureVoice({
       url: appUrl,

@@ -100,6 +100,7 @@ static class NovaEyes
         switch (cmd)
         {
             case "snapshot": return Snapshot(r);
+            case "window": return WindowInfo(r);
             case "invoke":
                 {
                     var e = El(r); object p;
@@ -157,6 +158,19 @@ static class NovaEyes
             return h;
         }
         return IntPtr.Zero;
+    }
+
+    /** Just the window you are using: title, app and position (fast; no controls). */
+    static Dictionary<string, object> WindowInfo(Dictionary<string, object> r)
+    {
+        var hwnd = TargetWindow(r);
+        if (hwnd == IntPtr.Zero) throw new Exception("No window");
+        uint pid; GetWindowThreadProcessId(hwnd, out pid);
+        string app = "";
+        try { app = Process.GetProcessById((int)pid).ProcessName; } catch { }
+        var root = AutomationElement.FromHandle(hwnd);
+        var wr = root.Current.BoundingRectangle;
+        return Ok("window", new Dictionary<string, object> { { "hwnd", hwnd.ToInt64() }, { "title", root.Current.Name }, { "app", app }, { "pid", pid }, { "rect", new[] { (int)wr.X, (int)wr.Y, (int)wr.Width, (int)wr.Height } } });
     }
 
     static readonly HashSet<string> Interactive = new HashSet<string> {

@@ -474,12 +474,132 @@ async function findAnswer(text: string): Promise<{ reply: string; found: boolean
   return { reply, found }
 }
 
-/** Everything Bauer hears goes through here: explain, answer from your notes, or act. */
-export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean }> {
+// ---------- The router: what kind of request is this? ----------
+// With Claude connected (PC), a quick Haiku call sorts each request, knowing which window you're in:
+// so "show me how a tree grows" is a lesson, while "show me how to export this" is about your screen.
+
+type RouteKind = 'action' | 'question' | 'teach' | 'screen_help' | 'screen_do' | 'draft' | 'ignore'
+const ROUTE_SCHEMA = {
+  type: 'object',
+  properties: {
+    kind: { type: 'string', enum: ['action', 'question', 'teach', 'screen_help', 'screen_do', 'draft', 'ignore'] },
+    topic: { type: 'string' },
+    wiki: { type: 'string' },
+    onScreen: { type: 'boolean' }
+  },
+  required: ['kind', 'topic', 'wiki', 'onScreen'],
+  additionalProperties: false
+}
+const ROUTE_SYSTEM = `You sort one spoken request to Nova, the assistant inside Studyhall (a study and life planner). Pick kind:
+- action: change or open something in Studyhall (tasks, calendar, lectures, events, habits, journal, money, check-ins, timers, focus, flashcards) or open a website or app.
+- question: a quick factual question with a short answer (a sum, a date, a one-line definition) or about the user's own Studyhall data.
+- teach: the user wants to understand or learn something: "explain …", "how does … work", "why …", "show me how a tree grows", "teach me …". A topic, not how to use an app.
+- screen_help: how to do something in the app or website on their screen, where something is on screen, or what something on screen means.
+- screen_do: they ask Nova to click, type or change something in the app on screen for them.
+- draft: write or draft a document, essay, letter, plan or notes.
+- ignore: small talk, fragments, or not meant for Nova.
+topic: for teach and question, the subject in a few words; otherwise "".
+wiki: for teach, the exact title of the English Wikipedia article that best covers it (e.g. "Black hole", "Photosynthesis", "Tree"), or "" if none fits.
+onScreen: for teach, true only if the window they're in is about that topic (e.g. they're reading its Wikipedia page); otherwise false.`
+
+const ROUTE_EXAMPLES = `
+
+Examples (window, request → kind, wiki, onScreen):
+Window "Roamies - GitHub - Opera", request "show me how a tree grows" → teach | how trees grow | Tree | no
+Window "Black hole - Wikipedia - Opera", request "explain how this works" → teach | black holes | Black hole | yes
+Window "Document1 - Word", request "how do I export this as a PDF?" → screen_help | | | no
+Window "Budget.xlsx - Excel", request "click save for me" → screen_do | | | no
+Window "New Tab - Opera", request "where's the bookmarks button?" → screen_help | | | no
+Window "YouTube - Opera", request "why is the sky blue?" → teach | why the sky is blue | Rayleigh scattering | no
+Window "Studyhall", request "what's 12 times 60?" → question | 12 times 60 | | no
+Window "Studyhall", request "move my gym session to six" → action | | | no
+Window "Inbox - Outlook", request "draft a revision plan for chemistry" → draft | | | no`
+
+let claudeOk: { at: number; ok: boolean } = { at: 0, ok: false }
+async function claudeReady(): Promise<boolean> {
+  if (Date.now() - claudeOk.at < 30_000) return claudeOk.ok
+  let ok = false
+  try {
+    ok = (await api.claude.status()).signedIn
+  } catch {
+    ok = false
+  }
+  claudeOk = { at: Date.now(), ok }
+  return ok
+}
+
+async function route(text: string): Promise<{ kind: RouteKind; topic: string; wiki: string; onScreen: boolean } | null> {
+  if (!onPc() || !(await claudeReady())) return null
+  const win = await api.eyes.window().catch(() => null)
+  const raw = await api.ai.chat(
+    [
+      { role: 'system', content: ROUTE_SYSTEM + ROUTE_EXAMPLES },
+      { role: 'user', content: `${win ? `Window they're in: "${win.title}" (${win.app})\n` : ''}Request: ${text}` }
+    ],
+    ROUTE_SCHEMA,
+    200,
+    'act'
+  )
+  const r = JSON.parse(raw) as { kind: RouteKind; topic: string; wiki: string; onScreen: boolean }
+  return ['action', 'question', 'teach', 'screen_help', 'screen_do', 'draft', 'ignore'].includes(r.kind) ? r : null
+}
+
+/** Teach a topic live (cards, diagram, the key bit underlined), or the classic explain cards without Claude. */
+async function teachTopic(topic: string, onScreen: boolean, said: string, source: 'voice' | 'typed' | 'pad', wiki = ''): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; quiet?: boolean }> {
+  const first = await api.eyes.teach(topic, onScreen, wiki).catch(() => null)
+  if (first) {
+    await logAnswer(said, `Teaching: ${topic}`, source)
+    return { reply: first, actions: [], logId: null, quiet: true }
+  }
+  const reply = await explainTopic(topic)
+  await logAnswer(said, reply, source)
+  return { reply, actions: [], logId: null }
+}
+
+/** Everything Nova hears goes through here: teach, explain, answer, look at your screen, or act. */
+export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean }> {
   const text = stripWake(raw)
   // Small talk, one word, half a sentence: say nothing, do nothing, log nothing.
   const nothing = { reply: source === 'typed' ? 'I didn’t find anything to do in that.' : '', actions: [] as BriefAction[], logId: null, ignored: true }
   if (isChitChat(text)) return nothing
+  // Clearly about Studyhall itself (tasks, calendar…)? Straight to the usual actions, no sorting needed.
+  const studyhallWords = /\b(tasks?|to-?dos?|calendar|lectures?|deadlines?|exams?|assignments?|habits?|journal|remind(er)?s?|timer|focus session|budgets?|spent|grades?|flashcards?|decks?|inbox|check-?in)\b/i.test(text)
+  // "Explain …" / "teach me …": clearly a lesson, so skip the sorting step (it saves ~2.5 s).
+  const quickTopic = onPc() && !studyhallWords ? explainTopicFrom(text) : null
+  if (quickTopic && (await claudeReady())) {
+    const win = await api.eyes.window().catch(() => null)
+    const words = quickTopic.toLowerCase().match(/[a-z]{4,}/g) ?? []
+    const onScreen = !!win && words.some((w) => win.title.toLowerCase().includes(w.replace(/s$/, '')))
+    return teachTopic(quickTopic, onScreen, text, source)
+  }
+  if (!studyhallWords) {
+    const r = await route(text).catch((e) => (console.warn('Nova: sorting the request failed', e), null))
+    if (r) {
+      if (r.kind === 'ignore') return nothing
+      if (r.kind === 'teach') return teachTopic(r.topic || text, r.onScreen, text, source, r.wiki)
+      if (r.kind === 'screen_help' || r.kind === 'screen_do') {
+        const said = await api.eyes.help(text, r.kind === 'screen_do').catch((e) => `I couldn’t look at your screen: ${e instanceof Error ? e.message : String(e)}`)
+        if (said) {
+          await logAnswer(text, said, source)
+          return { reply: said, actions: [], logId: null }
+        }
+      }
+      if (r.kind === 'draft') {
+        const said = await api.claude.draft(text).catch((e) => `I couldn’t draft that: ${e instanceof Error ? e.message : String(e)}`)
+        await logAnswer(text, said, source)
+        return { reply: said, actions: [], logId: null }
+      }
+      if (r.kind === 'question') {
+        const found = await findAnswer(text)
+        const reply = found.found ? found.reply : ((await chatAnswer(text).catch(() => null)) ?? found.reply)
+        await logAnswer(text, reply, source)
+        return { reply, actions: [], logId: null }
+      }
+      // 'action' (and anything else): the usual Studyhall actions below.
+      const done = await runBauer(text, { source, mode })
+      if (done.actions.length) return { reply: done.reply, actions: done.actions, logId: done.logId }
+    }
+  }
   // "Draft a document about…" with your Claude connectors (only when you've switched that on).
   if (onPc() && wantsDocument(text)) {
     const prefs = await api.prefs.get()

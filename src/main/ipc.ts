@@ -330,6 +330,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     if ('novaSpeed' in patch && Number.isFinite(Number(patch.novaSpeed))) clean.novaSpeed = Math.min(1.3, Math.max(0.8, Number(patch.novaSpeed)))
     if ('novaOrbSize' in patch && ['small', 'default', 'cursor'].includes(String(patch.novaOrbSize))) clean.novaOrbSize = String(patch.novaOrbSize) as Prefs['novaOrbSize']
     if ('novaEyes' in patch && ['off', 'auto'].includes(String(patch.novaEyes))) clean.novaEyes = String(patch.novaEyes) as Prefs['novaEyes']
+    if ('novaSource' in patch && ['source', 'none'].includes(String(patch.novaSource))) clean.novaSource = String(patch.novaSource) as Prefs['novaSource']
     if ('novaHands' in patch && ['off', 'ask', 'allowed'].includes(String(patch.novaHands))) clean.novaHands = String(patch.novaHands) as Prefs['novaHands']
     if (Array.isArray(patch.novaHandsApps)) clean.novaHandsApps = (patch.novaHandsApps as unknown[]).map(String).filter((a) => /^[\w .-]{1,40}$/.test(a)).slice(0, 30)
     if ('sky' in patch && ['nebula', 'blackhole', 'galaxy', 'off'].includes(String(patch.sky))) clean.sky = String(patch.sky) as Prefs['sky']

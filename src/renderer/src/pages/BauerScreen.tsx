@@ -1,7 +1,7 @@
 // Bauer on the PC screen (outside the Studyhall window). Three tiny transparent windows share
 // this file: #orb (the floating Bauer), #cards (cards beside your work) and #circle (circle-to-ask).
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { BauerCard, OrbState } from '@shared/types'
 import { api } from '@/lib/data'
 import { lookAt, type LookKind } from '@/lib/bauer/look'
@@ -146,10 +146,38 @@ export function OrbWindow(): React.JSX.Element {
 
 // ---------- Pointing: a ring around one control on your screen ----------
 
+type PointMsg = {
+  rect: { x: number; y: number; width: number; height: number }
+  label: string
+  step: string
+  highlight?: boolean
+  arrowTo?: { x: number; y: number } | null
+}
+
 export function PointWindow(): React.JSX.Element {
-  const [p, setP] = useState<{ rect: { x: number; y: number; width: number; height: number }; label: string; step: string } | null>(null)
-  useEffect(() => api.bauer.onPoint(setP), [])
+  const [p, setP] = useState<PointMsg | null>(null)
+  useEffect(() => api.bauer.onPoint((m) => setP(m as PointMsg | null)), [])
   if (!p) return <div className="fixed inset-0" />
+  // The key bit: an underline and a soft box under the text, a tag, and an arrow to Nova's cards.
+  if (p.highlight) {
+    const r = p.rect
+    const tagX = Math.min(window.innerWidth - 200, r.x + r.width + 10)
+    const from = { x: r.x + r.width + 8, y: r.y + r.height / 2 }
+    return (
+      <div className="pointer-events-none fixed inset-0 select-none">
+        <div className="nova-mark-box" style={{ left: r.x - 4, top: r.y - 2, width: r.width + 8, height: r.height + 4 }} />
+        <div className="nova-mark" style={{ left: r.x - 2, top: r.y + r.height + 1, width: r.width + 4 }} />
+        <div className="nova-ring-label" style={{ left: Math.max(8, tagX), top: Math.max(8, r.y - 34) }}>
+          {p.label}
+        </div>
+        {p.arrowTo && (
+          <svg className="nova-arrow" aria-hidden="true">
+            <path d={`M${from.x},${from.y} C${from.x + 80},${from.y} ${p.arrowTo.x - 80},${p.arrowTo.y} ${p.arrowTo.x - 6},${p.arrowTo.y}`} />
+          </svg>
+        )}
+      </div>
+    )
+  }
   const pad = 8
   const r = { x: p.rect.x - pad, y: p.rect.y - pad, w: p.rect.width + pad * 2, h: p.rect.height + pad * 2 }
   // The label sits below the ring, or above it near the bottom of the screen.
@@ -169,8 +197,25 @@ export function PointWindow(): React.JSX.Element {
 
 export function CardsWindow(): React.JSX.Element {
   const [cards, setCards] = useState<BauerCard[]>([])
+  const [source, setSource] = useState<{ title: string; url: string; image: string | null; sentences: string[] } | null>(null)
+  const [mark, setMark] = useState<{ n: number; tag: string } | null>(null)
   const [name, setName] = useState('nova')
   useEffect(() => api.bauer.onCards((c) => setCards(c ?? [])), [])
+  // A live lesson arrives step by step.
+  useEffect(
+    () =>
+      api.bauer.onLive((op) => {
+        if (op.op === 'start') {
+          setCards([])
+          setSource(op.source)
+          setMark(null)
+        } else if (op.op === 'card') setCards((cs) => [...cs.filter((c) => c.id !== op.card.id), op.card])
+        else if (op.op === 'item') setCards((cs) => cs.map((c) => (c.id === op.id ? { ...c, items: [...(c.items ?? []), op.item] } : c)))
+        else if (op.op === 'quiz') setCards((cs) => cs.map((c) => (c.id === op.id ? { ...c, quiz: [...(c.quiz ?? []), op.q] } : c)))
+        else if (op.op === 'mark') setMark({ n: op.n, tag: op.tag })
+      }),
+    []
+  )
   useEffect(() => {
     void api.prefs
       .get()
@@ -180,93 +225,238 @@ export function CardsWindow(): React.JSX.Element {
   const close = (id: string): void => {
     const next = cards.filter((c) => c.id !== id)
     setCards(next)
-    if (!next.length) {
+    if (!next.length && !source) {
       api.bauer.mouse(false)
       void api.bauer.clearCards()
     }
   }
   const clearAll = (): void => {
     setCards([])
+    setSource(null)
+    setMark(null)
     api.bauer.mouse(false)
     void api.bauer.clearCards()
   }
+
+  // The arrow from the underlined sentence to the first card.
+  const wrap = useRef<HTMLDivElement>(null)
+  const [arrow, setArrow] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!mark || !wrap.current) return setArrow(null)
+    // Bring the underlined line into view on the source page first.
+    wrap.current.querySelector('.src-mark')?.scrollIntoView({ block: 'center' })
+    const box = wrap.current.getBoundingClientRect()
+    const from = wrap.current.querySelector('.src-mark')?.getBoundingClientRect()
+    const to = wrap.current.querySelector('.px-card')?.getBoundingClientRect()
+    if (!from || !to) return setArrow(null)
+    setArrow({ x1: from.right - box.left + 4, y1: from.top - box.top + from.height / 2, x2: to.left - box.left - 8, y2: to.top - box.top + 34 })
+  }, [mark, cards.length, source])
+
   const kindLabel: Record<BauerCard['kind'], string> = {
     summary: 'answer',
     answer: 'answer',
     photo: 'photo',
-    points: 'key points',
+    points: 'answer',
     timeline: 'timeline',
     steps: 'steps',
     chart: 'in numbers',
-    quiz: 'quick check'
+    quiz: 'quick check',
+    diagram: 'diagram'
   }
+  const count = cards.length + (source ? 1 : 0)
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto overflow-x-hidden p-2.5">
-      {cards.map((c) => (
-        <article key={c.id} {...hover} className="px-card shrink-0">
-          <header className="px-bar">
-            <i />
-            <i />
-            <span>
-              {name} · {kindLabel[c.kind]}
-            </span>
-            <button onClick={() => close(c.id)} aria-label="Close">
-              ×
-            </button>
-          </header>
-          <div className="px-body">
-            {c.kind !== 'photo' && <h3>{c.title}</h3>}
-            {c.image && <img src={c.image} alt="" className={`px-img ${c.kind === 'photo' ? 'max-h-64' : 'max-h-40'}`} />}
-            {c.body && <p className="whitespace-pre-line">{c.body}</p>}
-            {c.kind === 'points' && c.items && (
-              <ul className="px-list">
-                {c.items.map((it, i) => (
-                  <li key={i}>
-                    <b>{it.label}</b>
-                    {it.detail && <span> {it.detail}</span>}
-                  </li>
-                ))}
-              </ul>
+    <div ref={wrap} className={`relative flex h-full gap-4 overflow-y-auto overflow-x-hidden p-2.5 ${source ? 'flex-row items-start' : 'flex-col'}`}>
+      {source && (
+        <article {...hover} className="src-page shrink-0">
+          <div className="src-url">en.wikipedia.org/wiki/{source.title.replace(/ /g, '_')}</div>
+          <h2>{source.title}</h2>
+          <div className="src-from">From Wikipedia, the free encyclopedia</div>
+          {source.image && <img src={source.image} alt="" />}
+          <p>
+            {source.sentences.map((s, i) =>
+              mark && mark.n === i ? (
+                <span key={i} className="src-mark">
+                  {s}
+                  <em>{mark.tag}</em>{' '}
+                </span>
+              ) : (
+                <span key={i}>{s} </span>
+              )
             )}
-            {c.kind === 'timeline' && c.items && (
-              <ol className="px-timeline">
-                {c.items.map((it, i) => (
-                  <li key={i}>
-                    <b>{it.label}</b>
-                    {it.detail && <span>{it.detail}</span>}
-                  </li>
-                ))}
-              </ol>
-            )}
-            {c.kind === 'steps' && c.items && (
-              <ol className="px-steps">
-                {c.items.map((it, i) => (
-                  <li key={i}>
-                    <em>{i + 1}</em>
-                    <div>
+          </p>
+          <button className="src-more" onClick={() => void api.app.openUrl(source.url)}>
+            Open the full page
+          </button>
+        </article>
+      )}
+      <div className={`flex min-w-0 flex-col gap-4 ${source ? 'flex-1' : ''}`}>
+        {cards.map((c) => (
+          <article key={c.id} {...hover} className="px-card shrink-0">
+            <header className="px-bar">
+              <i />
+              <i />
+              <span>
+                {name} · {kindLabel[c.kind]}
+              </span>
+              <button onClick={() => close(c.id)} aria-label="Close">
+                ×
+              </button>
+            </header>
+            <div className="px-body">
+              {c.kind !== 'photo' && <h3>{c.title}</h3>}
+              {c.image && <img src={c.image} alt="" className={`px-img ${c.kind === 'photo' ? 'max-h-64' : 'max-h-40'}`} />}
+              {c.body && <p className="whitespace-pre-line">{c.body}</p>}
+              {c.kind === 'points' && c.items && (
+                <ul className="px-list">
+                  {c.items.map((it, i) => (
+                    <li key={i} className="px-in">
+                      <b>{it.label}</b>
+                      {it.detail && <span> {it.detail}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {c.kind === 'timeline' && c.items && (
+                <ol className="px-timeline">
+                  {c.items.map((it, i) => (
+                    <li key={i} className="px-in">
                       <b>{it.label}</b>
                       {it.detail && <span>{it.detail}</span>}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            )}
-            {c.kind === 'chart' && c.items && <PixelChart items={c.items} unit={c.unit} />}
-            {c.kind === 'quiz' && c.quiz && <Quiz card={c} />}
-            {(c.source || c.link) && (
-              <div className="px-foot">
-                <span>{c.source}</span>
-                {c.link && <button onClick={() => void api.app.openUrl(c.link!)}>read more</button>}
-              </div>
-            )}
-          </div>
-        </article>
-      ))}
-      {cards.length > 1 && (
-        <button {...hover} className="px-clear" onClick={clearAll}>
-          CLEAR ALL · {cards.length}
-        </button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {c.kind === 'steps' && c.items && (
+                <ol className="px-steps">
+                  {c.items.map((it, i) => (
+                    <li key={i} className="px-in">
+                      <em>{i + 1}</em>
+                      <div>
+                        <b>{it.label}</b>
+                        {it.detail && <span>{it.detail}</span>}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {c.kind === 'chart' && c.items && <PixelChart items={c.items} unit={c.unit} />}
+              {c.kind === 'diagram' && c.svg && <PixelDiagram svg={c.svg} />}
+              {c.kind === 'quiz' && c.quiz && c.quiz.length > 0 && <Quiz card={c} />}
+              {(c.source || c.link) && c.kind !== 'diagram' && (
+                <div className="px-foot">
+                  <span>{c.source}</span>
+                  {c.link && !source && <button onClick={() => void api.app.openUrl(c.link!)}>read more</button>}
+                </div>
+              )}
+            </div>
+          </article>
+        ))}
+        {count > 1 && (
+          <button {...hover} className="px-clear" onClick={clearAll}>
+            CLEAR ALL · {count}
+          </button>
+        )}
+      </div>
+      {arrow && (
+        <svg className="src-arrow" aria-hidden="true">
+          <defs>
+            <marker id="src-head" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="#a8c8ff" />
+            </marker>
+          </defs>
+          <path d={`M${arrow.x1},${arrow.y1} C${arrow.x1 + 40},${arrow.y1} ${arrow.x2 - 40},${arrow.y2} ${arrow.x2},${arrow.y2}`} markerEnd="url(#src-head)" />
+        </svg>
       )}
+    </div>
+  )
+}
+
+// ---------- Pixel diagrams: Claude's small drawing, shapes made pixel-chunky, labels crisp ----------
+
+const SVG_TAGS = new Set(['svg', 'g', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'path', 'text', 'tspan'])
+const SVG_ATTRS = new Set([
+  'viewBox', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'width', 'height', 'points', 'd', 'fill', 'stroke',
+  'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'opacity', 'fill-opacity', 'stroke-opacity', 'transform',
+  'font-size', 'text-anchor', 'dominant-baseline'
+])
+
+/** Keep only plain shapes and text (no scripts, links, images or styles). */
+function cleanSvg(raw: string): { shapes: string; labels: { x: number; y: number; text: string; size: number; anchor: string; fill: string }[]; w: number; h: number } | null {
+  const doc = new DOMParser().parseFromString(raw, 'image/svg+xml')
+  const root = doc.documentElement
+  if (root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return null
+  const vb = (root.getAttribute('viewBox') ?? '0 0 320 200').split(/[\s,]+/).map(Number)
+  const [, , w, h] = vb.length === 4 && vb.every(Number.isFinite) ? vb : [0, 0, 320, 200]
+  const labels: { x: number; y: number; text: string; size: number; anchor: string; fill: string }[] = []
+  const walk = (el: Element): void => {
+    for (const child of [...el.children]) {
+      const tag = child.nodeName.toLowerCase()
+      if (!SVG_TAGS.has(tag)) {
+        child.remove()
+        continue
+      }
+      for (const a of [...child.attributes]) if (!SVG_ATTRS.has(a.name) || /url\(|javascript:|expression/i.test(a.value)) child.removeAttribute(a.name)
+      if (tag === 'text') {
+        // Labels are shown as crisp pixel text on top, not inside the chunky picture.
+        const t = (child.textContent ?? '').trim().slice(0, 40)
+        if (t && !child.getAttribute('transform'))
+          labels.push({
+            x: Number(child.getAttribute('x') ?? 0),
+            y: Number(child.getAttribute('y') ?? 0),
+            text: t,
+            size: Number(child.getAttribute('font-size') ?? 14) || 14,
+            anchor: child.getAttribute('text-anchor') ?? 'start',
+            fill: child.getAttribute('fill') ?? '#e4eeff'
+          })
+        child.remove()
+        continue
+      }
+      walk(child)
+    }
+  }
+  for (const a of [...root.attributes]) if (!SVG_ATTRS.has(a.name) && a.name !== 'xmlns') root.removeAttribute(a.name)
+  root.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  walk(root)
+  return { shapes: new XMLSerializer().serializeToString(root), labels: labels.slice(0, 14), w, h }
+}
+
+function PixelDiagram({ svg }: { svg: string }): React.JSX.Element | null {
+  const clean = useRef(cleanSvg(svg)).current
+  const canvas = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    if (!clean || !canvas.current) return
+    const c = canvas.current
+    // Drawn small, then shown 3× bigger without smoothing: the pixel look.
+    const scale = 3
+    c.width = Math.round(clean.w / scale)
+    c.height = Math.round(clean.h / scale)
+    const img = new Image()
+    img.onload = () => {
+      const x = c.getContext('2d')!
+      x.imageSmoothingEnabled = false
+      x.clearRect(0, 0, c.width, c.height)
+      x.drawImage(img, 0, 0, c.width, c.height)
+    }
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(clean.shapes)}`
+  }, [clean])
+  if (!clean) return null
+  return (
+    <div className="px-diagram" style={{ aspectRatio: `${clean.w} / ${clean.h}` }}>
+      <canvas ref={canvas} />
+      {clean.labels.map((l, i) => (
+        <span
+          key={i}
+          style={{
+            left: `${(l.x / clean.w) * 100}%`,
+            top: `${(l.y / clean.h) * 100}%`,
+            fontSize: Math.max(9, Math.min(12, l.size * 0.75)),
+            color: /^#[0-9a-f]{3,8}$/i.test(l.fill) ? l.fill : '#e4eeff',
+            transform: `translate(${l.anchor === 'middle' ? '-50%' : l.anchor === 'end' ? '-100%' : '0'}, -85%)`
+          }}
+        >
+          {l.text}
+        </span>
+      ))}
     </div>
   )
 }

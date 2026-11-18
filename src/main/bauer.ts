@@ -6,7 +6,7 @@
 
 import { BrowserWindow, desktopCapturer, globalShortcut, ipcMain, nativeImage, screen, shell } from 'electron'
 import { spawn } from 'node:child_process'
-import type { BauerCard, OrbState, WikiSummary } from '@shared/types'
+import type { BauerCard, LiveOp, OrbState, WikiSummary } from '@shared/types'
 import { getPrefs } from './prefs'
 import { getSetting, setSetting } from './db'
 
@@ -306,9 +306,47 @@ function closeCircle(): void {
 
 // ---------- Pointing (eyes): a ring around one control on your screen ----------
 
+// While Nova points, the orb flies over beside the ring (like a cursor), then home again.
+let orbFlight: NodeJS.Timeout | null = null
+let orbAway = false
+function flyOrb(to: { x: number; y: number }): void {
+  if (!orbWin || orbWin.isDestroyed() || !orbWin.isVisible() || OFFSCREEN || orbSize() === 'cursor') return
+  if (orbFlight) clearInterval(orbFlight)
+  const [x0, y0] = orbWin.getPosition()
+  let i = 0
+  const n = 16
+  orbFlight = setInterval(() => {
+    i++
+    const t = i / n
+    const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2 // ease in-out
+    if (orbWin && !orbWin.isDestroyed()) orbWin.setPosition(Math.round(x0 + (to.x - x0) * e), Math.round(y0 + (to.y - y0) * e))
+    if (i >= n && orbFlight) {
+      clearInterval(orbFlight)
+      orbFlight = null
+    }
+  }, 18)
+}
+/** Put the orb's centre at a screen point (the orb sits at its window's bottom-right corner). */
+function orbTo(p: { x: number; y: number }): void {
+  const px = ORB_PX[orbSize()]
+  orbAway = true
+  flyOrb({ x: Math.round(p.x - (ORB_W - 12 - px / 2)), y: Math.round(p.y - (ORB_H - 12 - px / 2)) })
+}
+function orbHome(): void {
+  if (!orbAway) return
+  orbAway = false
+  const wa = screen.getPrimaryDisplay().workArea
+  const saved = getSetting<{ x: number; y: number }>('bauer_orb_pos')
+  flyOrb(saved && onSomeScreen(saved.x, saved.y) ? saved : { x: wa.x + wa.width - ORB_W - 8, y: wa.y + wa.height - ORB_H - 8 })
+}
+
 /** Show the pointer around a screen area (DIP). It never catches clicks and never shows in screenshots. */
 export function showPointer(rect: Electron.Rectangle, label: string, step: string): void {
   if (suspended) return
+  // The orb comes over to just right of (or below) the control, like a cursor pointing at it.
+  const d = screen.getDisplayMatching(rect).workArea
+  const right = rect.x + rect.width + 70 < d.x + d.width
+  orbTo(right ? { x: rect.x + rect.width + 46, y: rect.y + rect.height / 2 + 20 } : { x: rect.x + rect.width / 2, y: rect.y + rect.height + 70 })
   const display = screen.getDisplayMatching(rect)
   const b = display.bounds
   if (!pointWin || pointWin.isDestroyed()) {
@@ -326,9 +364,82 @@ export function showPointer(rect: Electron.Rectangle, label: string, step: strin
 }
 
 export function hidePointer(): void {
+  orbHome()
   if (!pointWin || pointWin.isDestroyed()) return
   pointWin.webContents.send('bauer:point', null)
   pointWin.hide()
+}
+
+// ---------- Live lessons: cards appear step by step (and a brief source page beside them) ----------
+
+const LIVE_W = 830 // two columns: the source page and the cards
+
+/** Send one step of a live lesson to the cards window (opening it, two columns wide when there's a source page). */
+export function liveCards(op: LiveOp): void {
+  if (suspended) return
+  const w = ensureCards()
+  if (op.op === 'start' && !OFFSCREEN) {
+    const wa = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
+    const width = op.source ? LIVE_W : CARDS_W
+    w.setBounds({ x: wa.x + wa.width - width - 12, y: wa.y + 12, width, height: wa.height - 24 })
+  }
+  if (op.op === 'start') cards = []
+  const send = (): void => {
+    w.webContents.send('bauer:live', op)
+    if (!w.isVisible()) w.showInactive()
+  }
+  if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)
+  else send()
+}
+
+/** Where the cards window is (for the arrow from the key bit on your screen). */
+export function cardsBounds(): Electron.Rectangle | null {
+  return cardsWin && !cardsWin.isDestroyed() && cardsWin.isVisible() ? cardsWin.getBounds() : null
+}
+
+/** Underline the key bit on your screen, with a tag and an arrow towards Nova's cards. */
+export function showHighlight(rect: Electron.Rectangle, tag: string): void {
+  if (suspended) return
+  const display = screen.getDisplayMatching(rect)
+  const b = display.bounds
+  if (!pointWin || pointWin.isDestroyed()) {
+    pointWin = overlayWindow(b, '#point')
+    pointWin.setIgnoreMouseEvents(true)
+    pointWin.on('closed', () => (pointWin = null))
+  } else if (!OFFSCREEN) pointWin.setBounds(b)
+  const cb = cardsBounds()
+  const arrowTo = cb ? { x: cb.x - b.x, y: Math.min(cb.y + 120, cb.y + cb.height / 2) - b.y } : null
+  const w = pointWin
+  const send = (): void => {
+    w.webContents.send('bauer:point', { rect: { x: rect.x - b.x, y: rect.y - b.y, width: rect.width, height: rect.height }, label: tag, step: '', highlight: true, arrowTo })
+    w.showInactive()
+  }
+  if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)
+  else send()
+}
+
+/** The opening paragraphs of the best Wikipedia article for a topic (free; only the topic is sent). */
+export async function wikiIntro(topic: string): Promise<{ title: string; url: string; image: string | null; text: string } | null> {
+  const q = topic.trim().slice(0, 120)
+  if (!q) return null
+  const search = await fetch(`https://en.wikipedia.org/w/rest.php/v1/search/title?q=${encodeURIComponent(q)}&limit=1`, { headers: UA })
+  if (!search.ok) return null
+  const page = ((await search.json()) as { pages?: { key: string; title: string }[] }).pages?.[0]
+  if (!page) return null
+  const api = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts%7Cpageimages&exintro=1&explaintext=1&redirects=1&pithumbsize=480&format=json&formatversion=2&titles=${encodeURIComponent(page.title)}`
+  const res = await fetch(api, { headers: UA })
+  if (!res.ok) return null
+  const p = ((await res.json()) as { query?: { pages?: { title: string; extract?: string; thumbnail?: { source: string } }[] } }).query?.pages?.[0]
+  if (!p?.extract) return null
+  let image: string | null = null
+  if (p.thumbnail?.source && /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(p.thumbnail.source)) {
+    const img = await fetch(p.thumbnail.source, { headers: UA }).catch(() => null)
+    if (img?.ok) {
+      const type = img.headers.get('content-type') || 'image/jpeg'
+      if (/^image\/(png|jpeg|gif|webp)/.test(type)) image = `data:${type};base64,${Buffer.from(await img.arrayBuffer()).toString('base64')}`
+    }
+  }
+  return { title: p.title, url: `https://en.wikipedia.org/wiki/${encodeURIComponent(p.title.replace(/ /g, '_'))}`, image, text: p.extract.slice(0, 2400) }
 }
 
 // ---------- Wikipedia (for "explain …") ----------

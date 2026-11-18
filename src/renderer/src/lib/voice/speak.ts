@@ -155,3 +155,24 @@ export function stopSpeaking(): void {
   }
   setSpeaking(false)
 }
+
+/** Say this and resolve when it has finished (live lessons wait for each sentence before the next). */
+export async function speakAndWait(text: string, voice?: string, speed?: number): Promise<void> {
+  if (await speak(text, voice, speed)) return
+  // No Kokoro voice: the one built into Windows / Android, waiting for it to finish.
+  await new Promise<void>((resolve) => {
+    try {
+      if (!('speechSynthesis' in window) || !text) return resolve()
+      const u = new SpeechSynthesisUtterance(text)
+      const v = speechSynthesis.getVoices().find((x) => /^en/i.test(x.lang))
+      if (v) u.voice = v
+      u.rate = 1.04
+      u.onend = () => resolve()
+      u.onerror = () => resolve()
+      speechSynthesis.speak(u)
+      setTimeout(resolve, 3000 + text.length * 90) // never wait forever
+    } catch {
+      resolve()
+    }
+  })
+}

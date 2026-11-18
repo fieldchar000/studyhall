@@ -313,6 +313,30 @@ export function voiceAnswer(id: number, ok: boolean): void {
   answers.delete(id)
 }
 
+/** Say something and wait until it has been said (live lessons). Gives up after a generous time. */
+let saySeq = 0
+const saying = new Map<number, () => void>()
+export function voiceSayAndWait(text: string): Promise<void> {
+  if (suspended || !text) return Promise.resolve()
+  ensureWindow()
+  const id = ++saySeq
+  send({ type: 'say', text, id })
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      saying.delete(id)
+      resolve()
+    }, 4000 + text.length * 110)
+    saying.set(id, () => {
+      clearTimeout(t)
+      resolve()
+    })
+  })
+}
+export function voiceSaid(id: number): void {
+  saying.get(id)?.()
+  saying.delete(id)
+}
+
 /** Say something (e.g. the next step of a walkthrough), with Nova's voice. */
 export function voiceSay(text: string): void {
   if (suspended || !text) return

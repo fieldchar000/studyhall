@@ -510,6 +510,16 @@ export function NovaPage(): React.JSX.Element {
                   onChange={(v) => save({ novaEyes: v as Prefs['novaEyes'] })}
                 />
               </Row>
+              <Row title="Teaching something that isn’t on my screen" hint={`When you ask ${name} to explain a topic you’re not reading about, it can open a brief source page beside the cards and underline the key bit there.`}>
+                <Seg
+                  value={prefs?.novaSource ?? 'source'}
+                  options={[
+                    ['source', 'Show a source page'],
+                    ['none', 'Just explain']
+                  ]}
+                  onChange={(v) => save({ novaSource: v as Prefs['novaSource'] })}
+                />
+              </Row>
               <Row title="Walk me through it" hint="Rings step 1, waits for your click there, then shows step 2 (up to 8 steps). Esc stops.">
                 <input type="checkbox" checked={prefs?.novaWalk !== false} onChange={(e) => save({ novaWalk: e.target.checked })} aria-label="Walkthroughs" />
               </Row>

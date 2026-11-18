@@ -307,6 +307,7 @@ async function startSession(model: ModelKey, effort: NovaEffort, schema?: object
       model: MODEL_ID[model],
       effort,
       systemPrompt: WARM_SYSTEM,
+      includePartialMessages: true, // (so long answers can be shown and spoken while they are still being written)
       maxTurns: 4,
       ...(schema ? { outputFormat: { type: 'json_schema' as const, schema: schema as Record<string, unknown> } } : {})
     }
@@ -361,8 +362,9 @@ export function warmClaude(prefs: Prefs, purpose: AiPurpose = 'act', schema?: ob
   refill(model, effort, schema)
 }
 
-/** One request to Claude. With a JSON schema, the answer is JSON matching it. */
-export async function claudeChat(messages: AiMessage[], schema: object | undefined, prefs: Prefs, purpose: AiPurpose): Promise<string> {
+/** One request to Claude. With a JSON schema, the answer is JSON matching it. With onText (and no schema), the
+ *  answer also arrives piece by piece as it is written. */
+export async function claudeChat(messages: AiMessage[], schema: object | undefined, prefs: Prefs, purpose: AiPurpose, onText?: (chunk: string) => void): Promise<string> {
   const { model, effort } = pickModel(prefs, purpose)
   const system = messages
     .filter((m) => m.role === 'system')
@@ -405,7 +407,10 @@ export async function claudeChat(messages: AiMessage[], schema: object | undefin
     for (;;) {
       if (r.done) break
       const m = r.value
-      if (m.type === 'rate_limit_event') noteLimit(m.rate_limit_info, prefs)
+      if (m.type === 'stream_event') {
+        const ev = m.event as { type?: string; delta?: { type?: string; text?: string } }
+        if (onText && ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) onText(ev.delta.text)
+      } else if (m.type === 'rate_limit_event') noteLimit(m.rate_limit_info, prefs)
       else if (m.type === 'assistant' && m.error === 'authentication_failed') set({ signedIn: false })
       else if (m.type === 'assistant' && (m.error === 'billing_error' || m.error === 'rate_limit')) {
         pausedUntil = Date.now() + 15 * 60_000

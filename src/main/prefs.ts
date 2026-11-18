@@ -29,6 +29,7 @@ const DEFAULTS: Prefs = {
   novaDrift: true,
   novaEyes: 'auto',
   novaWalk: true,
+  novaSource: 'source',
   novaHands: 'off',
   novaConnectors: false,
   novaShareStats: false,

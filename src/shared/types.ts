@@ -764,16 +764,26 @@ export type AiMessage = { role: 'system' | 'user' | 'assistant'; content: string
 /** A card Bauer puts beside your screen ("explain black holes", circle-and-ask answers). */
 export interface BauerCard {
   id: string
-  kind: 'summary' | 'photo' | 'points' | 'timeline' | 'answer' | 'steps' | 'chart' | 'quiz'
+  kind: 'summary' | 'photo' | 'points' | 'timeline' | 'answer' | 'steps' | 'chart' | 'quiz' | 'diagram'
   title: string
   body?: string
   image?: string // data: URL
   items?: { label: string; detail?: string; value?: number }[]
   unit?: string // chart: what the numbers are (e.g. "°C", "% of energy")
   quiz?: { q: string; options: string[]; answer: number; why?: string }[]
+  svg?: string // diagram: a small drawing (shapes only), shown in Nova's pixel style
   source?: string // e.g. "Wikipedia"
   link?: string // https link to read more
 }
+
+/** A live lesson, step by step, into Nova's cards window (and the brief source page beside them). */
+export type LiveOp =
+  | { op: 'start'; source: { title: string; url: string; image: string | null; sentences: string[] } | null }
+  | { op: 'card'; card: BauerCard }
+  | { op: 'item'; id: string; item: { label: string; detail?: string; value?: number } }
+  | { op: 'quiz'; id: string; q: { q: string; options: string[]; answer: number; why?: string } }
+  | { op: 'mark'; n: number; tag: string } // underline sentence n of the source page, with a tag and an arrow
+  | { op: 'end' }
 export interface WikiSummary {
   title: string
   extract: string
@@ -920,7 +930,7 @@ export type VoiceCommand =
   | { type: 'finish' } // talk key released: stop recording and write it down
   | { type: 'cancel' } // talk key turned into a shortcut: forget it
   | { type: 'type' } // Ctrl+Shift tapped: open the typing box
-  | { type: 'say'; text: string } // say this (the next step of a walkthrough)
+  | { type: 'say'; text: string; id?: number } // say this (a walkthrough step / a lesson beat); with an id, report back when finished
   | { type: 'confirm'; id: number; question: string } // hands: ask before doing something
 
 /** Nova's new ears (Parakeet + wake word), PC only. */
@@ -990,6 +1000,7 @@ export interface Prefs {
   novaDrift?: boolean // the orb bobs gently while idle (default on)
   novaEyes?: 'off' | 'auto' // look at your screen when a request needs it (default auto)
   novaWalk?: boolean // walkthroughs wait for your click, then show the next step (default on)
+  novaSource?: 'source' | 'none' // teaching something that isn't on your screen: open a brief source page beside the cards (default) or just explain
   novaHands?: 'off' | 'ask' | 'allowed' // pressing buttons / filling fields in your apps (default off)
   novaConnectors?: boolean // "draft a document…" may use your claude.ai connectors, asking first (default off)
   novaShareStats?: boolean // let Claude Code send usage statistics and crash reports to Anthropic (default off)
@@ -1135,6 +1146,8 @@ export interface Api {
     show(height: number, focus?: boolean): void
     hide(): void
     report(state: VoiceState): void
+    /** (listening window) finished saying something that was given an id */
+    said(id: number): void
   }
   app: {
     dataPath(): Promise<string>
@@ -1175,6 +1188,10 @@ export interface Api {
   eyes: {
     /** Look at the app you're using and help (points, and walks you through). Returns what to say, or null if the eyes are off. */
     help(text: string, act?: boolean): Promise<string | null>
+    /** The window you're using (title and app), or null. */
+    window(): Promise<{ title: string; app: string } | null>
+    /** Teach a topic live: cards, a diagram, the key bit underlined (on your screen or a source page), spoken as it goes. */
+    teach(topic: string, onScreen: boolean, wiki?: string): Promise<string>
     stop(): Promise<void>
     /** (listening window) your answer to a hands question */
     confirm(id: number, ok: boolean): void
@@ -1229,6 +1246,8 @@ export interface Api {
     /** (orb window) loudness to ripple with: Nova's voice (every 40 ms) or your microphone */
     onLevels(cb: (l: { kind: 'voice'; env: number[] } | { kind: 'mic'; v: number }) => void): () => void
     voiceLevels(env: number[]): void
+    /** (cards window) a live lesson, step by step */
+    onLive(cb: (op: LiveOp) => void): () => void
     /** (pointer window) where to draw the ring, or null to clear it */
     onPoint(cb: (p: { rect: { x: number; y: number; width: number; height: number }; label: string; step: string } | null) => void): () => void
     micLevel(v: number): void

@@ -208,7 +208,8 @@ const api: Api = {
     },
     show: (height, focus) => ipcRenderer.send('voice:window', { type: 'show', height, focus: !!focus }),
     hide: () => ipcRenderer.send('voice:window', { type: 'hide' }),
-    report: (state) => ipcRenderer.send('voice:window', { type: 'state', state })
+    report: (state) => ipcRenderer.send('voice:window', { type: 'state', state }),
+    said: (id) => ipcRenderer.send('voice:window', { type: 'said', id })
   },
   app: {
     dataPath: () => ipcRenderer.invoke('app:dataPath'),
@@ -249,6 +250,8 @@ const api: Api = {
   },
   eyes: {
     help: (text, act) => ipcRenderer.invoke('eyes:help', text, !!act),
+    window: () => ipcRenderer.invoke('eyes:window'),
+    teach: (topic, onScreen, wiki) => ipcRenderer.invoke('eyes:teach', topic, !!onScreen, wiki ?? ''),
     stop: () => ipcRenderer.invoke('eyes:stop'),
     confirm: (id, ok) => ipcRenderer.send('voice:window', { type: 'confirm', id, ok: !!ok })
   },
@@ -322,6 +325,11 @@ const api: Api = {
       return () => ipcRenderer.removeListener('bauer:levels', l)
     },
     voiceLevels: (env) => ipcRenderer.send('bauer:window', { type: 'voice', env }),
+    onLive: (cb) => {
+      const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
+      ipcRenderer.on('bauer:live', l)
+      return () => ipcRenderer.removeListener('bauer:live', l)
+    },
     onPoint: (cb) => {
       const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)
       ipcRenderer.on('bauer:point', l)
