@@ -269,6 +269,7 @@ const api: Api = {
   },
   nova: {
     turn: (said, studyhall) => ipcRenderer.invoke('nova:turn', said, studyhall),
+    offlineExplain: (said) => ipcRenderer.invoke('nova:offlineExplain', said),
     warm: () => ipcRenderer.invoke('nova:warm'),
     reset: () => ipcRenderer.invoke('nova:reset'),
     facts: () => ipcRenderer.invoke('nova:facts'),
@@ -398,6 +399,11 @@ const api: Api = {
       const l = (_e: unknown, op: Parameters<typeof cb>[0]): void => cb(op)
       ipcRenderer.on('bauer:ink', l)
       return () => ipcRenderer.removeListener('bauer:ink', l)
+    },
+    onCursor: (cb) => {
+      const l = (_e: unknown, p: Parameters<typeof cb>[0]): void => cb(p)
+      ipcRenderer.on('bauer:cursor', l)
+      return () => ipcRenderer.removeListener('bauer:cursor', l)
     },
     onLayer: (cb) => {
       const l = (_e: unknown, b: Parameters<typeof cb>[0]): void => cb(b)

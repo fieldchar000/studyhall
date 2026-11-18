@@ -68,7 +68,8 @@ export function OrbWindow(): React.JSX.Element {
           if ('activity' in op) setDoing(op.activity ?? null)
           else g.ink(op)
         }),
-        api.bauer.onLayer((b) => g.setOrigin(b.x, b.y))
+        api.bauer.onLayer((b) => g.setOrigin(b.x, b.y)),
+        api.bauer.onCursor((p) => g.cursor(p.x, p.y))
       )
       // The bubbles and menu ride along with the globe.
       const track = (): void => {

@@ -1,5 +1,6 @@
 // Copied from Roamies 0.1.41 (showcase/roamies/agent-panel.js) by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies
-// Studyhall changes: only the colours (your dark blue and light blue instead of teal).
+// Studyhall changes: the colours (your dark blue and light blue instead of teal); a closed card no longer catches
+// clicks; a Copy button for a draft ("> " lines) or code in the answer (copied by Studyhall: Roamie.panel.onCopy).
 // The research card: when an answer comes from the web (a search or a fetched page) or turns into a list, it
 // streams into this card instead of the Roamie's speech bubble, as a one-line answer, points and the sites
 // it used, with full markdown (markdown.js). It opens where the drawn cards go (the next free spot from the left,
@@ -26,6 +27,10 @@
   opacity: 0; transform: translateX(-8px) scale(.98); transform-origin: top left;
   transition: opacity .16s var(--ease), transform .16s var(--ease); pointer-events: auto; cursor: default; }
 .rp.on { opacity: 1; transform: none; }
+.rp:not(.on) { pointer-events: none; }
+.rp-copy { all: unset; padding: 3px 8px; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--line-hot); cursor: pointer; flex: none; }
+.rp-copy:hover { color: var(--ink); background: #0d162a; }
+.rp-copy[hidden] { display: none; }
 .rp-in { background: rgba(5, 9, 20, .97); color: var(--ink); clip-path: var(--notch); display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .rp-head { display: flex; align-items: center; gap: 8px; padding: 9px 8px 8px 14px; border-bottom: 1px solid #121c30; cursor: grab; touch-action: none; user-select: none; }
 .rp.drag .rp-head { cursor: grabbing; }
@@ -124,6 +129,14 @@
     }
   };
 
+  // What Copy copies: the draft ("> " lines) if there is one, else the code blocks; null for neither.
+  const copyable = () => {
+    const quote = text.split('\n').filter((l) => /^\s*>/.test(l)).map((l) => l.replace(/^\s*>\s?/, '')).join('\n').trim();
+    if (quote) return quote;
+    const code = [...text.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].map((m) => m[1]).join('\n').trim();
+    return code || null;
+  };
+  let copyEl = null;
   let el = null, body = null, statusEl = null, text = '', streaming = false, raf = 0, closeTimer = 0, hovered = false, follow = true, drag = null;
   // Older versions kept where it was last dragged and opened every later card there: that spot is forgotten.
   try { localStorage.removeItem('roamies.cardPos'); } catch {}
@@ -139,10 +152,12 @@
     const x = document.createElement('button'); x.className = 'rp-x'; x.type = 'button'; x.setAttribute('aria-label', 'Close');
     x.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg>';
     x.addEventListener('click', () => api.close());
+    copyEl = document.createElement('button'); copyEl.className = 'rp-copy'; copyEl.type = 'button'; copyEl.hidden = true; copyEl.textContent = 'Copy';
+    copyEl.addEventListener('click', () => { const t = copyable(); if (!t) return; api.onCopy?.(t); copyEl.textContent = 'Copied'; setTimeout(() => { if (copyEl) copyEl.textContent = 'Copy'; }, 1500); });
     body = document.createElement('div'); body.className = 'rp-body';
     // Scrolling up to reread stops the auto-follow; scrolling back to the bottom resumes it.
     body.addEventListener('scroll', () => { follow = body.scrollTop + body.clientHeight >= body.scrollHeight - 8; }, { passive: true });
-    head.append(dot, statusEl, x);
+    head.append(dot, statusEl, copyEl, x);
     // Drag it by the top bar; it stays where it's put.
     head.addEventListener('pointerdown', (e) => {
       if (e.button !== 0 || e.target.closest('.rp-x')) return;
@@ -223,6 +238,7 @@
       if (!el) build();
       const wasOpen = api.isOpen;
       text = ''; streaming = true; follow = true;
+      if (copyEl) copyEl.hidden = true;
       el.classList.add('busy');
       statusEl.textContent = status;
       paint();
@@ -232,7 +248,7 @@
       return api;
     },
     status(s) { if (el) statusEl.textContent = s; return api; },
-    append(s) { if (!el) return api; text += s; schedule(); return api; },
+    append(s) { if (!el) return api; text += s; if (copyEl) copyEl.hidden = !copyable(); schedule(); return api; },
     end(label = 'From the web') {
       if (!el) return api;
       streaming = false; el.classList.remove('busy'); statusEl.textContent = label;

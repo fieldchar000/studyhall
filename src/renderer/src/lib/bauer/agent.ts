@@ -622,6 +622,7 @@ async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: M
   try {
     const r = await api.nova.turn(text, studyhallState(ctx, now))
     if (r.error && !r.text && !r.tools.length) {
+      if (r.notice) paused = r.notice
       stream.push('')
       void stream.end()
       console.warn('Nova: the conversation failed, using the older way', r.error)
@@ -638,8 +639,22 @@ async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: M
   }
 }
 
+// Claude can't answer right now (the weekly cap, a limit, not connected): why, from the last try. Said out loud before
+// the answer (at most once an hour, so it doesn't nag), and requests about the screen go to the eyes on this PC.
+let paused: string | null = null
+let pausedSaidAt = 0
+let intro = ''
+const ABOUT_SCREEN = /\b(explain|what am i looking at|what('s| is) (this|that)|this (slide|page|diagram|picture|graph|chart|question)|on my screen|confus)/i
+
 /** Everything Nova hears goes through here: teach, explain, answer, look at your screen, or act. */
 export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean }> {
+  paused = null
+  intro = ''
+  const r = await handleSpeechInner(raw, source, mode)
+  if (intro && !r.ignored) return { ...r, reply: `${intro} ${r.reply}`.trim(), quiet: false }
+  return r
+}
+async function handleSpeechInner(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean }> {
   const text = stripWake(raw)
   // Small talk, one word, half a sentence: say nothing, do nothing, log nothing.
   const nothing = { reply: source === 'typed' ? 'I didn’t find anything to do in that.' : '', actions: [] as BriefAction[], logId: null, ignored: true }
@@ -649,11 +664,25 @@ export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad
     const r = await converse(text, source, mode).catch((e) => (console.warn('Nova conversation:', e), null))
     if (r) return r
   }
+  if (paused) {
+    if (Date.now() - pausedSaidAt > 3600_000) {
+      intro = paused
+      pausedSaidAt = Date.now()
+    }
+    // "Explain this slide", "what am I looking at": the eyes on this PC look and talk you through it.
+    if (onPc() && (ABOUT_SCREEN.test(text) || looksAtScreen(text))) {
+      const said = await api.nova.offlineExplain(text).catch(() => null)
+      if (said) {
+        await logAnswer(text, said, source)
+        return { reply: said, actions: [], logId: null }
+      }
+    }
+  }
   // Clearly about Studyhall itself (tasks, calendar…)? Straight to the usual actions, no sorting needed.
   const studyhallWords = /\b(tasks?|to-?dos?|calendar|lectures?|deadlines?|exams?|assignments?|habits?|journal|remind(er)?s?|timer|focus session|budgets?|spent|grades?|flashcards?|decks?|inbox|check-?in)\b/i.test(text)
   // "Explain …" / "teach me …": clearly a lesson, so skip the sorting step (it saves ~2.5 s).
   const quickTopic = onPc() && !studyhallWords ? explainTopicFrom(text) : null
-  if (quickTopic && (await claudeReady())) {
+  if (quickTopic && !paused && (await claudeReady())) {
     const win = await api.eyes.window().catch(() => null)
     const words = quickTopic.toLowerCase().match(/[a-z]{4,}/g) ?? []
     const onScreen = !!win && words.some((w) => win.title.toLowerCase().includes(w.replace(/s$/, '')))

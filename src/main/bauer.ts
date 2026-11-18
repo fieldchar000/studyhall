@@ -4,6 +4,7 @@
 //  • circle-to-ask: freeze the screen, circle something, ask about it (Ctrl+Alt+B)
 // All three are transparent, always-on-top windows that let clicks through except where they draw.
 
+import { PenTrail, type PenEvent } from './penTrail'
 import { BrowserWindow, desktopCapturer, globalShortcut, ipcMain, nativeImage, screen, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import type { BauerCard, LiveOp, OrbState, WikiSummary } from '@shared/types'
@@ -46,9 +47,8 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
       if (from === orbWin && (pen || handsBusy)) return // (the pen draws, or Nova is working an app: the layer stays as it is)
       from.setIgnoreMouseEvents(!msg.over, { forward: true })
     }
-    else if (msg.type === 'penDone' && from === orbWin && orbWin) penDone(msg.rect)
     else if (msg.type === 'inkEvent' && from === orbWin && msg.msg && typeof msg.msg === 'object') inkHooks.event(msg.msg as Record<string, unknown>)
-    else if (msg.type === 'penCancel' && from === orbWin) setPen(null)
+    else if (msg.type === 'penCancel' && from === orbWin) setPen(null, true)
     // A lesson is talking about one card: the globe floats over beside it (left of the cards).
     else if (msg.type === 'cardAt' && from === cardsWin && cardsWin && [msg.x, msg.y, msg.h].every((v) => Number.isFinite(Number(v)))) {
       const b = cardsWin.getBounds()
@@ -232,6 +232,28 @@ function watchCursor(): void {
   }, 250)
 }
 
+// ---------- Grabbing the globe ----------
+// The layer lets clicks through to your apps, and only catches them while the mouse is over the globe (or a card,
+// a bubble…). Windows is supposed to keep telling the layer where the mouse is, but with Nova's other see-through
+// layers on top that news didn't always arrive, so the globe couldn't be grabbed. Studyhall watches the mouse itself
+// (only while it's over this layer, and only when it moves) and tells the layer.
+let hotTimer: ReturnType<typeof setInterval> | null = null
+let lastCursor = ''
+function watchHot(): void {
+  if (hotTimer || OFFSCREEN) return
+  hotTimer = setInterval(() => {
+    if (!orbWin || orbWin.isDestroyed() || !orbWin.isVisible() || suspended) return
+    const p = screen.getCursorScreenPoint()
+    const b = orbWin.getBounds()
+    if (p.x < b.x || p.y < b.y || p.x >= b.x + b.width || p.y >= b.y + b.height) return
+    const key = `${p.x},${p.y}`
+    if (key === lastCursor) return
+    lastCursor = key
+    orbWin.webContents.send('bauer:cursor', { x: p.x - b.x, y: p.y - b.y })
+  }, 40)
+  hotTimer.unref?.()
+}
+
 /** Show or hide the globe to match Settings. */
 export function syncOrb(force = false): void {
   const on = (force || getPrefs().bauerOrb !== false) && !suspended
@@ -246,6 +268,7 @@ export function syncOrb(force = false): void {
     orbDisplay = d.id
     orbWin = overlayWindow(d.workArea, '#orb')
     orbWin.setIgnoreMouseEvents(true, { forward: true })
+    watchHot()
     orbWin.on('closed', () => {
       orbWin = null
       orbDisplay = null
@@ -274,20 +297,35 @@ export function sendOrb(state: OrbState, text?: string): void {
 }
 
 // ---------- The pen: circle or underline what you mean, on your live screen ----------
-// While you hold the talk keys (or once after Ctrl+Alt+B) the globe's layer takes the mouse, so dragging draws glowing
-// marks over whatever is on screen. Let go (or finish the one circle) and the layer lets clicks through again, the
-// marks fade, and Nova gets the circled area (a close-up and the text in it) with your question. It can't get stuck:
-// it ends when you let go of the keys, after one circle, on right-click, or by itself (2 minutes / 12 s untouched).
+// Roamies' Windows pen: while you hold the talk keys (or once after Ctrl+Alt+B) Studyhall follows your cursor itself
+// and draws its trail on the globe's layer (penTrail.ts decides when a loop snaps shut round something; a line that
+// stops without closing fades). It never depends on the layer receiving mouse events, so it works over any window.
+// Let go (or finish the one circle) and the marks fade, and Nova gets the circled area (a close-up and the text in it)
+// with your question. It can't get stuck: it ends when you let go, after one circle, on right-click, or by itself.
 
 let pen: 'talk' | 'once' | null = null
 let penTimer: NodeJS.Timeout | null = null
+let trail: PenTrail | null = null
+let trailTimer: ReturnType<typeof setInterval> | null = null
 export const penMode = (): 'talk' | 'once' | null => pen
 export const penHooks = {
   /** A circle was drawn: what's in it (screen rect). */
   circled: (_rect: Electron.Rectangle, _once: boolean): void => {}
 }
-export function setPen(mode: 'talk' | 'once' | null): void {
-  if (suspended || OFFSCREEN) mode = null
+const penSend = (events: PenEvent[]): void => {
+  if (!events.length || !orbWin || orbWin.isDestroyed()) return
+  for (const e of events) orbWin.webContents.send('bauer:ink', { pen: e })
+}
+/** One step of the trail (exported for automated tests, which can't move your mouse). */
+export function penFeed(p: Spot, dt: number): void {
+  if (!trail) return
+  const events = trail.feed(p, dt)
+  penSend(events)
+  // Ctrl+Alt+B: one circle, then ask.
+  if (pen === 'once' && events.some((e) => e.ev === 'snap')) setPen(null)
+}
+export function setPen(mode: 'talk' | 'once' | null, cancel = false): void {
+  if (suspended || (OFFSCREEN && !process.env.STUDYHALL_PEN_TEST)) mode = null
   if (penTimer) clearTimeout(penTimer)
   penTimer = null
   if (!orbWin || orbWin.isDestroyed()) mode = null
@@ -295,23 +333,35 @@ export function setPen(mode: 'talk' | 'once' | null): void {
   pen = mode
   if (!orbWin || orbWin.isDestroyed()) return
   if (mode) {
+    if (was) return void (penTimer = setTimeout(() => setPen(null), mode === 'once' ? 12_000 : 120_000))
     if (!orbWin.isVisible()) orbWin.showInactive()
-    layerOn(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()))
+    if (!OFFSCREEN) layerOn(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()))
+    // Clicks while you draw don't reach the app underneath (Ctrl+Alt+click isn't something you meant).
     orbWin.setIgnoreMouseEvents(false)
     orbWin.webContents.send('bauer:pen', { on: true, once: mode === 'once' })
+    trail = new PenTrail()
+    if (!OFFSCREEN) {
+      let last = Date.now()
+      trailTimer = setInterval(() => {
+        const now = Date.now()
+        penFeed(screen.getCursorScreenPoint(), now - last)
+        last = now
+      }, 16)
+    }
     penTimer = setTimeout(() => setPen(null), mode === 'once' ? 12_000 : 120_000)
   } else if (was) {
+    if (trailTimer) clearInterval(trailTimer)
+    trailTimer = null
+    const t = trail
+    trail = null
     orbWin.webContents.send('bauer:pen', { on: false, once: false })
     orbWin.setIgnoreMouseEvents(true, { forward: true })
+    if (!t) return
+    const { events, area } = t.end()
+    penSend(events)
+    if (cancel || !area || area.width < 4 || area.height < 4) return
+    penHooks.circled({ x: Math.round(area.x), y: Math.round(area.y), width: Math.round(area.width), height: Math.round(area.height) }, was === 'once')
   }
-}
-function penDone(r: unknown): void {
-  const once = pen === 'once'
-  if (once) setPen(null)
-  const o = r as { x: number; y: number; width: number; height: number } | null
-  if (!o || !orbWin || ![o.x, o.y, o.width, o.height].every(Number.isFinite) || o.width < 4 || o.height < 4) return
-  const b = orbWin.getBounds()
-  penHooks.circled({ x: Math.round(b.x + o.x), y: Math.round(b.y + o.y), width: Math.round(o.width), height: Math.round(o.height) }, once)
 }
 
 /** A little performance from the globe (Nova's emote tags): wave, hype, remind, upset, motivate. */
@@ -698,3 +748,6 @@ export async function openApp(name: string): Promise<boolean> {
   else if (a.exe) spawn(a.exe, [], { detached: true, stdio: 'ignore' }).unref()
   return true
 }
+
+// Automated tests only (hidden test copies can't move your mouse): reach the pen and the grab check directly.
+if (OFFSCREEN) (globalThis as unknown as { __novaTest: unknown }).__novaTest = { setPen, penFeed, penHooks, orb: () => orbWin }

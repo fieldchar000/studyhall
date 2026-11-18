@@ -35,7 +35,9 @@ export type NovaGlobe = {
   /** Fly over to a point (CSS px in this window); null: back to what it was doing. */
   goTo(p: { x: number; y: number } | null): void
   /** A drawing (Roamies' ink): play a segment, or clear. */
-  ink(op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number }; agents?: unknown; panel?: { op: 'open' | 'status' | 'append' | 'end' | 'fail' | 'close'; text?: string } }): void
+  ink(op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number }; agents?: unknown; pen?: unknown; panel?: { op: 'open' | 'status' | 'append' | 'end' | 'fail' | 'close'; text?: string } }): void
+  /** Where the mouse is (CSS px in this window), from Studyhall's own watch: the same as a mouse move. */
+  cursor(x: number, y: number): void
   /** Where this layer is on the screen (DIP), so screen places land in the right spot. */
   setOrigin(x: number, y: number): void
   /** Messages from the drawing (a card closed, a quiz answered…). */
@@ -294,6 +296,8 @@ async function boot(opts: {
   await import('./roamies/glass.js')
   await import('./roamies/minis.js')
   await import('./roamies/agent-home.js')
+  // Roamies' Windows pen: the trail of your cursor while you hold the talk keys (Studyhall follows the cursor).
+  await import('./roamies/pen.js')
   // Roamies' research card: an answer that turns into points or cites sources streams onto it, links and all.
   await import('./roamies/markdown.js')
   await import('./roamies/agent-panel.js')
@@ -411,6 +415,7 @@ async function boot(opts: {
       else if (op.reminders) R.ink?.reminders(op.reminders)
       else if (op.stale) R.ink?.stale()
       else if (op.click) R.ink?.click(op.click.x, op.click.y)
+      else if (op.pen) R.pen?.(op.pen)
       else if (op.panel && R.panel) {
         const p = op.panel
         if (p.op === 'open') {
@@ -425,7 +430,15 @@ async function boot(opts: {
       else if (op.agents) R.agentHome?.event(op.agents, { from: [c.mover.x, c.mover.y] })
       R.wake?.()
     },
+    cursor(x, y) {
+      const h = !!R.ptr(x, y)
+      // Over the globe: said again on every move, so the layer can never stay stuck letting clicks through.
+      if (h && h === hot) opts.onHot(true)
+      else setHot(h)
+      R.ink?.ptr(x, y)
+    },
     setOrigin(x, y) {
+      R.origin = { x, y } // (the pen's points are screen points)
       R.setSafe?.({ ...(R.safe ?? {}), ox: x, oy: y })
     },
     onInk(cb) {
@@ -435,7 +448,10 @@ async function boot(opts: {
       R.ink.invoke = (cmd: string, args: unknown) => cb({ type: 'invoke', cmd, args })
       // The agents corner's buttons (Stop, Allow, open a file…) go the same way; it asks for the agents on screen now.
       // A link clicked on the research card opens in your browser (web links only; checked again in Studyhall).
-      if (R.panel) R.panel.onLink = (url: string) => cb({ type: 'open_link', url })
+      if (R.panel) {
+        R.panel.onLink = (url: string) => cb({ type: 'open_link', url })
+        R.panel.onCopy = (text: string) => cb({ type: 'copy_text', text })
+      }
       if (R.agentHome) {
         R.agentHome.send = cb
         cb({ type: 'agents_ready' })

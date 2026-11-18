@@ -52,9 +52,9 @@ import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBau
 import { startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
 import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
-import { eyes, helpOnScreen, pointerHooks, stopEyes, stopWalkthrough } from './eyes'
+import { eyes, helpOnScreen, pointerHooks, see, stopEyes, stopWalkthrough } from './eyes'
 import { forgetNovaFactById, listNovaFacts } from './novaMemory'
-import { roamiesAbort, roamiesClick, roamiesEsc } from './roamiesTools'
+import { roamiesAbort, roamiesClick, roamiesEsc, testWindowShot } from './roamiesTools'
 import { factsBlock, frontWindow, noteCircle, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova } from './novaBrain'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
@@ -427,6 +427,22 @@ if (!app.requestSingleInstanceLock()) {
           else await warmAi()
         })
         // Nova's conversation: one request, its speech streamed back to the window that asked.
+        // Claude paused: the eyes on this PC (a small vision model) look at the window in front and talk you through it.
+        handle('nova:offlineExplain', async (_e, said: string) => {
+          if (!(await aiStatus()).eyes) return null
+          const test = process.env.STUDYHALL_OFFSCREEN === '1' ? await testWindowShot() : null
+          const seen = test ? { image: `data:image/jpeg;base64,${test.data}` } : await see({ screenshot: true }).catch(() => null)
+          if (!seen?.image) return null
+          const answer = await aiChat(
+            [
+              { role: 'system', content: 'You are Nova, a friendly study tutor talking out loud. You can see the window the student has in front of them (a lecture slide, a page, a diagram). Explain what it shows like a tutor sitting next to them: 3 to 6 short spoken sentences, plain words, the main idea first, then what each part means and how they connect, then one tip to remember it. Only use what you can see; if something is unreadable, say so. No markdown, no lists, no preamble like "This image shows".' },
+              { role: 'user', content: [{ type: 'image_url', image_url: { url: seen.image } }, { type: 'text', text: `They asked: "${String(said).slice(0, 300)}"` }] }
+            ],
+            undefined,
+            700
+          ).catch(() => '')
+          return answer.trim() || null
+        })
         handle('nova:turn', async (e, said: string, studyhall: string) => {
           const p = getPrefs()
           const now = new Date()

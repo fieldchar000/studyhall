@@ -257,6 +257,33 @@ export function claudeBlocked(prefs: Prefs): string | null {
 }
 let pausedUntil = 0
 
+/** When something comes back, the way you'd say it: "at 4 pm", "tomorrow at 9 am", "Monday at 4 am". */
+function backWhen(ms: number): string {
+  const d = new Date(ms)
+  const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(':00', '').replace(/\s/g, ' ')
+  const day = new Date(d)
+  day.setHours(0, 0, 0, 0)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const diff = Math.round((day.getTime() - today.getTime()) / 864e5)
+  if (diff <= 0) return `at ${time}`
+  if (diff === 1) return `tomorrow at ${time}`
+  return `${d.toLocaleDateString('en-GB', { weekday: 'long' })} at ${time}`
+}
+/** Why Claude can't answer right now, said plainly with when it's back (null when it can answer). */
+export function claudePauseNotice(prefs: Prefs): string | null {
+  if (!state.installed || !state.signedIn) return "I'm not connected to Claude right now, so I'm using the simpler brain on this PC. You can connect on my page in Studyhall."
+  const u = state.usage
+  const cap = prefs.novaCap ?? 80
+  const now = Date.now()
+  if (u?.sevenDay != null && u.sevenDay >= cap && (!u.sevenDayResets || Date.parse(u.sevenDayResets) > now)) {
+    const back = u.sevenDayResets ? ` It's back ${backWhen(Date.parse(u.sevenDayResets))}.` : ''
+    return `My Claude brain is paused: you've used ${Math.round(u.sevenDay)}% of this week's Claude, and your cap is ${cap}%.${back} Until then I'm using the simpler brain on this PC.`
+  }
+  if (state.paused && pausedUntil > now) return `Claude's usage limit was reached, so I'm on the simpler brain on this PC until ${backWhen(pausedUntil).replace(/^at /, '')}.`
+  return null
+}
+
 /** Which model + effort a request gets. */
 export function pickModel(prefs: Prefs, purpose: AiPurpose): { model: ModelKey; effort: NovaEffort } {
   const brain = prefs.novaBrain ?? 'auto'
@@ -617,3 +644,11 @@ export function recordClaudeCost(model: ModelKey, effort: NovaEffort, ms: number
   setSetting(monthKey(), month)
   set({ last: { model, effort, ms, costUsd: cost, at: new Date().toISOString() }, monthCostUsd: month, error: null })
 }
+
+// Automated tests only: pretend this week's usage is at some level (to check what Nova says when Claude is paused).
+if (process.env.STUDYHALL_OFFSCREEN === '1')
+  (globalThis as unknown as { __claudeTest: unknown }).__claudeTest = {
+    week: (pct: number | null, resets: string | null) => {
+      state = { ...state, usage: pct == null ? null : { fiveHour: 0, sevenDay: pct, fiveHourResets: null, sevenDayResets: resets, at: new Date().toISOString() } }
+    }
+  }

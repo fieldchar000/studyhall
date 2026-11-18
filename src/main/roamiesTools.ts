@@ -7,7 +7,7 @@
 // This file is Studyhall's side: it gives tools.mjs what Roamies' app gives it (its hands helper, the overlay, a
 // yes/no question, the promises store), and turns each tool into one of Nova's (Agent SDK) tools.
 
-import { app, clipboard, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, clipboard, shell, type WebContents } from 'electron'
 import { fork } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -157,6 +157,8 @@ inkHooks.event = (msg) => {
     else if (a.do === 'open' && /^https?:\/\//i.test(String(a.value))) void shell.openExternal(String(a.value))
     else if (a.do === 'copy') clipboard.writeText(String(a.value))
   } else if (t === 'open_link' && /^https?:\/\//i.test(String(msg.url))) void shell.openExternal(String(msg.url))
+  // Copy on the answer card (a draft or code): to your clipboard.
+  else if (t === 'copy_text' && typeof msg.text === 'string') clipboard.writeText(msg.text.slice(0, 50_000))
   else if (t === 'list_toggle' && store) {
     const c = store.getCommitment(String(msg.id))
     if (c) void store.updateCommitment(c.id, { status: c.status === 'done' ? 'open' : 'done' }).then(() => showList(0))
@@ -392,7 +394,10 @@ export const roamiesTurnStart = (): void => {
   requestNo++
   void rt?.nextTurn()
 }
-export const roamiesTurnEnd = (): void => void rt?.ink.endRequest()
+export const roamiesTurnEnd = (): void => {
+  void rt?.ink.endRequest()
+  setHandsActive(false) // (never left on after a request, or the globe couldn't be grabbed)
+}
 
 // ---------- Roamies' tools as Nova's tools ----------
 
@@ -400,9 +405,33 @@ let callSeq = 0
 let abort = new AbortController()
 /** Stop what's running (talking to Nova again, or Esc): a tool waiting on something ends at once. */
 export function roamiesAbort(): void {
+  setHandsActive(false)
   abort.abort()
   abort = new AbortController()
   toolsStopped()
+}
+
+/** Automated tests: a picture of the test slide window (if a test opened one) or Studyhall's own hidden window. */
+export async function testWindowShot(): Promise<{ data: string; title: string; width: number; height: number } | null> {
+  const wins = BrowserWindow.getAllWindows()
+  const w = wins.find((x) => x.getTitle().startsWith('Nova test')) ?? wins.find((x) => x.webContents.getURL().endsWith('index.html'))
+  const img = w ? await w.webContents.capturePage().catch(() => null) : null
+  if (!w || !img || img.isEmpty()) return null
+  const b = w.getContentBounds()
+  return { data: img.resize({ width: Math.min(1568, img.getSize().width) }).toJPEG(80).toString('base64'), title: w.getTitle(), width: b.width, height: b.height }
+}
+
+// What the tools that reach your real PC answer in an automated test copy (see roamiesSdkTools).
+const TEST_STUB: Record<string, string> = {
+  open: 'Opened it. (Automated test: nothing was really opened.)',
+  run_command: '(Automated test: commands are not run.)',
+  read_file: '(Automated test: your files are not read.)',
+  list_files: '(Automated test: your files are not read.)',
+  search_files: '(Automated test: your files are not searched.)',
+  write_file: '(Automated test: nothing was written.)',
+  read_window: '(Automated test: your windows are not read.)',
+  list_windows: '(Automated test: your windows are not read.)',
+  act_in_app: '(Automated test: nothing was clicked or typed.)'
 }
 
 const shapeOf = (t: Any, drawShape: Any): Any => t.parameters?.shape ?? (t.name === 'draw' ? drawShape : (t.parameters?.out ?? t.parameters?._def?.out)?.shape) ?? {}
@@ -422,6 +451,14 @@ export async function roamiesSdkTools(tool: Tool, skip: Set<string>, onSlow: (na
         const parsed = t.parameters?.safeParse?.(args)
         if (parsed && !parsed.success) return { content: [{ type: 'text', text: `That call doesn't fit: ${parsed.error.issues.slice(0, 6).map((i: Any) => `${i.path.join('.')}: ${i.message}`).join('; ')}` }], isError: true }
         if (parsed?.success) input = parsed.data
+        // Automated tests never touch your real PC: nothing is opened, run, read from your files or captured from
+        // your screen (a screenshot shows Studyhall's own hidden test window instead).
+        if (OFFSCREEN && TEST_STUB[t.name]) return { content: [{ type: 'text', text: TEST_STUB[t.name] }] }
+        if (OFFSCREEN && t.name === 'take_screenshot') {
+          const shot = await testWindowShot()
+          if (!shot) return { content: [{ type: 'text', text: 'Screen capture failed.' }], isError: true }
+          return { content: [{ type: 'text', text: `Screenshot of "${shot.title}" (${shot.width}x${shot.height}, automated test window).` }, { type: 'image', data: shot.data, mimeType: 'image/jpeg' }] }
+        }
         try {
           const out = await t.execute(input, { toolCallId: `r${++callSeq}`, signal: abort.signal })
           if (OFFSCREEN) console.info(`tool ${t.name}>`, typeof out === 'string' ? out.slice(0, 400) : '[content]')

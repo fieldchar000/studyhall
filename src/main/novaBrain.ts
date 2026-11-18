@@ -15,11 +15,11 @@ import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import type { BauerCard, Prefs } from '@shared/types'
-import { claudeBase, claudeBlocked, claudeChecked, claudeModelId, noteClaudeMessage, pickModel, recordClaudeCost, warmClaude, type ModelKey } from './claude'
+import { claudeBase, claudeBlocked, claudeChecked, claudePauseNotice, claudeModelId, noteClaudeMessage, pickModel, recordClaudeCost, warmClaude, type ModelKey } from './claude'
 import type { NovaEffort } from '@shared/types'
 import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
-import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMarks } from './bauer'
+import { APP_NAMES, openApp, orbActivity, orbEmote, orbPanel, setSubject, showCards, showMarks } from './bauer'
 import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, type Seen, type SeenControl } from './eyes'
 import { doOnScreen } from './hands'
 import { teach } from './teach'
@@ -62,7 +62,7 @@ Tools are called for real, never written out as text (never write "[call …]").
 How to help (use as few tool calls as the task needs; independent ones can go in one turn, in the order given):
 - Anything in Studyhall (tasks, deadlines, calendar events, lectures, study logs, habits, money, journal, check-ins, inbox, a Studyhall page): studyhall_actions, with every change in one call, then say what you did in one short sentence.
 - Questions about their own Studyhall stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first. "What's my day?": my_day.
-- Explaining or teaching a topic in depth ("how does a black hole form", "walk me through the cardiac cycle", "teach me how beta blockers work"): draw with deep: true, 4 to 10 beats, one card per beat that build on each other: a plain card only for the big picture and the summary, and every beat between is a picture card that shows its stage (flow for a sequence of steps or a pathway, model with motion for an organ, a cell part or a machine, molecule for a drug or compound, bars or graph for numbers and effects, table to compare types, timeline for history, photo with labels for anatomy), each say line explaining like a teacher (why, an everyday comparison, what to notice), never reading the card. Use teach instead when they want it from their own notes (teach with material_id), or about the page they're reading (teach with on_screen), or ask for a lesson with a quiz at the end. After teach, say nothing more.
+- Explaining or teaching a topic in depth ("how does a black hole form", "walk me through the cardiac cycle", "teach me how beta blockers work"): draw with deep: true, 4 to 10 beats, one card per beat that build on each other: a plain card only for the big picture and the summary, and every beat between is a picture card that shows its stage (flow for a sequence of steps or a pathway, model with motion for an organ, a cell part or a machine, molecule for a drug or compound, bars or graph for numbers and effects, table to compare types, timeline for history, photo with labels for anatomy), each say line explaining like a teacher (why, an everyday comparison, what to notice), never reading the card. Use teach instead when they want it from their own notes (teach with material_id), or about the page they're reading (teach with on_screen), or ask for a lesson with a quiz at the end. After teach, reply with just the word: Okay.
 - Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file, find_material first, then teach with material_id, read_material (to answer from them) or quiz_me.
 - "Quiz me" / "test me": quiz_me (from a study file's own questions, or their flashcards), then run it yourself, one question per reply. Offer save_flashcards for the ones they missed.
 - The web: "pull up a video on X", "a study music playlist": youtube, then open the best real result. "Find me a source for…", facts that change: web_search, then web_fetch to read a page (offset reads on). Music to study to: play_music (Spotify in Studyhall; they have Premium), or a YouTube playlist if they ask for YouTube. Never make up links: only open ones a search gave you.
@@ -251,6 +251,9 @@ type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: nul
 // A [bracketed note] left at the very end of a message is never said.
 const dropTag = (t: string): string => t.replace(/\[[^\]\n]{0,240}\]\s*$/, '')
 const LISTY = /\n\s*(?:[-*•]|\d+[.)])\s+\S|\n\s*sources?\s*:/i
+// Anything else meant to be read, not heard (a draft to send, code, a table, a heading) goes on the same card: it's never
+// spoken, so without the card it would show nowhere.
+const READ_ONLY = /\n\s*(?:>|```|\||#{1,6}\s)/
 
 async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): Promise<import('@anthropic-ai/claude-agent-sdk').McpSdkServerConfigWithInstance> {
   const { tool, createSdkMcpServer } = await import('@anthropic-ai/claude-agent-sdk')
@@ -300,7 +303,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
     ),
     tool(
       'teach',
-      'Teach or explain a topic live: cards, a pixel diagram, the key line underlined on their screen, their own notes or a source page, and its own voice. With material_id (from find_material) it teaches from THEIR study file. Say nothing after calling it.',
+      'Teach or explain a topic live: cards, a pixel diagram, the key line underlined on their screen, their own notes or a source page, and its own voice. With material_id (from find_material) it teaches from THEIR study file. After calling it, reply with just the word: Okay. (It is not said out loud.)',
       {
         topic: z.string().describe('the subject in a few words'),
         wiki: z.string().describe('exact English Wikipedia article title that best covers it, or "" (ignored with material_id)'),
@@ -318,7 +321,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
         const r = await teach(String(topic).slice(0, 200), !notes && !!on_screen && p.novaEyes !== 'off', String(wiki ?? '').slice(0, 120), notes).catch(() => null)
         if (!r?.started) return text('The lesson could not start. Explain it briefly yourself instead.')
         quiet()
-        return text('The lesson has started and is speaking for itself. Reply with nothing more.')
+        return text('The lesson has started and is speaking for itself. Reply with just the word: Okay. (It is not said out loud.)')
       }
     ),
     tool(
@@ -412,6 +415,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
       async ({ search }) => {
         const q = String(search).trim()
         const url = /^https:\/\/open\.spotify\.com\//.test(q) ? q : `https://open.spotify.com/search/${encodeURIComponent(q)}/playlists`
+        if (process.env.STUDYHALL_OFFSCREEN === '1') return text('(automated test: nothing played)')
         await openSpotifyPlayer(url).catch(() => null)
         return text('Spotify is open on that search; they pick the playlist (or say which one).')
       }
@@ -426,6 +430,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
         return text(b.say)
       }
     ),tool('read_clipboard', 'What they last copied (text).', {}, async () => {
+      if (process.env.STUDYHALL_OFFSCREEN === '1') return text('(automated test: your clipboard is not read)')
       const t = String((await clipboard.readText()) ?? '').trim()
       return text(t ? t.slice(0, 20_000) : 'There\'s no text on the clipboard (it may be empty, or a picture).')
     }),    tool(
@@ -488,6 +493,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
         const p = prefs()
         if (!p.novaConnectors) return text('Drafting into their apps needs “Let Nova use my Claude connectors” switched on, on the Nova page. Tell them.')
         slow()
+        if (process.env.STUDYHALL_OFFSCREEN === '1') return text('(automated test: nothing was drafted in your accounts)')
         const r = await draftWithConnectors(String(request).slice(0, 2000), p, voiceConfirm).catch((e) => `It failed: ${e instanceof Error ? e.message : String(e)}`)
         return text(`Result: ${r}`)
       }
@@ -761,6 +767,7 @@ export interface NovaTurnResult {
   quiet: boolean // a tool (lesson, walkthrough) speaks for itself
   tools: string[]
   error?: string
+  notice?: string // Claude can't answer right now: why, and when it's back (said out loud)
 }
 
 let turnChain: Promise<unknown> = Promise.resolve()
@@ -790,7 +797,9 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   const blocked = claudeBlocked(p)
   if (blocked) {
     if (agentish) agentsHatch(false)
-    return { text: '', quiet: false, tools: [], error: blocked }
+    orbActivity('Offline: Claude is paused')
+    setTimeout(() => orbActivity(null), 7000)
+    return { text: '', quiet: false, tools: [], error: blocked, notice: claudePauseNotice(p) ?? undefined }
   }
   const { model, effort } = settingsFor()
   if (!convo || convo.dead || convo.wc !== wc || convo.model !== model || convo.effort !== effort) {
@@ -829,6 +838,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
       // The research card: once the answer turns into points or cites sources, all of it streams onto the card.
       const clean = t.replace(/\u2063\d\u2063/g, '')
       if (turn.quiet || !clean) return
+      written += clean
       if (turn.research) {
         if (turn.research === 'looking') {
           turn.research = 'writing'
@@ -837,8 +847,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
         orbPanel('append', clean)
         return
       }
-      written += clean
-      if (LISTY.test(`\n${written}`)) {
+      if (LISTY.test(`\n${written}`) || READ_ONLY.test(`\n${written}`)) {
         turn.research = 'writing'
         orbPanel('open', 'Writing it up')
         orbPanel('append', written.replace(/^\s+/, ''))
@@ -972,7 +981,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     c.at = Date.now()
   }
   // Read-on-screen lines go on a card beside the globe.
-  if (turn.research) orbPanel('end', turn.fromWeb ? 'From the web' : 'Answer')
+  if (turn.research) orbPanel('end', turn.fromWeb ? 'From the web' : /\n\s*>/.test(`\n${written}`) ? 'Draft' : 'Answer')
   recordClaudeCost(model, effort, Date.now() - started, cost)
   console.info(`Nova turn: ${model}/${effort} in ${Date.now() - started} ms, tools: ${turn.tools.join(', ') || 'none'}`)
   roamiesTurnEnd()
