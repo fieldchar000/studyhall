@@ -19,7 +19,7 @@ import { agentsUi, orbPanel, inkClear, inkClick, inkHooks, inkPlay, inkReminders
 import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
 import { stageDone } from './novaStage'
 import { claudeAgentRoute, claudeBlocked, claudeModelId, claudeReady } from './claude'
-import { startFocus, stopFocus } from './buddy'
+import { buddyHooks, startFocus, stopFocus } from './buddy'
 import { screen } from 'electron'
 
 type Any = any // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -91,6 +91,47 @@ function commitmentsText(): string {
     .openCommitments()
     .map((c: Any) => `${c.id} ${c.text}${c.due ? ` (due ${fmtWhen(c.due)})` : ''}${c.repeat ? ` [repeats ${store.repeatLabel(c.repeat)}]` : ''}`)
     .join('\n')
+}
+
+// ---------- Nova's page: the promises list ----------
+export type PromiseItem = { id: string; text: string; due: number | null; when: string; done: boolean; overdue: boolean; kind: string; repeat: string | null }
+/** Today (with what's done today) and later, as Roamies' list card shows them. */
+export async function listPromises(): Promise<{ today: PromiseItem[]; later: PromiseItem[] }> {
+  await roamies()
+  const { today, later } = store.listItems()
+  const shape = (i: Any): PromiseItem => ({ id: i.id, text: i.text, due: i.due ?? null, when: i.due ? fmtWhen(i.due) : '', done: !!i.done, overdue: !!i.overdue, kind: i.kind, repeat: i.repeat ? store.repeatLabel(i.repeat) : null })
+  return { today: today.map(shape), later: later.map(shape) }
+}
+/** A button on the list: done / not done, drop it, snooze it (minutes, or 'tomorrow' for 9 am), a new time, new words. */
+export async function changePromise(id: string, op: 'done' | 'open' | 'drop' | 'snooze' | 'due' | 'text', value?: string | number | null): Promise<boolean> {
+  await roamies()
+  const c = store.getCommitment(String(id))
+  if (!c) return false
+  if (op === 'done' || op === 'open') await store.updateCommitment(c.id, { status: op })
+  else if (op === 'drop') await store.updateCommitment(c.id, { status: 'dropped' })
+  else if (op === 'snooze') {
+    const at = value === 'tomorrow' ? (() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d.getTime() })() : Date.now() + Math.max(1, Number(value) || 10) * 60_000
+    await store.updateCommitment(c.id, { dueMs: at, keepSeries: true })
+  } else if (op === 'due') await store.updateCommitment(c.id, { dueMs: value == null || value === '' ? null : new Date(String(value)).getTime() })
+  else if (op === 'text') {
+    const words = String(value ?? '').trim().slice(0, 200)
+    if (words.length < 2 || words === c.text) return false
+    // The store keeps each one's words fixed: a new entry with the new words, the same time and repeat, and the old one goes.
+    await store.addCommitment(words, c.due ?? null, c.kind ?? 'commitment', c.repeat ?? null)
+    await store.updateCommitment(c.id, { status: 'dropped' })
+  }
+  showList(0) // (refreshes the list card if it's open)
+  return true
+}
+/** A new one from the page: words, and an optional time (local, YYYY-MM-DDTHH:mm). */
+export async function addPromise(text: string, due: string | null): Promise<boolean> {
+  await roamies()
+  const words = String(text ?? '').trim().slice(0, 200)
+  if (words.length < 2) return false
+  const ms = due ? new Date(due).getTime() : null
+  await store.addCommitment(words, Number.isFinite(ms) ? ms : null, ms ? 'reminder' : 'commitment')
+  showList(0)
+  return true
 }
 
 /** The memory part of <live-state>: open promises, what's done today, and lasting facts (with ids for forget_fact). */
@@ -252,6 +293,7 @@ export function roamies(): Promise<Any> {
         : {})
     })
     setInterval(() => void reminderTick().catch(() => {}), 15_000).unref()
+    buddyHooks.promises = () => store.openCommitments().map((c: Any) => ({ text: String(c.text), due: c.due ?? null }))
     await startAgents()
     return rt
   })()
@@ -266,6 +308,19 @@ export function roamies(): Promise<Any> {
 let agents: Any = null
 let desk: Any = null
 let requestNo = 0
+/** The picture for this request, for send_agent's "snap" input (set by novaBrain.ts each request). */
+export const agentPicture: { current: { type: 'image'; mediaType: string; data: string } | null } = { current: null }
+/** A picture of the window in front (a test window in automated tests), for an agent asked to work from "this". */
+export async function frontPicture(): Promise<{ type: 'image'; mediaType: string; data: string } | null> {
+  if (OFFSCREEN) {
+    const shot = await testWindowShot()
+    return shot ? { type: 'image', mediaType: 'image/jpeg', data: shot.data } : null
+  }
+  const { see } = await import('./eyes')
+  const seen = await see({ screenshot: true }).catch(() => null)
+  const data = seen?.image?.replace(/^data:image\/\w+;base64,/, '')
+  return data ? { type: 'image', mediaType: 'image/jpeg', data } : null
+}
 /** Is Nova answering something right now (set by novaBrain.ts)? */
 export const agentGates = { busy: (): boolean => false }
 
@@ -304,7 +359,8 @@ async function startAgents(): Promise<void> {
       creds: async () => ({}),
       allowActions: () => (getPrefs().novaHands ?? 'off') !== 'off',
       skipAllow: () => false,
-      image: () => null,
+      // "snap": the picture that goes with this request (what you circled, or the window in front).
+      image: () => agentPicture.current,
       openUrl: (u: string) => shell.openExternal(u),
       open: async (p: string) => {
         await shell.openPath(p)

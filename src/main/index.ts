@@ -54,7 +54,7 @@ import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
 import { eyes, helpOnScreen, pointerHooks, see, stopEyes, stopWalkthrough } from './eyes'
 import { forgetNovaFactById, listNovaFacts } from './novaMemory'
-import { roamies, roamiesAbort, roamiesClick, roamiesEsc, testWindowShot } from './roamiesTools'
+import { addPromise, changePromise, listPromises, roamies, roamiesAbort, roamiesClick, roamiesEsc, testWindowShot } from './roamiesTools'
 import { factsBlock, frontWindow, noteCircle, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova } from './novaBrain'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
@@ -470,6 +470,9 @@ if (!app.requestSingleInstanceLock()) {
         handle('nova:warm', (e) => warmNova(e.sender))
         handle('nova:reset', () => resetNova())
         handle('nova:facts', () => listNovaFacts())
+        handle('nova:promises', () => listPromises())
+        handle('nova:promise', (_e, id: string, op: string, value: unknown) => (['done', 'open', 'drop', 'snooze', 'due', 'text'].includes(op) ? changePromise(String(id), op as 'done', value as string) : false))
+        handle('nova:addPromise', (_e, text: string, due: string | null) => addPromise(String(text ?? ''), due ? String(due) : null))
         handle('nova:forgetFact', (_e, id: string) => forgetNovaFactById(String(id)))
         handle('ai:chat', (_e, messages, schema, maxTokens, purpose) =>
           brainChat(messages, schema, typeof maxTokens === 'number' ? maxTokens : undefined, ['act', 'chat', 'explain', 'look'].includes(purpose) ? purpose : 'act')

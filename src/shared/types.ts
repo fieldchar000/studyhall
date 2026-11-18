@@ -914,6 +914,9 @@ export interface TimerState extends TimerContext {
 }
 
 /** Voice briefings ("Hey Bauer"). */
+/** One thing on Nova's own list: something you said you'd do, or a reminder. */
+export type NovaPromise = { id: string; text: string; due: number | null; when: string; done: boolean; overdue: boolean; kind: string; repeat: string | null }
+
 export type VoiceState = 'off' | 'loading' | 'armed' | 'listening' | 'thinking' | 'review' | 'error'
 export interface VoiceStatus {
   installed: boolean // speech models downloaded on this device
@@ -1223,6 +1226,10 @@ export interface Api {
     offlineExplain(said: string): Promise<string | null>
     /** A reminder on Nova's own list (due: YYYY-MM-DDTHH:mm, local time). */
     remember(text: string, due: string): Promise<string | null>
+    /** Nova's own promises list (today, later), for its page. */
+    promises(): Promise<{ today: NovaPromise[]; later: NovaPromise[] }>
+    promise(id: string, op: 'done' | 'open' | 'drop' | 'snooze' | 'due' | 'text', value?: string | number | null): Promise<boolean>
+    addPromise(text: string, due: string | null): Promise<boolean>
     warm(): Promise<void>
     reset(): Promise<void>
     facts(): Promise<{ id: string; text: string; at: string }[]>

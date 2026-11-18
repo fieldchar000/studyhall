@@ -1,8 +1,8 @@
 // Nova: your assistant's own page. Name, brain (Claude model + effort), usage of your Claude plan,
 // and the hearing/voice settings. Nova was called Bauer before v0.30.
 
-import { useEffect, useRef, useState } from 'react'
-import type { ClaudeStatus, EarsStatus, NovaBrain, NovaEffort, NovaName, Prefs } from '@shared/types'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ClaudeStatus, EarsStatus, NovaBrain, NovaEffort, NovaName, NovaPromise, Prefs } from '@shared/types'
 import { api, useLive } from '@/lib/data'
 import { setPrefs, usePrefs } from '@/lib/prefs'
 import { navigate } from '@/lib/nav'
@@ -121,6 +121,120 @@ function RoomLeft({ name, usage, cap, noExtra }: { name: string; usage: ClaudeSt
   )
 }
 
+/** Nova's own list (Roamies' promises): what you said you'd do and your reminders, with tick, snooze, edit and drop. */
+function PromisesCard({ name }: { name: string }): React.JSX.Element {
+  const [list, setList] = useState<{ today: NovaPromise[]; later: NovaPromise[] } | null>(null)
+  const [editing, setEditing] = useState<{ id: string; text: string; due: string } | null>(null)
+  const [adding, setAdding] = useState({ text: '', due: '' })
+  const load = useCallback(() => {
+    void api.nova
+      .promises()
+      .then(setList)
+      .catch(() => setList({ today: [], later: [] }))
+  }, [])
+  useEffect(() => {
+    load()
+    const t = setInterval(load, 30_000)
+    return () => clearInterval(t)
+  }, [load])
+  const act = (id: string, op: Parameters<typeof api.nova.promise>[1], value?: string | number | null): void => {
+    void api.nova.promise(id, op, value).then(load)
+  }
+  // datetime-local wants "YYYY-MM-DDTHH:mm" in local time.
+  const local = (ms: number | null): string => {
+    if (!ms) return ''
+    const d = new Date(ms)
+    const p = (n: number): string => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  }
+  const row = (p: NovaPromise): React.JSX.Element =>
+    editing?.id === p.id ? (
+      <li key={p.id} className="flex flex-wrap items-center gap-2 border-t border-line py-2 text-[13px] first:border-t-0">
+        <input className="field-boxed min-w-0 flex-1 text-sm" value={editing.text} onChange={(e) => setEditing({ ...editing, text: e.target.value })} aria-label="What it is" />
+        <input className="field-boxed text-sm" type="datetime-local" value={editing.due} onChange={(e) => setEditing({ ...editing, due: e.target.value })} aria-label="When" />
+        <button
+          className="text-xs underline"
+          onClick={() => {
+            const ops: Promise<boolean>[] = []
+            if (editing.due !== local(p.due)) ops.push(api.nova.promise(p.id, 'due', editing.due || null))
+            void Promise.all(ops).then(() => (editing.text.trim() !== p.text ? api.nova.promise(p.id, 'text', editing.text) : true)).then(() => {
+              setEditing(null)
+              load()
+            })
+          }}
+        >
+          Save
+        </button>
+        <button className="text-xs text-muted underline" onClick={() => setEditing(null)}>
+          Cancel
+        </button>
+      </li>
+    ) : (
+      <li key={p.id} className="flex items-start gap-2 border-t border-line py-2 text-[13px] first:border-t-0">
+        <input type="checkbox" className="mt-0.5" checked={p.done} onChange={() => act(p.id, p.done ? 'open' : 'done')} aria-label={p.done ? 'Not done' : 'Done'} />
+        <span className={`min-w-0 flex-1 ${p.done ? 'text-muted line-through' : ''}`}>
+          {p.text}
+          <span className={`block text-xs ${p.overdue ? 'text-[#f08a7a]' : 'text-muted'}`}>
+            {[p.overdue ? `was due ${p.when}` : p.when, p.repeat ? `repeats ${p.repeat}` : '', p.kind === 'reminder' ? 'reminder' : ''].filter(Boolean).join(' · ') || 'no time set'}
+          </span>
+        </span>
+        {!p.done && (
+          <select
+            className="bg-transparent text-xs text-muted underline"
+            value=""
+            onChange={(e) => e.target.value && act(p.id, 'snooze', e.target.value === 'tomorrow' ? 'tomorrow' : Number(e.target.value))}
+            aria-label="Snooze"
+          >
+            <option value="">Snooze</option>
+            <option value="10">10 min</option>
+            <option value="60">1 hour</option>
+            <option value="tomorrow">Tomorrow 9am</option>
+          </select>
+        )}
+        <button className="text-xs text-muted underline hover:text-ink" onClick={() => setEditing({ id: p.id, text: p.text, due: local(p.due) })}>
+          Edit
+        </button>
+        <button className="text-xs text-muted underline hover:text-ink" onClick={() => act(p.id, 'drop')}>
+          Drop
+        </button>
+      </li>
+    )
+  return (
+    <section className="card rounded-2xl p-5">
+      <h2 className="font-semibold">Promises</h2>
+      <p className="mt-1 text-[13px] text-muted">
+        What you told {name} you’d do, and your reminders. {name} reminds you out loud when one is due; it only puts things in Studyhall’s tasks when you ask (“put it in Studyhall”).
+      </p>
+      <h3 className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">Today</h3>
+      <ul className="mt-1 flex flex-col">
+        {(list?.today ?? []).map(row)}
+        {list && !list.today.length && <li className="text-sm text-muted">Nothing for today.</li>}
+      </ul>
+      <h3 className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">Later</h3>
+      <ul className="mt-1 flex flex-col">
+        {(list?.later ?? []).map(row)}
+        {list && !list.later.length && <li className="text-sm text-muted">Nothing later. Try “remind me every weekday at 9 to review my notes”.</li>}
+      </ul>
+      <form
+        className="mt-3 flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void api.nova.addPromise(adding.text, adding.due || null).then((ok) => {
+            if (ok) setAdding({ text: '', due: '' })
+            load()
+          })
+        }}
+      >
+        <input className="field-boxed min-w-0 flex-1 text-sm" placeholder="Add one…" value={adding.text} onChange={(e) => setAdding({ ...adding, text: e.target.value })} aria-label="New promise" />
+        <input className="field-boxed text-sm" type="datetime-local" value={adding.due} onChange={(e) => setAdding({ ...adding, due: e.target.value })} aria-label="When (optional)" />
+        <button className="btn" type="submit" disabled={adding.text.trim().length < 2}>
+          Add
+        </button>
+      </form>
+    </section>
+  )
+}
+
 /** What Nova remembers about you (facts you told it), each with Forget, and a fresh start for the conversation. */
 function MemoryCard({ name }: { name: string }): React.JSX.Element {
   const [facts, setFacts] = useState<{ id: string; text: string; at: string }[] | null>(null)
@@ -159,7 +273,7 @@ function MemoryCard({ name }: { name: string }): React.JSX.Element {
       >
         {fresh ? 'Fresh start: the chat so far is forgotten' : 'Start a new conversation'}
       </button>
-      <p className="mt-1 text-xs text-muted">{name} remembers what you said in the last 15 minutes (so “move it to six” works); this forgets that too.</p>
+      <p className="mt-1 text-xs text-muted">{name} remembers what you said in the last half hour (so “move it to six” works); this forgets that too.</p>
     </section>
   )
 }
@@ -438,9 +552,9 @@ export function NovaPage(): React.JSX.Element {
                   onChange={(v) => save({ novaFollowUp: v as Prefs['novaFollowUp'] })}
                 />
               </Row>
-              <Row title="Draw while you talk" hint="While you hold the talk keys, your mouse draws on the screen: circle or underline what you mean. The marks fade when you let go.">
+              <Row title="Draw while you talk" hint="While you hold the talk keys, your mouse draws on the screen (no clicking needed): go round what you mean and the loop snaps shut, or underline it. The marks fade when you let go.">
                 <span className="nova-keys">
-                  hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd> + drag
+                  hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd> + move
                 </span>
               </Row>
               <Row title="Type instead" hint="Opens a small box beside your cursor">
@@ -848,6 +962,7 @@ export function NovaPage(): React.JSX.Element {
               Full log, typing and Undo
             </button>
           </section>
+          {!phone && <PromisesCard name={name} />}
           {!phone && <MemoryCard name={name} />}
           <section className="card rounded-2xl p-5">
             <h2 className="font-semibold">Try saying</h2>

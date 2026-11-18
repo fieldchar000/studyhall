@@ -19,7 +19,9 @@ export const buddyHooks = {
   sayThenListen: async (_text: string): Promise<void> => {},
   emote: (_e: string): void => {},
   cards: (_c: BauerCard[]): void => {},
-  away: (): boolean => false
+  away: (): boolean => false,
+  /** Nova's own promises and reminders that are open (roamiesTools.ts fills this in). */
+  promises: (): { text: string; due: number | null }[] => []
 }
 
 const OFFSCREEN = process.env.STUDYHALL_OFFSCREEN === '1'
@@ -119,11 +121,19 @@ export function briefText(): { say: string; card: BauerCard } {
   else parts.push('Nothing in your calendar today.')
   if (today.length) parts.push(`Due today: ${today.slice(0, 3).map((t) => t.title).join(', ')}${today.length > 3 ? ` and ${today.length - 3} more` : ''}.`)
   if (overdue.length) parts.push(`${overdue.length === 1 ? `"${overdue[0].title}" is` : `${overdue.length} things are`} overdue.`)
-  if (!today.length && !overdue.length) parts.push('Nothing due. Good day to get ahead.')
+  // Nova's own list: what you said you'd do today, and anything you promised that's now overdue.
+  const promised = buddyHooks.promises().sort((x, y) => (x.due ?? Infinity) - (y.due ?? Infinity))
+  const pToday = promised.filter((p) => p.due != null && p.due >= start.getTime() && p.due < end.getTime())
+  const pLate = promised.filter((p) => p.due != null && p.due < start.getTime())
+  if (pToday.length) parts.push(`You said you'd ${pToday.slice(0, 3).map((p) => `${p.text.replace(/^./, (c) => c.toLowerCase())}${new Date(p.due!).getHours() || new Date(p.due!).getMinutes() ? ` at ${hm(new Date(p.due!).toISOString())}` : ''}`).join(', ')}${pToday.length > 3 ? `, and ${pToday.length - 3} more` : ''}.`)
+  if (pLate.length) parts.push(`${pLate.length === 1 ? `"${pLate[0].text}" from your list is` : `${pLate.length} things on your list are`} still waiting.`)
+  if (!today.length && !overdue.length && !pToday.length && !pLate.length) parts.push('Nothing due. Good day to get ahead.')
   const items = [
     ...events.slice(0, 6).map((e) => ({ label: e.all_day || e.start_at.length === 10 ? 'All day' : hm(e.start_at), detail: e.title })),
     ...today.slice(0, 4).map((t) => ({ label: 'Due', detail: t.title })),
-    ...overdue.slice(0, 3).map((t) => ({ label: 'Overdue', detail: t.title }))
+    ...overdue.slice(0, 3).map((t) => ({ label: 'Overdue', detail: t.title })),
+    ...pToday.slice(0, 4).map((p) => ({ label: hm(new Date(p.due!).toISOString()), detail: `Promise: ${p.text}` })),
+    ...pLate.slice(0, 3).map((p) => ({ label: 'Waiting', detail: `Promise: ${p.text}` }))
   ]
   return {
     say: parts.join(' '),
@@ -190,3 +200,6 @@ export function startBuddy(): void {
     void offerTick().catch(() => {})
   }, 60_000).unref()
 }
+
+// Automated tests only: the morning brief's words, without waiting for the morning.
+if (process.env.STUDYHALL_OFFSCREEN === '1') (globalThis as unknown as { __novaBrief: unknown }).__novaBrief = briefText
