@@ -43,7 +43,7 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
     }
     // The cards window is only as tall as what's in it (never a full-height strip down your screen).
     else if (msg.type === 'mouse' && from && (from === orbWin || from === cardsWin)) {
-      if (from === orbWin && pen) return // (while the pen is on, the layer takes the mouse for drawing)
+      if (from === orbWin && (pen || handsBusy)) return // (the pen draws, or Nova is working an app: the layer stays as it is)
       from.setIgnoreMouseEvents(!msg.over, { forward: true })
     }
     else if (msg.type === 'penDone' && from === orbWin && orbWin) penDone(msg.rect)
@@ -153,6 +153,32 @@ export function orbBesideDrawing(on: boolean): void {
   }
   const b = OFFSCREEN ? screen.getPrimaryDisplay().workArea : orbWin.getBounds()
   orbTo({ x: b.x + 80, y: b.y + b.height / 2 - 40 }) // the left edge: big cards sit in the middle
+}
+/** Roamies' reminders card (today / later), on the globe's layer. */
+export function inkReminders(msg: Record<string, unknown>): void {
+  if (suspended || !orbWin || orbWin.isDestroyed()) return
+  if (!orbWin.isVisible()) orbWin.showInactive()
+  orbWin.webContents.send('bauer:ink', { reminders: msg })
+}
+/** The window a drawing was about changed or closed: the drawing fades. */
+export function inkStale(): void {
+  orbWin?.webContents.send('bauer:ink', { stale: true })
+}
+/** A click (screen point) for a drawing waiting on one (a walkthrough step). */
+export function inkClick(p: Spot): void {
+  if (!orbWin || orbWin.isDestroyed()) return
+  orbWin.webContents.send('bauer:ink', { click: local(p) })
+}
+/** While Nova works an app for you (the helper moves the real cursor), the layer lets every click through, even on
+ *  the globe; the globe hops to where each step lands. */
+let handsBusy = false
+export function setHandsActive(on: boolean): void {
+  handsBusy = on
+  if (!orbWin || orbWin.isDestroyed()) return
+  if (on) orbWin.setIgnoreMouseEvents(true, { forward: true })
+}
+export function lookAtRect(r: Electron.Rectangle): void {
+  orbTo(besideRect(r))
 }
 export function inkClear(e: Record<string, unknown> = {}): void {
   orbWin?.webContents.send('bauer:ink', { clear: e })

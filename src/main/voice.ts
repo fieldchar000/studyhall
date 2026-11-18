@@ -287,6 +287,11 @@ export function startBrief(): void {
   send({ type: 'listen' })
 }
 
+/** Esc anywhere: Nova stops talking (and stops looking or working the screen). */
+export function voiceHush(): void {
+  if (win && !win.isDestroyed()) send({ type: 'hush' })
+}
+
 /** Ask you something in Nova's panel (Allow / Skip). Resolves false on Skip, Esc or after a minute. */
 let askSeq = 0
 const answers = new Map<number, (ok: boolean) => void>()
@@ -350,7 +355,17 @@ let keys: ChildProcess | null = null
 let keysWanted = false
 /** Start the small helper that notices the talk keys (PC app only; never in automated tests). */
 /** The talk keys going down and up (the pen draws while they are held). */
-export const talkKeyHooks = { down: (): void => {}, up: (): void => {} }
+export const talkKeyHooks = { down: (): void => {}, up: (): void => {}, esc: (): void => {}, click: (): void => {} }
+let clicksWanted = false
+/** Report left clicks from any app (a drawn walkthrough waiting for your click), or stop. */
+export function reportClicks(on: boolean): void {
+  clicksWanted = on
+  try {
+    keys?.stdin?.write(on ? 'clicks on\n' : 'clicks off\n')
+  } catch {
+    /* the helper isn't running */
+  }
+}
 
 export function startKeys(): void {
   keysWanted = true
@@ -371,6 +386,7 @@ export function startKeys(): void {
           onKey(line)
         }
       })
+      if (clicksWanted) child.stdin?.write('clicks on\n')
       child.on('exit', () => {
         if (keys === child) keys = null
       })
@@ -384,6 +400,8 @@ export function stopKeys(): void {
 }
 function onKey(e: string): void {
   if (suspended) return
+  if (e === 'esc') return talkKeyHooks.esc()
+  if (e === 'click') return talkKeyHooks.click()
   if (e === 'ptt-down') {
     talkKeyHooks.down()
     ensureWindow()

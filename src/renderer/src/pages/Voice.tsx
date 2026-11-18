@@ -111,6 +111,19 @@ export default function VoicePanel(): React.JSX.Element {
     [read]
   )
 
+  // A drawn button pressed ("Quiz me on this"): a request, as if you'd said it.
+  useEffect(
+    () =>
+      api.nova.onAsk((t) => {
+        if (!t.trim()) return
+        woke.current = false
+        setText(t)
+        youSaid(t)
+        void act(t)
+      }),
+    [act]
+  )
+
   // What the engine hears.
   useEffect(
     () =>
@@ -221,6 +234,10 @@ export default function VoicePanel(): React.JSX.Element {
           } else say(c.text)
         }
         else if (c.type === 'finish') void engine.finish()
+        else if (c.type === 'hush') {
+          stopSpeaking()
+          void api.eyes.stop().catch(() => {})
+        }
         else if (c.type === 'cancel') {
           engine.cancel()
           setPhase('idle')

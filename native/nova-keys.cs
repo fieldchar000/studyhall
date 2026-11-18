@@ -2,8 +2,11 @@
 //  • Hold Ctrl + Alt (left Alt, so AltGr never triggers it) = talk. Prints "ptt-down", then "ptt-up"
 //    when you let go, or "ptt-cancel" if another key joins in (a normal Ctrl+Alt+something shortcut).
 //  • Tap Ctrl + Shift on their own = type. Prints "type".
-// It only checks those modifier keys a few times a second (GetAsyncKeyState); it never records or
-// prints which other keys you press. It exits when Studyhall closes its input.
+//  • Esc pressed = "esc" (Nova stops talking or drawing, from any app).
+//  • Only while Studyhall asks ("clicks on" on its input, until "clicks off"): a left mouse click = "click" (a drawn
+//    walkthrough waiting for your click on a step). Studyhall reads where the cursor is itself.
+// It only checks those keys a few times a second (GetAsyncKeyState); it never records or prints which other keys you
+// press. It exits when Studyhall closes its input.
 
 using System;
 using System.Runtime.InteropServices;
@@ -29,12 +32,27 @@ static class NovaKeys
         return false;
     }
 
-    static void Say(string s) { Console.Out.WriteLine(s); Console.Out.Flush(); }
+    static void Say(string s) { lock (Console.Out) { Console.Out.WriteLine(s); Console.Out.Flush(); } }
+    static volatile bool clicks = false;
 
     static void Main()
     {
         // Quit when Studyhall goes away (its end of our input closes).
-        new Thread(() => { try { while (Console.In.Read() != -1) { } } catch { } Environment.Exit(0); }) { IsBackground = true }.Start();
+        new Thread(() =>
+        {
+            try
+            {
+                string line;
+                while ((line = Console.In.ReadLine()) != null)
+                {
+                    if (line.Trim() == "clicks on") clicks = true;
+                    else if (line.Trim() == "clicks off") clicks = false;
+                }
+            }
+            catch { }
+            Environment.Exit(0);
+        }) { IsBackground = true }.Start();
+        bool escWas = false, clickWas = false;
 
         const int TICK = 25, HOLD_MS = 250, TAP_MS = 600;
         int talkHeld = 0;      // ms Ctrl+Alt has been held on their own
@@ -51,6 +69,14 @@ static class NovaKeys
             bool altgr = Down(RALT);
             bool shift = Down(LSHIFT) || Down(RSHIFT);
             bool other = (ctrl || lalt || shift) && OtherKey();
+
+            // ----- Esc, and left clicks while asked -----
+            bool esc = Down(0x1B);
+            if (esc && !escWas) Say("esc");
+            escWas = esc;
+            bool click = Down(0x01);
+            if (clicks && click && !clickWas) Say("click");
+            clickWas = click;
 
             // ----- Hold Ctrl + Alt to talk -----
             bool talkCombo = ctrl && lalt && !altgr && !shift;

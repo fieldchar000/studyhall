@@ -34,7 +34,8 @@ function voskNoCache(): Plugin {
 // installed app needs no node_modules at all.
 export default defineConfig({
   main: {
-    resolve: { alias: { '@shared': resolve('src/shared') } }
+    // Roamies' tools.mjs imports GG Coder's web tools; Nova provides its own under that name (src/main/ggweb.ts).
+    resolve: { alias: { '@shared': resolve('src/shared'), '@kenkaiiii/ggcoder/web': resolve('src/main/ggweb.ts') } }
   },
   preload: {
     resolve: { alias: { '@shared': resolve('src/shared') } }

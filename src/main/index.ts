@@ -49,11 +49,13 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   return aiChat(messages, schema, maxTokens)
 }
 import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbEmote, penHooks, penMode, setPen } from './bauer'
-import { startKeys, stopKeys, talkKeyHooks, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
+import { startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
 import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
 import { eyes, helpOnScreen, pointerHooks, stopEyes, stopWalkthrough } from './eyes'
-import { factsBlock, forgetNovaFact, frontWindow, noteCircle, novaFacts, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova } from './novaBrain'
+import { forgetNovaFactById, listNovaFacts } from './novaMemory'
+import { roamiesAbort, roamiesClick, roamiesEsc } from './roamiesTools'
+import { factsBlock, frontWindow, noteCircle, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova } from './novaBrain'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
@@ -434,7 +436,7 @@ if (!app.requestSingleInstanceLock()) {
             `Window in front: ${await frontWindow()}`,
             `Allowed: looking at the screen ${p.novaEyes === 'off' ? 'off' : 'on'}; working their apps ${p.novaHands ?? 'off'}; drafting with connectors ${p.novaConnectors ? 'on' : 'off'}`,
             String(studyhall ?? '').slice(0, 12_000),
-            factsBlock(),
+            await factsBlock(String(said ?? '')),
             focusState(),
             lastOffered(),
             '</live-state>'
@@ -443,8 +445,8 @@ if (!app.requestSingleInstanceLock()) {
         })
         handle('nova:warm', (e) => warmNova(e.sender))
         handle('nova:reset', () => resetNova())
-        handle('nova:facts', () => novaFacts())
-        handle('nova:forgetFact', (_e, id: string) => forgetNovaFact(String(id)))
+        handle('nova:facts', () => listNovaFacts())
+        handle('nova:forgetFact', (_e, id: string) => forgetNovaFactById(String(id)))
         handle('ai:chat', (_e, messages, schema, maxTokens, purpose) =>
           brainChat(messages, schema, typeof maxTokens === 'number' ? maxTokens : undefined, ['act', 'chat', 'explain', 'look'].includes(purpose) ? purpose : 'act')
         )
@@ -562,7 +564,17 @@ if (!app.requestSingleInstanceLock()) {
     handsHooks.hide = hidePointer
     handsHooks.confirm = voiceConfirm
     // The pen: hold the talk keys and drag to circle what you mean; Ctrl+Alt+B circles first, then asks.
-    talkKeyHooks.down = () => setPen('talk')
+    talkKeyHooks.down = () => {
+      roamiesAbort() // talking to Nova again stops what it was doing
+      setPen('talk')
+    }
+    // Esc in any app: Nova stops talking and drawing, as Roamies does. Clicks: for a drawn walkthrough waiting on one.
+    talkKeyHooks.esc = () => {
+      roamiesEsc()
+      roamiesAbort()
+      voiceHush()
+    }
+    talkKeyHooks.click = () => roamiesClick()
     talkKeyHooks.up = () => {
       if (penMode() === 'talk') setPen(null)
     }

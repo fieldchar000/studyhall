@@ -293,6 +293,11 @@ const api: Api = {
       ipcRenderer.on('nova:tool', l)
       return () => ipcRenderer.removeListener('nova:tool', l)
     },
+    onAsk: (cb) => {
+      const l = (_e: unknown, said: string): void => cb(String(said ?? ''))
+      ipcRenderer.on('nova:ask', l)
+      return () => ipcRenderer.removeListener('nova:ask', l)
+    },
     toolResult: (id, result) => ipcRenderer.send('nova:toolResult', id, result)
   },
   claude: {

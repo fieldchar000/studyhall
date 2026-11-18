@@ -31,6 +31,8 @@ extraResources:
     to: nova-keys.exe
   - from: build/nova-eyes.exe
     to: nova-eyes.exe
+  - from: build/roamies-hands.exe
+    to: roamies-hands.exe
 win:
   target:
     - target: nsis

@@ -33,7 +33,7 @@ export type NovaGlobe = {
   /** Fly over to a point (CSS px in this window); null: back to what it was doing. */
   goTo(p: { x: number; y: number } | null): void
   /** A drawing (Roamies' ink): play a segment, or clear. */
-  ink(op: { play?: unknown; clear?: Record<string, unknown> }): void
+  ink(op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number } }): void
   /** Where this layer is on the screen (DIP), so screen places land in the right spot. */
   setOrigin(x: number, y: number): void
   /** Messages from the drawing (a card closed, a quiz answered…). */
@@ -286,7 +286,10 @@ async function boot(opts: {
     hot = h
     opts.onHot(h)
   }
-  const onMove = (e: MouseEvent): void => setHot(!!R.ptr(e.clientX, e.clientY))
+  const onMove = (e: MouseEvent): void => {
+    setHot(!!R.ptr(e.clientX, e.clientY))
+    R.ink?.ptr(e.clientX, e.clientY) // (a drawn step waiting for you to hover over something)
+  }
   addEventListener('mousemove', onMove, { passive: true })
   document.addEventListener('mouseleave', () => setHot(false))
   addEventListener('blur', () => setHot(false))
@@ -352,13 +355,19 @@ async function boot(opts: {
     ink(op) {
       if (op.play) R.ink?.play(op.play)
       else if (op.clear) R.ink?.clear(op.clear)
+      else if (op.reminders) R.ink?.reminders(op.reminders)
+      else if (op.stale) R.ink?.stale()
+      else if (op.click) R.ink?.click(op.click.x, op.click.y)
       R.wake?.()
     },
     setOrigin(x, y) {
       R.setSafe?.({ ...(R.safe ?? {}), ox: x, oy: y })
     },
     onInk(cb) {
-      if (R.ink) R.ink.send = cb
+      if (!R.ink) return
+      R.ink.send = cb
+      // ink.js asks its host for things too (e.g. "report clicks while a walkthrough waits"): passed on the same way.
+      R.ink.invoke = (cmd: string, args: unknown) => cb({ type: 'invoke', cmd, args })
     },
     where() {
       return { x: c.mover.x, y: c.mover.y, r: kit?.R ?? 40 }

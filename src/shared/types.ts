@@ -933,6 +933,7 @@ export type VoiceCommand =
   | { type: 'type' } // Ctrl+Shift tapped: open the typing box
   | { type: 'say'; text: string; id?: number } // say this (a walkthrough step / a lesson beat); with an id, report back when finished
   | { type: 'confirm'; id: number; question: string } // hands: ask before doing something
+  | { type: 'hush' } // Esc in any app: stop talking now
 
 /** Nova's new ears (Parakeet + wake word), PC only. */
 export interface EarsStatus {
@@ -1224,6 +1225,8 @@ export interface Api {
     /** Something to say later (a walkthrough finished). */
     onSay(cb: (text: string) => void): () => void
     onTool(cb: (call: { id: number; name: string; input: unknown }) => void): () => void
+    /** A drawn button asked Nova something ("Quiz me on this"): run it as a request. */
+    onAsk(cb: (said: string) => void): () => void
     toolResult(id: number, result: string): void
   }
   claude: {
@@ -1273,7 +1276,7 @@ export interface Api {
     /** (orb window) */
     onBubble(cb: (b: { who: 'you' | 'nova'; text: string; append: boolean; done: boolean }) => void): () => void
     /** (orb window) a drawing to play (Roamies' ink segment), or clear */
-    onInk(cb: (op: { play?: unknown; clear?: Record<string, unknown> }) => void): () => void
+    onInk(cb: (op: { play?: unknown; clear?: Record<string, unknown>; reminders?: Record<string, unknown>; stale?: boolean; click?: { x: number; y: number } }) => void): () => void
     /** (orb window) where its layer is on the screen (DIP) */
     onLayer(cb: (b: { x: number; y: number }) => void): () => void
     /** (orb window) news from a drawing: a card closed, a quiz answered, a segment started */
