@@ -267,6 +267,16 @@ const api: Api = {
     speak: (text, voice, speed) => ipcRenderer.invoke('mouth:speak', text, voice, speed),
     warm: () => ipcRenderer.invoke('mouth:warm')
   },
+  lesson: {
+    onPdf: (cb) => {
+      const l = async (_e: unknown, req: { id: number; op: 'text' | 'page'; data: Uint8Array; n?: number; width?: number }): Promise<void> => {
+        const result = await cb(req).catch((e: unknown) => `error: ${e instanceof Error ? e.message : String(e)}`)
+        ipcRenderer.send('lesson:pdfDone', { id: req.id, result })
+      }
+      ipcRenderer.on('lesson:pdf', l)
+      return () => ipcRenderer.removeListener('lesson:pdf', l)
+    }
+  },
   nova: {
     turn: (said, studyhall) => ipcRenderer.invoke('nova:turn', said, studyhall),
     offlineExplain: (said) => ipcRenderer.invoke('nova:offlineExplain', said),

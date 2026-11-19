@@ -18,6 +18,7 @@ import { get, getProfileId, getSetting, setSetting } from './db'
 import { agentsUi, orbPanel, inkClear, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
 import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
 import { stageDone } from './novaStage'
+import { lessonFetch } from './lessonReader'
 import { claudeAgentRoute, claudeBlocked, claudeModelId, claudeReady } from './claude'
 import { buddyHooks, startFocus, stopFocus } from './buddy'
 import { screen } from 'electron'
@@ -277,6 +278,8 @@ export function roamies(): Promise<Any> {
       workdir: homedir(),
       pointScale: () => 'pixels',
       skipAllow: () => false,
+      // Pictures of the lesson you have open (https://lesson.studyhall.app/…) come from Studyhall itself.
+      photoFetch: lessonFetch,
       // Automated tests: the screenshot is of a test window (placed, for drawing, as if at the top left of the main
       // screen), never your real screen.
       ...(OFFSCREEN

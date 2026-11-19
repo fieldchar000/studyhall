@@ -693,6 +693,9 @@ export function NovaPage(): React.JSX.Element {
                   onChange={(v) => save({ novaSource: v as Prefs['novaSource'] })}
                 />
               </Row>
+              <Row title="Turn pages and scroll" hint={`When it explains a slide deck or PDF you have open, ${name} can turn to the slide or page it's talking about, or scroll a web page to it, so it can point at it. It only reads: nothing is changed or saved.`}>
+                <input type="checkbox" checked={prefs?.novaPages !== false} onChange={(e) => save({ novaPages: e.target.checked })} aria-label="Turn pages and scroll" />
+              </Row>
               <Row title="Walk me through it" hint="Rings step 1, waits for your click there, then shows step 2 (up to 8 steps). Esc stops.">
                 <input type="checkbox" checked={prefs?.novaWalk !== false} onChange={(e) => save({ novaWalk: e.target.checked })} aria-label="Walkthroughs" />
               </Row>

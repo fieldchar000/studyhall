@@ -1000,6 +1000,7 @@ export interface Prefs {
   novaNoExtra?: boolean // never use paid extra usage on your Claude account (default on)
   novaCap?: number // pause Claude when your weekly Claude usage reaches this % (default 80)
   novaSounds?: boolean // Roamies' little sound effects on the globe, drawings and agents (default on)
+  novaPages?: boolean // Nova may turn the pages of the slide deck or PDF you have open, and scroll a page to what it's showing you (default on)
   novaAgents?: 'auto' | 'haiku' | 'sonnet' // which model background agents use (auto: Sonnet to make things, Haiku otherwise)
   novaHideIdle?: boolean // the globe disappears when it's not needed and comes back when you talk to it (default off)
   novaVoice?: string // Kokoro voice (default af_heart)
@@ -1219,6 +1220,10 @@ export interface Api {
   }
   /** Nova's Claude brain (PC only). */
   /** Nova's conversation (PC): one fast Claude call per request, with Nova's tools, speaking as it streams. */
+  /** The main window reads PDFs for Nova's lesson reader. */
+  lesson: {
+    onPdf(cb: (req: { op: 'text' | 'page'; data: Uint8Array; n?: number; width?: number }) => Promise<string>): () => void
+  }
   nova: {
     /** One request. Speech arrives meanwhile through onSpeak / onBeat; tools that live in this window through onTool. */
     turn(said: string, studyhall: string): Promise<{ text: string; quiet: boolean; tools: string[]; error?: string; notice?: string }>

@@ -20,6 +20,7 @@ import type { NovaEffort } from '@shared/types'
 import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
 import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMarks } from './bauer'
+import { goToPage, lessonText, readLesson } from './lessonReader'
 import { stageDone, stageStart, stageTool, stageToolEnd, trailEnd, trailPlan, trailSettle } from './novaStage'
 import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, type Seen, type SeenControl } from './eyes'
 import { doOnScreen } from './hands'
@@ -68,6 +69,7 @@ How to help (use as few tool calls as the task needs; independent ones can go in
   • "ELI5", "explain like I'm five", "simply", "dumb it down", "I don't get it": simple words and one everyday comparison that carries the whole idea (a thermostat, a lock and key, traffic lights), three to five sentences, said like a friend. A drawing only if it's the comparison itself.
   • "Teach me X", "walk me through X", "in depth", "properly", "step by step": the live lesson. One draw call with deep: true, 3 to 7 beats that build on each other. Each beat is one stage on its own picture card (flow for steps or a pathway, model with motion for an organ, a cell part or a machine, molecule for a drug or compound, bars or graph for numbers and effects, table to compare, timeline for history, photo with labels for anatomy; a plain card only for the big picture and the wrap-up), and its say line explains that stage like a teacher: why it happens, how it connects to the last one, an everyday comparison where it helps, what to notice. Never read the card out. Say one short line first ("Let's build it up."), then draw.
   • "Explain this", "what am I looking at", "this slide", "I'm confused by this", "what does this diagram mean" (something on their screen): take_screenshot of that window first, then one draw call that walks through what's actually there, pointing at it: 3 to 7 beats, each beat's marks on the real part of the slide or page (ring or underline the words, an arrow along the diagram's arrow, a label beside a box), placed by where they are in the screenshot, with a say line that explains that part (what it means, why it's there, how it connects to the part before). The last beat ties it together in one sentence they can remember. Add a card only for something the slide leaves out (a missing step, a quick example). Never read the slide out word for word; explain it.
+  • When what they ask about is in a slide deck or PDF they have open (PowerPoint, a PDF in Edge, Opera GX or Chrome; the window in <live-state> tells you): call read_lesson once for that lesson (the whole thing as text, cheap; don't read it again for each question) and teach with all of it, not just what's on screen. Connect what they marked to what comes before and after it ("slide 9 set this up…"), and when a later slide or page goes deeper (a detailed diagram, a worked example), say so and show it: see_photo its picture address, then a photo card of it with labels on the parts you're explaining, or go_to_page to it and ring it on their screen (take_screenshot first). Use the slides' own words and diagrams; add a picture from the web (a photo card with a Wikipedia query) or a drawn diagram when the slides don't have one.
   • From their own study files (they name their notes, a week, a module or a file): find_material, then read_material, then teach it the same live way (draw beats from what their notes say), or teach with material_id when they ask for a lesson with a quiz at the end.
   After a live lesson, stop: the drawing speaks its lines. Offer one next step in a few words only if it helps ("Want me to quiz you on it?").
 - Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file, find_material first, then read_material (to answer or teach from them) or quiz_me.
@@ -553,7 +555,26 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
   turnHooks.ready = () => !wc.isDestroyed()
   // plan_steps: Roamies' step trail beside the globe, ticking off as each part's tool calls succeed.
   turnHooks.plan = (args) => trailPlan(args)
-  const all = [...tools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
+  // The lesson reader: the whole deck or PDF they have open (lessonReader.ts).
+  const lessonTools = [
+    tool(
+      'read_lesson',
+      'The whole slide deck or PDF they have open (PowerPoint, or a PDF in Edge, Opera GX or Chrome), or a .pptx/.pdf file or PDF web address you name: every slide or page\'s text (and a deck\'s speaker notes), as text, plus which slide they\'re on. Slides or pages with a diagram or picture list its address: look at it with see_photo (that url), then show it on a photo card with labels, or go_to_page and ring it on their screen. Cheap: read it once per lesson and use what you read. For a normal web page use read_window instead.',
+      { source: z.string().optional().describe('leave out for what they have open; else a .pptx/.pdf path or a PDF address'), from: z.number().int().min(1).optional().describe('first slide/page to include (for long ones)'), to: z.number().int().min(1).optional() },
+      async ({ source, from, to }) => {
+        const l = await readLesson(source ? String(source) : 'front')
+        if (typeof l === 'string') return text(l)
+        return text(lessonText(l, from ?? 1, to ?? l.count))
+      }
+    ),
+    tool(
+      'go_to_page',
+      'Turn the deck or PDF they have open to a slide or page (page), or scroll a web page to some words on it (find). Then take_screenshot and point at what you mean on it. Only when showing them something there helps (a later slide that explains what they asked about).',
+      { page: z.number().int().min(1).optional(), find: z.string().max(80).optional().describe('words on the web page to scroll to') },
+      async ({ page, find }) => text(await goToPage({ page: page ?? undefined, find: find ? String(find) : undefined }))
+    )
+  ]
+  const all = [...tools, ...lessonTools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
   // Every tool shows what it's doing beside the globe while it runs (Roamies' activity lines).
   for (const t of all) {
     const run = t.handler

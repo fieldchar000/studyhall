@@ -1,5 +1,5 @@
 // Copied from Roamies 0.1.41 (showcase/roamies/ink.js) by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies
-// Studyhall changes: only the colours and fonts below and colours further down (your dark blue and light blue instead of teal; Studyhall's fonts).
+// Studyhall changes: a lesson's own slide or page on a photo card is shown as it is (see photo()); and only the colours and fonts below and colours further down (your dark blue and light blue instead of teal; Studyhall's fonts).
 // Roamies drawing on screen: the Sidekick turns into its cursor and draws hand-drawn teal marks with its tip (the
 // same pen as the user's ⌃⌥ ink: teal, a dark edge so it reads on white, a soft glow), paced to its voice with a
 // caption at the bottom. Screen marks follow each thing's real shape; cards and diagrams go on calm space beside the
@@ -862,6 +862,9 @@
     },
     async photo(m) {
       const cells = [], cap = m.text || m.title || m.query || '';
+      // Studyhall: a slide or page of the lesson you have open is shown as it is (larger, not as LED dots), so it can be read.
+      const lesson = /^https:\/\/lesson\.studyhall\.app\//.test(m.url ?? '');
+      if (lesson) m.credit = 'from your lesson';
       // The picture first (at most 4 s), so the card takes its shape and nothing is cropped.
       const img = m.src && !m.missing ? await new Promise((res) => {
         const i = new Image(), t = setTimeout(() => res(null), 4000);
@@ -871,9 +874,9 @@
       }) : null;
       // About the area of a 240 × 192 frame in the picture's own proportions, no wider than 360 or taller than 300.
       const a = img ? img.naturalWidth / img.naturalHeight : 4 / 3;
-      let iw = Math.sqrt(240 * 192 * a), ih = iw / a;
-      const maxH = Math.min(300, maxCardH() - 150);
-      if (iw > 360) { iw = 360; ih = iw / a; }
+      let iw = Math.sqrt((lesson ? 520 * 330 : 240 * 192) * a), ih = iw / a;
+      const maxH = Math.min(lesson ? 420 : 300, maxCardH() - 150);
+      if (iw > (lesson ? 620 : 360)) { iw = lesson ? 620 : 360; ih = iw / a; }
       if (ih > maxH) { ih = maxH; iw = ih * a; }
       const gw = Math.max(1, Math.floor(iw / 3)), gh = Math.max(1, Math.floor(ih / 3)), pw = gw * 3, ph = gh * 3;
       // Names for its parts (labels, as fractions of the picture): in a column each side of it, each on the side its
@@ -903,7 +906,8 @@
       const capY = 12 + ah + 12 + (long ? 12 : 15), credY = capRows.length ? capY + (capRows.length - 1) * capLh + 16 : 12 + ah + 12 + 10;
       const h = 26 + 12 + ah + 12 + capRows.length * capLh + credRows.length * 14 + 12;
       let ready = false;
-      if (img) {
+      if (img && lesson) ready = true;
+      else if (img) {
         const cv = document.createElement('canvas'); cv.width = gw; cv.height = gh;
         const c2 = cv.getContext('2d', { willReadFrequently: true });
         c2.drawImage(img, 0, 0, gw, gh); // the frame has the picture's proportions: all of it, none cut off
@@ -914,7 +918,8 @@
       }
       const c = await card(m, w, h, function (b, l, t, x, y, age) {
         const u = clamp(age / 1, 0, 1);
-        if (ready) for (const [gx, gy, v] of cells) { if ((B4[(gy % 4) * 4 + (gx % 4)] + 0.5) / 16 > u * 1.05) continue; b.fillStyle = LED[v]; b.fillRect(x + ix + gx * 3, y + 12 + gy * 3, 3, 3); }
+        if (ready && lesson) { b.save(); b.globalAlpha = u; b.imageSmoothingEnabled = true; b.drawImage(img, x + ix, y + 12, pw, ph); b.restore(); }
+        else if (ready) for (const [gx, gy, v] of cells) { if ((B4[(gy % 4) * 4 + (gx % 4)] + 0.5) / 16 > u * 1.05) continue; b.fillStyle = LED[v]; b.fillRect(x + ix + gx * 3, y + 12 + gy * 3, 3, 3); }
         else { b.fillStyle = 'rgba(20,60,143,0.25)'; b.fillRect(x + ix, y + 12, pw, ph); typed(b, 'no picture found', x + w / 2, y + 12 + ph / 2, SMALL, DIM, 1, { anchor: 'middle' }); }
         capRows.forEach((r, i) => typed(b, r, x + w / 2, y + capY + i * capLh, CAPF, TEXT, (age - 0.6 - i * 0.15) / 0.5, { anchor: 'middle' }));
         credRows.forEach((r, i) => typed(b, r, x + w / 2, y + credY + i * 14, `400 10px ${MONO}`, DIM, (age - 0.8) / 0.4, { anchor: 'middle' }));
