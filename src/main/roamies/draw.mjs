@@ -1,4 +1,4 @@
-// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/draw.mjs, unchanged except the DrawShape export added at the end, photoCredits: Studyhall names the author and licence of a figure it found; and the scene card: drawings from Studyhall's illustration kit placed on a card)
+// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/draw.mjs, unchanged except the DrawShape export added at the end, photoCredits: Studyhall names the author and licence of a figure it found; and the scene card: drawings from Studyhall's illustration kit placed on a card; the study board: slides of the lesson side by side with rings and arrows between them)
 // The draw tool's pieces: the beats-and-marks schema (checked before anything draws), where each mark goes on the
 // real screen, the parts already drawn (p1, p2 …) so follow-ups can edit them, photos and favicons for cards, and a
 // small SMILES reader for molecules, a small LaTeX reader for maths, the layering of flow diagrams and the countries a
@@ -13,7 +13,7 @@ export const TONES = ['accent', 'teal', 'amber', 'coral', 'lilac', 'sky', 'lime'
 // Marks on the real screen (they need a place on it), actions in apps, and cards drawn on calm space.
 export const SCREEN = ['point', 'target', 'hover', 'ring', 'frame', 'underline', 'strike', 'check', 'cross', 'connect', 'trace', 'num', 'label', 'write', 'scroll', 'spotlight', 'highlight', 'line', 'curve', 'arrow', 'circle', 'rect'];
 export const ACTIONS = ['emote', 'sfx', 'type', 'copy', 'open', 'handoff', 'button'];
-export const CARDS = ['card', 'note', 'list', 'mindmap', 'clip', 'sources', 'photo', 'graph', 'legend', 'timeline', 'molecule', 'model', 'flow', 'table', 'bars', 'map', 'math', 'geometry', 'quiz', 'ticket', 'medal', 'scene'];
+export const CARDS = ['card', 'note', 'list', 'mindmap', 'clip', 'sources', 'photo', 'graph', 'legend', 'timeline', 'molecule', 'model', 'flow', 'table', 'bars', 'map', 'math', 'geometry', 'quiz', 'ticket', 'medal', 'scene', 'board'];
 export const KINDS = [...SCREEN, ...ACTIONS, ...CARDS];
 // Drawn from a list of points (screenshot pixels) instead of one place.
 const PATHS = new Set(['trace', 'line', 'curve', 'arrow']);
@@ -64,6 +64,12 @@ const Mark = z.object({
     size: z.enum(['small', 'medium', 'large']).optional(), label: z.string().max(40).optional(),
     move: z.object({ to: pair, loop: z.boolean().optional(), secs: num.optional() }).optional(), pulse: z.boolean().optional(),
   })).max(10).optional(),
+  // Studyhall: the study board's slides (pages of the lesson read with read_lesson), each with rings on words on it;
+  // links join rings by id.
+  slides: z.array(z.object({
+    page: z.number().int().min(1), label: z.string().max(40).optional(),
+    rings: z.array(z.object({ id: z.string().min(1).max(12), text: z.string().min(1).max(120), label: z.string().max(40).optional() })).max(6).optional(),
+  })).max(3).optional(),
   columns: z.array(z.string().max(30)).max(LIMITS.columns).optional(),
   rows: z.array(z.array(z.string().max(80)).max(LIMITS.columns)).max(LIMITS.rows).optional(),
   bars: z.array(z.object({ label: z.string().min(1).max(30), value: num, tone: z.enum(TONES).optional() })).max(LIMITS.bars).optional(),
@@ -142,6 +148,11 @@ export function checkDraw(args) {
       if (m.kind === 'clip') need(m.title && m.text, 'title and text');
       if (m.kind === 'sources') need(m.sources?.length, 'sources');
       if (m.kind === 'photo') need(m.query || m.url, 'query (a thing with a Wikipedia page) or url');
+      if (m.kind === 'board') {
+        need(m.slides?.length, 'slides ([{page, rings: [{id, text: words on that slide}]}], 1 to 3 pages of the lesson you read)');
+        const ids = new Set((m.slides ?? []).flatMap((s) => (s.rings ?? []).map((r) => r.id)));
+        for (const q of m.links ?? []) if (!ids.has(q.from) || !ids.has(q.to)) out.push(`${where}: link ${q.from} → ${q.to} joins a ring that isn't there (rings: ${[...ids].join(', ')}).`);
+      }
       if (m.kind === 'scene') {
         need(m.pieces?.length, 'pieces ([{id, icon (an id from find_illustrations), x, y on a 0–100 grid, size, label}])');
         const ids = new Set((m.pieces ?? []).map((p) => p.id));

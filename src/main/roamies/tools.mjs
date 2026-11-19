@@ -231,7 +231,7 @@ export function sideSearchFor(route) {
 // Every request and redirect hop of web_fetch goes through safety.mjs, by name and by the addresses it resolves to.
 export const guardFetch = async (url) => { const v = await checkFetch(url); return v.level === BLOCK ? `Blocked for safety: ${v.reason}` : null; };
 
-export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null, shotBusy = null, iconFetch = null }) {
+export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null, shotBusy = null, iconFetch = null, boardFetch = null }) {
   // Relative paths (and run_command) start in workdir: the home folder for the chat, its own folder for an agent.
   const at = (p) => { const s = String(p ?? ''); return /^~(?=$|\/|\\)/.test(s) || path.isAbsolute(s) || /^[a-z]:[\\/]/i.test(s) ? s : path.join(workdir, s); };
   const where = workdir === HOME ? "the user's home folder" : `its working folder (${workdir})`;
@@ -597,6 +597,8 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
     await Promise.all(marks.map(async (m) => {
       if (m.kind === 'photo') {
         try { Object.assign(m, await photos.get(m)); } catch (e) { m.missing = true; notes.push(`No photo for ${m.query ?? 'that link'} (${e.message}); drew its frame and caption only.`); }
+      } else if (m.kind === 'board' && boardFetch) {
+        try { Object.assign(m, await boardFetch(m)); } catch (e) { m.missing = true; notes.push(`The study board couldn't show those slides (${e.message}).`); }
       } else if (m.kind === 'scene' && iconFetch) {
         const credit = new Set();
         await Promise.all((m.pieces ?? []).map(async (p) => {

@@ -15,17 +15,49 @@ export async function lessonPdfText(data: Uint8Array): Promise<string> {
   const { pages } = await pdfText(data)
   const pdfjs = await import('pdfjs-dist')
   const doc = await open(data)
-  const out: { n: number; text: string; pictures: number }[] = []
+  const out: { n: number; text: string; pictures: number; boxes: [number, number, number, number, string][] }[] = []
   for (let i = 1; i <= doc.numPages; i++) {
     let pictures = 0
+    let boxes: [number, number, number, number, string][] = []
+    if (i <= 200) boxes = await pageBoxes(await doc.getPage(i)).catch(() => [])
     if (i <= 200) {
       const ops = await (await doc.getPage(i)).getOperatorList().catch(() => null)
       pictures = ops ? ops.fnArray.filter((f) => f === pdfjs.OPS.paintImageXObject || f === pdfjs.OPS.paintInlineImageXObject).length : 0
     }
-    out.push({ n: i, text: pages[i - 1] ?? '', pictures })
+    out.push({ n: i, text: pages[i - 1] ?? '', pictures, boxes })
   }
   await doc.cleanup().catch(() => {})
   return JSON.stringify(out)
+}
+
+/** Lines of text on a page with where they sit: [x, y, w, h] as fractions of the page, and the line's text (pieces on
+ *  the same baseline and close together are one line). For the study board's rings. */
+async function pageBoxes(page: import('pdfjs-dist').PDFPageProxy): Promise<[number, number, number, number, string][]> {
+  const vp = page.getViewport({ scale: 1 })
+  const W = vp.width
+  const H = vp.height
+  const tc = await page.getTextContent()
+  type Piece = { x: number; y: number; w: number; h: number; s: string }
+  const pieces: Piece[] = []
+  for (const it of tc.items as { str?: string; transform?: number[]; width?: number; height?: number }[]) {
+    if (!it.str?.trim() || !it.transform) continue
+    const [, , , d, e, f] = it.transform
+    const h = Math.abs(it.height || d || 10)
+    pieces.push({ x: e, y: H - f - h, w: it.width ?? 0, h, s: it.str })
+  }
+  pieces.sort((a, b) => a.y - b.y || a.x - b.x)
+  const lines: Piece[] = []
+  for (const p of pieces) {
+    const l = lines.find((q) => Math.abs(q.y - p.y) < Math.max(3, p.h * 0.4) && p.x - (q.x + q.w) < p.h * 2.5 && p.x >= q.x - 2)
+    if (l) {
+      l.s += (/\s$/.test(l.s) || /^\s/.test(p.s) ? '' : ' ') + p.s
+      const right = Math.max(l.x + l.w, p.x + p.w)
+      l.h = Math.max(l.h, p.h)
+      l.w = right - l.x
+    } else lines.push({ ...p })
+  }
+  const r = (v: number): number => Math.round(v * 10000) / 10000
+  return lines.slice(0, 60).map((l) => [r(l.x / W), r(l.y / H), r(l.w / W), r(l.h / H), l.s.trim().slice(0, 160)])
 }
 
 /** Page n drawn as a JPEG data URL, about `width` pixels wide. */

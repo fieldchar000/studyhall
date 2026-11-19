@@ -1046,7 +1046,71 @@
     ticket: (m) => drawTicket(m),
     medal: (m) => drawMedal(m),
     scene: (m) => drawScene(m),
+    board: (m) => drawBoard(m),
   };
+
+  // ---------------------------------------------------------------- the study board (Studyhall)
+  // Two or three slides of the lesson side by side, big enough to read, with rings on the words that matter and arrows
+  // from one slide to another (where an idea comes from, where it leads), drawn one by one; other cards go below it.
+  async function drawBoard(m) {
+    const S = scr(), slides = await Promise.all((m.slides ?? []).map((s) => new Promise((res) => {
+      if (!s.src) return res({ ...s, img: null });
+      const i = new Image(), tm = setTimeout(() => res({ ...s, img: null }), 5000);
+      i.onload = () => { clearTimeout(tm); res({ ...s, img: i.naturalWidth ? i : null }); };
+      i.onerror = () => { clearTimeout(tm); res({ ...s, img: null }); };
+      i.src = s.src;
+    })));
+    if (!slides.length) return;
+    const n = slides.length, pad = 18, gap = 34, top = 30;
+    const a = slides[0].img ? slides[0].img.naturalWidth / slides[0].img.naturalHeight : 16 / 9;
+    const maxW = Math.min(S[2] - S[0] - 40, 1600), maxH = Math.max(200, Math.min(maxCardH() - 26, (S[3] - S[1]) * 0.66) - top - pad - 20);
+    let sw = (maxW - pad * 2 - gap * (n - 1)) / n, sh = sw / a;
+    if (sh > maxH) { sh = maxH; sw = sh * a; }
+    const W = Math.round(pad * 2 + sw * n + gap * (n - 1)), h = Math.round(26 + top + sh + pad + 18);
+    const at = (i) => pad + i * (sw + gap);
+    const rings = slides.flatMap((s, i) => (s.rings ?? []).filter((r) => r.rect).map((r) => ({ ...r, i, x: at(i) + r.rect[0] * sw - 6, y: top + r.rect[1] * sh - 5, w: r.rect[2] * sw + 12, h: r.rect[3] * sh + 10 })));
+    const byId = new Map(rings.map((r) => [r.id, r])), links = (m.links ?? []).filter((q) => byId.has(q.from) && byId.has(q.to));
+    const moving = links.some((q) => q.flow);
+    // (Its rings and arrows appear one by one: it keeps being drawn until they're all there.)
+    const born = now(), buildUp = n * 0.25 + 0.3 + rings.length * 0.45 + links.length * 0.5 + 1.5;
+    await card(m, W, h, function (b, l, t, x, y, age) {
+      slides.forEach((s, i) => {
+        const u = reduced() ? 1 : clamp((age - i * 0.25) / 0.4, 0, 1);
+        if (u <= 0) return;
+        const sx = x + at(i), sy = y + top;
+        typed(b, s.label || `${i === 0 ? 'Now: ' : ''}slide ${s.page}`, sx, sy - 9, SMALL, i === 0 ? TEXT : DIM, u);
+        b.save(); b.globalAlpha *= u;
+        if (s.img) { b.imageSmoothingEnabled = true; b.drawImage(s.img, sx, sy, sw, sh); } else { b.fillStyle = 'rgba(20,60,143,0.25)'; b.fillRect(sx, sy, sw, sh); }
+        b.strokeStyle = 'rgba(122,170,255,0.5)'; b.lineWidth = 1; b.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
+        b.restore();
+      });
+      const t0 = n * 0.25 + 0.3;
+      rings.forEach((r, k) => {
+        const u = reduced() ? 1 : clamp((age - t0 - k * 0.45) / 0.45, 0, 1);
+        if (u <= 0) return;
+        b.save(); b.strokeStyle = ACC; b.lineWidth = 3; b.globalAlpha *= 0.9;
+        const rx = x + r.x, ry = y + r.y, rad = Math.min(14, r.h / 2);
+        b.beginPath(); b.roundRect ? b.roundRect(rx, ry, r.w * u, r.h, rad) : b.rect(rx, ry, r.w * u, r.h); b.stroke(); b.restore();
+        if (r.label && u >= 1) typed(b, r.label, rx + r.w + 6, ry + r.h / 2 + 4, SMALL, HOT, (age - t0 - k * 0.45 - 0.4) / 0.3, { rim: 3 });
+      });
+      links.forEach((q, k) => {
+        const A = byId.get(q.from), B = byId.get(q.to);
+        const u = reduced() ? 1 : clamp((age - t0 - rings.length * 0.45 - k * 0.5) / 0.6, 0, 1);
+        if (u <= 0) return;
+        const ax = x + A.x + (B.i > A.i ? A.w : 0), ay = y + A.y + A.h / 2, bx = x + B.x + (B.i > A.i ? 0 : B.w), by = y + B.y + B.h / 2;
+        const cx = (ax + bx) / 2, cy = Math.min(ay, by) - 60;
+        const pt = (s) => [(1 - s) * (1 - s) * ax + 2 * (1 - s) * s * cx + s * s * bx, (1 - s) * (1 - s) * ay + 2 * (1 - s) * s * cy + s * s * by];
+        b.save(); b.strokeStyle = HOT; b.lineWidth = 2.5; b.beginPath();
+        for (let s = 0; s <= u; s += 0.02) { const [px, py] = pt(s); s === 0 ? b.moveTo(px, py) : b.lineTo(px, py); }
+        b.stroke();
+        if (u >= 1) { const [px, py] = pt(0.97), ang = Math.atan2(by - py, bx - px); b.fillStyle = HOT; b.beginPath(); b.moveTo(bx, by); b.lineTo(bx - 11 * Math.cos(ang - 0.4), by - 11 * Math.sin(ang - 0.4)); b.lineTo(bx - 11 * Math.cos(ang + 0.4), by - 11 * Math.sin(ang + 0.4)); b.closePath(); b.fill(); }
+        b.restore();
+        if (u >= 1 && q.flow && !reduced()) { const d = (t * 0.5) % 1; const [px, py] = pt(d); l.fillStyle = HOT; l.fillRect(Math.round(px) - 3, Math.round(py) - 3, 6, 6); }
+        if (u >= 1 && q.label) { const [px, py] = pt(0.5); typed(b, q.label, px, py - 8, SMALL, TEXT, (age - t0 - rings.length * 0.45 - k * 0.5 - 0.5) / 0.3, { anchor: 'middle', rim: 4 }); }
+      });
+    }, { title: m.title || 'study board', live: () => (moving && !reduced()) || now() - born < buildUp });
+    sfx('expand');
+  }
 
   // ---------------------------------------------------------------- scenes (Studyhall)
   // Drawings from Studyhall's illustration kit placed on a card (a 0–100 grid), each with its label; arrows between
@@ -1067,6 +1131,7 @@
     const credRows = m.credit ? wrapRows(m.credit, W - 24, `400 10px ${MONO}`) : [];
     const h = 26 + H + credRows.length * 14 + 8;
     const moving = pieces.some((p) => p.move || p.pulse) || links.some((q) => q.flow);
+    const born = now(); // (pieces and arrows appear one by one: it keeps being drawn until they're all there)
     const at = (p, age) => {
       let x = gx(p.x), y = gy(p.y);
       if (p.move?.to) {
@@ -1105,7 +1170,7 @@
         if (p.label) typed(b, p.label, x + px, y + py + p.s / 2 + 14, SMALL, TEXT, (age - i * 0.18 - 0.2) / 0.3, { anchor: 'middle', rim: 3 });
       });
       credRows.forEach((r, i) => typed(b, r, x + W / 2, y + H + 6 + i * 14, `400 10px ${MONO}`, DIM, (age - 0.8) / 0.4, { anchor: 'middle' }));
-    }, { title: m.title || 'scene', live: () => moving && !reduced() });
+    }, { title: m.title || 'scene', live: () => (moving && !reduced()) || now() - born < pieces.length * 0.18 + (m.links ?? []).length * 0.25 + 2 });
     sfx('scan');
   }
 

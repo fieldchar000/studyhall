@@ -22,7 +22,9 @@ import { handsHelper } from './roamiesTools'
 const OFFSCREEN = process.env.STUDYHALL_OFFSCREEN === '1'
 export const LESSON_HOST = 'lesson.studyhall.app'
 
-export type LessonPage = { n: number; text: string; notes: string; pictures: number; shapes: number }
+/** Where a line or paragraph of text sits on the page: x, y, width, height as fractions of the page, and the text. */
+export type TextBox = [number, number, number, number, string]
+export type LessonPage = { n: number; text: string; notes: string; pictures: number; shapes: number; boxes?: TextBox[] }
 export type Lesson = {
   id: string
   kind: 'slides' | 'pdf'
@@ -93,19 +95,20 @@ $cur = 0
 try { foreach ($w in $a.SlideShowWindows) { if ($w.Presentation.FullName -eq $p.FullName) { $cur = $w.View.Slide.SlideIndex } } } catch {}
 if (-not $cur) { try { foreach ($w in $a.Windows) { if ($w.Presentation.FullName -eq $p.FullName) { $cur = $w.View.Slide.SlideIndex; break } } } catch {} }
 $slides = @()
+$sw = [double]$p.PageSetup.SlideWidth; $shh = [double]$p.PageSetup.SlideHeight
 foreach ($s in $p.Slides) {
-  $t = New-Object System.Collections.Generic.List[string]; $pics = 0; $shapes = 0
+  $t = New-Object System.Collections.Generic.List[string]; $pics = 0; $shapes = 0; $bx = New-Object System.Collections.ArrayList
   $list = New-Object System.Collections.ArrayList; foreach ($sh in $s.Shapes) { [void]$list.Add($sh) }
   for ($i = 0; $i -lt $list.Count; $i++) { $sh = $list[$i]
     try { if ($sh.Type -eq 6) { foreach ($g in $sh.GroupItems) { [void]$list.Add($g) }; continue } } catch {}
-    try { if ($sh.HasTextFrame -and $sh.TextFrame.HasText) { $t.Add($sh.TextFrame.TextRange.Text) } } catch {}
+    try { if ($sh.HasTextFrame -and $sh.TextFrame.HasText) { $t.Add($sh.TextFrame.TextRange.Text); $tr = $sh.TextFrame.TextRange; $pc = $tr.Paragraphs().Count; for ($k = 1; $k -le $pc -and $bx.Count -lt 40; $k++) { try { $pp = $tr.Paragraphs($k); $tx = $pp.Text.Trim(); if ($tx) { [void]$bx.Add(@([math]::Round($pp.BoundLeft / $sw, 4), [math]::Round($pp.BoundTop / $shh, 4), [math]::Round($pp.BoundWidth / $sw, 4), [math]::Round($pp.BoundHeight / $shh, 4), $tx.Substring(0, [math]::Min(160, $tx.Length)))) } } catch {} } } } catch {}
     try { if ($sh.HasTable) { foreach ($r in $sh.Table.Rows) { $c = @(); foreach ($cell in $r.Cells) { $c += $cell.Shape.TextFrame.TextRange.Text }; $t.Add(($c -join ' | ')) } } } catch {}
     try { if (@(3,11,13,21,24,28) -contains [int]$sh.Type -or $sh.HasChart -or $sh.HasSmartArt) { $pics++ } elseif (@(1,9,17) -contains [int]$sh.Type) { $shapes++ } } catch {}
   }
   $notes = ''; try { $notes = $s.NotesPage.Shapes.Placeholders(2).TextFrame.TextRange.Text } catch {}
-  $slides += [pscustomobject]@{ n = $s.SlideIndex; text = ($t -join "\`n"); notes = $notes; pictures = $pics; shapes = $shapes }
+  $slides += [pscustomobject]@{ n = $s.SlideIndex; text = ($t -join "\`n"); notes = $notes; pictures = $pics; shapes = $shapes; boxes = $bx }
 }
-[pscustomobject]@{ path = $p.FullName; name = $p.Name; count = $p.Slides.Count; current = $cur; protected = $pick.prot; ratio = ($p.PageSetup.SlideHeight / $p.PageSetup.SlideWidth); slides = $slides } | ConvertTo-Json -Depth 4 -Compress
+[pscustomobject]@{ path = $p.FullName; name = $p.Name; count = $p.Slides.Count; current = $cur; protected = $pick.prot; ratio = ($p.PageSetup.SlideHeight / $p.PageSetup.SlideWidth); slides = $slides } | ConvertTo-Json -Depth 6 -Compress
 `
 // One slide as a picture. From the open deck; if PowerPoint won't export from it (some Protected View files), from a
 // copy opened out of sight, which is then closed again. PowerPoint itself is never closed.
@@ -166,7 +169,7 @@ async function readSlides(title: string, path = ''): Promise<Lesson | string> {
   if (j.error) return j.error
   const st = await stat(j.path).catch(() => null)
   const id = idOf(`${j.path}|${st?.mtimeMs ?? ''}`)
-  const pages = (Array.isArray(j.slides) ? j.slides : [j.slides]).map((s) => ({ n: Number(s.n), text: String(s.text ?? '').trim(), notes: String(s.notes ?? '').trim(), pictures: Number(s.pictures) || 0, shapes: Number(s.shapes) || 0 }))
+  const pages = (Array.isArray(j.slides) ? j.slides : [j.slides]).map((s) => ({ n: Number(s.n), text: String(s.text ?? '').trim(), notes: String(s.notes ?? '').trim(), pictures: Number(s.pictures) || 0, shapes: Number(s.shapes) || 0, boxes: Array.isArray(s.boxes) ? (s.boxes as unknown[]).filter((b): b is TextBox => Array.isArray(b) && b.length === 5) : [] }))
   const lesson: Lesson = { id, kind: 'slides', title: j.name.replace(/\.(pptx?|ppsx?|pptm)$/i, ''), source: j.path, count: j.count, current: j.current, pages, app: 'PowerPoint', window: title, protectedView: j.protected }
   ;(lesson as Lesson & { ratio?: number }).ratio = j.ratio || 0.5625
   return lesson
@@ -192,7 +195,7 @@ async function readPdf(source: string, fr: Front | null): Promise<Lesson | strin
   const out = await pdfAsk('text', { data })
   let pages: LessonPage[]
   try {
-    pages = (JSON.parse(out) as { n: number; text: string; pictures: number }[]).map((p) => ({ n: p.n, text: p.text.trim(), notes: '', pictures: p.pictures, shapes: 0 }))
+    pages = (JSON.parse(out) as { n: number; text: string; pictures: number; boxes?: TextBox[] }[]).map((p) => ({ n: p.n, text: p.text.trim(), notes: '', pictures: p.pictures, shapes: 0, boxes: p.boxes ?? [] }))
   } catch {
     return `Couldn’t read that PDF: ${out.slice(0, 120)}`
   }
@@ -293,7 +296,8 @@ function mapText(l: Lesson): string {
     .slice(0, 40)
     .map(([n, b]) => `${n} ← ${b.map((x) => `${x.from} (${x.via.join(', ')})`).join(', ')}`)
     .join('; ')
-  return `\n\nLesson map (made from the deck's own words; use it to connect the ${label} they're on to the rest, like a teacher: "remember ${label} 4…", "this is why ${label} 12 matters"):\nKey terms, first ${label} → where they come back: ${terms}${builds ? `\nBuilds on (${label} ← earlier ${label}s it uses): ${builds}` : ''}`
+  return `\n\nLesson map (made from the deck's own words; use it to connect the ${label} they're on to the rest, like a teacher: "remember ${label} 4…", "this is why ${label} 12 matters"):\nKey terms, first ${label} → where they come back: ${terms}${builds ? `\nBuilds on (${label} ← earlier ${label}s it uses): ${builds}` : ''}
+To show how a ${label} connects to another, use show_board (the ${label}s side by side, rings and an arrow), not a table.`
 }
 /** The pages about a topic, in order (for "teach me X" from the deck): the ones whose words match it most. */
 function topicPages(l: Lesson, topic: string): number[] {
@@ -332,7 +336,7 @@ export function lessonText(l: Lesson, from = 1, to = l.count, budget = 16_000, t
 }
 
 // ---------- Pictures of pages (Roamies' photo cards and see_photo fetch them from https://lesson.studyhall.app/…) ----------
-async function picture(id: string, n: number): Promise<Buffer | null> {
+export async function picture(id: string, n: number): Promise<Buffer | null> {
   const l = lessons.get(id)
   if (!l || n < 1 || n > l.count) return null
   const file = join(cacheDir(), id, `${n}.jpg`)
@@ -389,3 +393,24 @@ export async function goToPage(o: { page?: number; find?: string; lessonId?: str
   await new Promise((res) => setTimeout(res, 900)) // (the page draws)
   return `Now on ${l.kind === 'slides' ? 'slide' : 'page'} ${n}. Take a screenshot of it before pointing at anything.`
 }
+
+/** Where some words sit on a page of a lesson read earlier: [x, y, w, h] as fractions of the page, or null. Matched on
+ *  the words (any case, ignoring punctuation): the box holding all of them, else the one holding the most. */
+export function findOnPage(lessonId: string, page: number, words: string): [number, number, number, number] | null {
+  const l = lessons.get(lessonId) ?? (lastLesson()?.id === lessonId ? lastLesson() : null)
+  const p = l?.pages.find((x) => x.n === page)
+  if (!p?.boxes?.length) return null
+  const norm = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+  const want = norm(words)
+  if (!want) return null
+  const w = want.split(' ')
+  let best: { b: TextBox; score: number } | null = null
+  for (const b of p.boxes) {
+    const t = norm(b[4])
+    const score = t.includes(want) ? 100 - t.length / 100 : w.filter((x) => t.includes(x)).length / w.length
+    if (!best || score > best.score) best = { b, score }
+  }
+  return best && best.score >= 0.6 ? [best.b[0], best.b[1], best.b[2], best.b[3]] : null
+}
+/** The id of the lesson read most recently (for the study board). */
+export const lastLessonId = (): string | null => lastLesson()?.id ?? null
