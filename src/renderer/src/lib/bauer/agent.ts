@@ -726,6 +726,8 @@ let quizUntil = 0
 export function markAsked(): void {
   askedAt = Date.now()
 }
+/** Nova is waiting on an answer from them right now (it asked something in the last two minutes, or a quiz is on). */
+export const waitingOnThem = (): boolean => Date.now() < quizUntil || Date.now() - askedAt < 120_000
 
 export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean; asking?: boolean }> {
   paused = null

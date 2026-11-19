@@ -118,6 +118,7 @@ async function boot(opts: {
   let kit: Any = null
   let agent: Any = null
   let hat = false // tutor mode
+  let live = false // conversation mode
   const c0 = (): Any => R.tiles?.[0]?.creature
   /** The cap: a flat board (dark blue with a light-blue edge), its band, and a gold tassel, in pixels like the globe. */
   function drawHat(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
@@ -158,6 +159,19 @@ async function boot(opts: {
     p.over = (ctx: CanvasRenderingContext2D, env: Any) => {
       over?.(ctx, env)
       if (hat && k.presence === 'shown' && c0()?.form !== 'cursor') drawHat(ctx, k.m.x, k.m.y, k.R)
+      // Conversation mode: a soft ring round the globe that breathes, so you know it's listening hands-free.
+      if (live && k.presence === 'shown') {
+        const t = performance.now() / 1000
+        ctx.save()
+        ctx.globalAlpha = 0.35 + 0.25 * Math.sin(t * 2.2)
+        ctx.strokeStyle = '#7aaaff'
+        ctx.lineWidth = 2
+        ctx.setLineDash([4, 6])
+        ctx.beginPath()
+        ctx.arc(k.m.x, k.m.y, k.R * 1.25 + 2 * Math.sin(t * 2.2), 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      }
     }
     const extent = p.extent
     p.extent = () => {
@@ -168,7 +182,7 @@ async function boot(opts: {
       return e ? [Math.min(e[0], box[0]), Math.min(e[1], box[1]), Math.max(e[2], box[2]), Math.max(e[3], box[3])] : box
     }
     const quiet = p.quiet
-    p.quiet = () => !hat && (quiet ? quiet() : true)
+    p.quiet = () => !hat && !live && (quiet ? quiet() : true)
     p.update = (dt: number, env: Any) => {
       update?.(dt, env)
       const m = k.m
@@ -289,6 +303,11 @@ async function boot(opts: {
         break
       case 'trail':
         agent.cards?.trail(e)
+        break
+      case 'live':
+        live = !!e.on
+        R.sfx?.play(live ? 'expand' : 'poof')
+        R.wake?.()
         break
       case 'hat':
         hat = !!e.on

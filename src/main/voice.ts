@@ -324,6 +324,16 @@ export function voiceRecord(on: boolean, sourceId?: string): void {
   send({ type: 'record', on, ...(sourceId ? { sourceId } : {}) })
 }
 /** A request to Nova as if you'd said it (tutor mode's opening question), through the voice window. */
+/** Conversation mode on or off: the voice window listens hands-free after each reply, or stops. */
+export function voiceConversation(on: boolean): void {
+  ensureWindow()
+  if (on) {
+    place(H_SMALL)
+    win!.showInactive()
+  }
+  send({ type: 'conversation', on })
+}
+
 export function voiceAsk(text: string): void {
   ensureWindow()
   const go = (): void => void (ready ? win?.webContents.send('nova:ask', text) : setTimeout(go, 300))

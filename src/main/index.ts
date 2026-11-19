@@ -51,8 +51,9 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
 import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, orbPress, orbPressHooks, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
 import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, showPoliteView, type PoliteRect } from './politePage'
 import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
+import { conversationLine, convHooks, setConversation, toggleConversation } from './conversation'
 import { setTutor, listLessons, openLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
-import { reportClicks, voiceAsk, voiceRecord } from './voice'
+import { reportClicks, voiceAsk, voiceConversation, voiceRecord } from './voice'
 import { askBeside, reportPen, startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
 import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
@@ -468,6 +469,7 @@ if (!app.requestSingleInstanceLock()) {
             facts,
             focusState(),
             lastOffered(),
+            conversationLine(),
             '</live-state>'
           ].join('\n')
           return novaTurn(e.sender, String(said ?? '').slice(0, 4000), live)
@@ -495,6 +497,7 @@ if (!app.requestSingleInstanceLock()) {
         handle('nova:openLesson', (_e, path: string) => openLesson(String(path)))
         handle('nova:lessonsFolder', () => showLessonsFolder())
         handle('nova:tutor', (_e, on: boolean) => setTutor(!!on))
+        handle('nova:conversation', (_e, on: boolean) => setConversation(!!on))
         handle('nova:promises', () => listPromises())
         handle('nova:promise', (_e, id: string, op: string, value: unknown) => (['done', 'open', 'drop', 'snooze', 'due', 'text'].includes(op) ? changePromise(String(id), op as 'done', value as string) : false))
         handle('nova:addPromise', (_e, text: string, due: string | null) => addPromise(String(text ?? ''), due ? String(due) : null))
@@ -628,6 +631,7 @@ if (!app.requestSingleInstanceLock()) {
     penHooks.marked = (rect) => askBeside(rect)
     // Esc in any app: Nova stops talking and drawing, as Roamies does. Clicks: for a drawn walkthrough waiting on one.
     talkKeyHooks.esc = () => {
+      setConversation(false) // (Esc ends conversation mode too)
       if (penMode()) setPen(null, true) // (the marks are cancelled)
       roamiesEsc()
       roamiesAbort()
@@ -644,6 +648,10 @@ if (!app.requestSingleInstanceLock()) {
     penHooks.circled = (rect, strokes) => noteCircle(rect, strokes)
     // Tutor mode (tutor.ts): Ctrl+Alt+T, the scholar's cap on the globe, its opening question, the lesson's recording.
     shortcutHooks.tutor = () => toggleTutor()
+    // Conversation mode (conversation.ts): Ctrl+Alt+C, the globe's live ring, the voice window listening hands-free.
+    shortcutHooks.conversation = () => toggleConversation()
+    convHooks.send = (on) => voiceConversation(on)
+    convHooks.ring = (on) => orbAgent({ type: 'live', on })
     tutorHooks.hat = (on) => orbAgent({ type: 'hat', on })
     tutorHooks.ask = (t) => voiceAsk(t)
     tutorHooks.record = (on, sourceId) => voiceRecord(on, sourceId)

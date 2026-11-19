@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { VoiceState } from '@shared/types'
 import { describe, parseBrief, type BriefAction } from '@/lib/brief'
-import { handleSpeech, markAsked, say, undoLog } from '@/lib/bauer/agent'
+import { handleSpeech, markAsked, say, undoLog, waitingOnThem } from '@/lib/bauer/agent'
 import { wakeWordHeard } from '@/lib/bauer/heard'
 import { applyBrief, loadBriefContext } from '@/lib/briefApply'
 import { api } from '@/lib/data'
@@ -98,6 +98,9 @@ export default function VoicePanel(): React.JSX.Element {
   const phaseRef = useRef<Phase>('idle')
   const woke = useRef(false) // this recording started from "Hey Bauer" (not a button)
   const followUp = useRef(false) // listening for an answer straight after Nova spoke
+  // Conversation mode (Ctrl+Alt+C): listen again after every reply; quiet spells offer a hint, a long quiet ends it.
+  const conv = useRef(false)
+  const quietSpells = useRef(0)
   phaseRef.current = phase
   engine.held = phase !== 'idle' && phase !== 'nothing'
 
@@ -148,11 +151,12 @@ export default function VoicePanel(): React.JSX.Element {
         if (prefs.bauerTalk !== false && !r.quiet) say(r.reply)
         // Follow-up: Nova has finished talking, so it listens a few seconds for your answer, no key or "Hey Nova".
         const mode = prefs.novaFollowUp ?? 'asked'
-        if (r.followUp && (mode === 'always' || (mode === 'asked' && (r.asking || /\?["'”’)]*\s*$/.test(r.reply.trim()))))) {
+        if (conv.current || (r.followUp && (mode === 'always' || (mode === 'asked' && (r.asking || /\?["'”’)]*\s*$/.test(r.reply.trim())))))) {
           followUp.current = true
           woke.current = false
           setHeard(false)
-          await engine.listen(false, 6).catch(() => (followUp.current = false))
+          if (conv.current) markAsked() // (in a conversation, whatever they say next is for Nova)
+          await engine.listen(false, conv.current ? 25 : 6).catch(() => (followUp.current = false))
           if (followUp.current) {
             setPhase('listening')
             youSaid('')
@@ -210,6 +214,26 @@ export default function VoicePanel(): React.JSX.Element {
           }
         } else if (e.type === 'nothing') {
           if (phaseRef.current === 'review') return
+          // Conversation mode and they've gone quiet: a hint if Nova is waiting on them (a quiz question, a practical
+          // step), else just keep listening; about three minutes of quiet ends it.
+          if (conv.current) {
+            quietSpells.current++
+            if (quietSpells.current >= 7) {
+              conv.current = false
+              followUp.current = false
+              void api.nova.conversation(false)
+              youSaid('', true)
+              setPhase('idle')
+              return
+            }
+            if (waitingOnThem() && quietSpells.current <= 2) {
+              void act("(System, not them: they've been quiet for about 25 seconds. Offer one short hint for the question or step you're waiting on, without giving the answer, and wait.)")
+              return
+            }
+            markAsked()
+            void engine.listen(false, 25).catch(() => {})
+            return
+          }
           // No follow-up came: quietly stop listening (nothing to report).
           if (followUp.current) {
             followUp.current = false
@@ -222,6 +246,7 @@ export default function VoicePanel(): React.JSX.Element {
           youSaid('', true)
         } else if (e.type === 'transcript') {
           followUp.current = false
+          quietSpells.current = 0
           // Ctrl+Alt+Shift: what the PC was playing goes to Nova with what you said (only your words show here).
           const pc = e.pc != null ? `\n(While they held the keys, the PC was playing this, written down from its sound: "${e.pc.slice(0, 3000) || '(music or sound, no words)'}")` : ''
           youSaid(e.text || '🔊')
@@ -278,6 +303,25 @@ export default function VoicePanel(): React.JSX.Element {
           // (Studyhall asking it to listen, e.g. after Nova offered a quiz out loud: what comes back is an answer.)
           if (!c.ptt) markAsked()
           void listen(!!c.ptt, !!c.hear)
+        } else if (c.type === 'conversation') {
+          conv.current = c.on
+          quietSpells.current = 0
+          if (c.on) {
+            chime()
+            markAsked()
+            void api.eyes.stop().catch(() => {})
+            void (async () => {
+              await engine.listen(false, 25).catch(() => {})
+              followUp.current = true
+              setPhase('listening')
+              youSaid('')
+            })()
+          } else {
+            followUp.current = false
+            engine.cancel()
+            youSaid('', true)
+            setPhase('idle')
+          }
         } else if (c.type === 'stop') engine.cancel()
         else if (c.type === 'wake') engine.externalWake()
         else if (c.type === 'confirm') {

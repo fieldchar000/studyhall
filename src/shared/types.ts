@@ -928,6 +928,7 @@ export interface VoiceStatus {
 }
 export type VoiceCommand =
   | { type: 'listen'; ptt?: boolean; hear?: boolean }
+  | { type: 'conversation'; on: boolean }
   | { type: 'config'; wake: boolean; sensitivity: number; ears?: boolean; name?: NovaName }
   | { type: 'stop' }
   | { type: 'wake' } // the new ears heard "Hey <name>"
@@ -1263,6 +1264,8 @@ export interface Api {
     lessonsFolder(): Promise<void>
     /** Turn tutor mode on or off (like Ctrl+Alt+T). */
     tutor(on: boolean): Promise<void>
+    /** Conversation mode on or off (Ctrl+Alt+C): hands-free talking. */
+    conversation(on: boolean): Promise<void>
     /** Nova's own promises list (today, later), for its page. */
     promises(): Promise<{ today: NovaPromise[]; later: NovaPromise[] }>
     promise(id: string, op: 'done' | 'open' | 'drop' | 'snooze' | 'due' | 'text', value?: string | number | null): Promise<boolean>

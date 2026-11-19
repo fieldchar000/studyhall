@@ -23,6 +23,7 @@ import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMark
 import { goToPage, lastLesson, lessonQuizText, lessonText, readLesson } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
 import { figureText } from './figures'
+import { setConversation } from './conversation'
 import { illustrationsText } from './illustrations'
 import { setTutor, tutorOn, tutorPrompt, tutorTitle } from './tutor'
 import { stageDone, stageStart, stageTool, stageToolEnd, trailEnd, trailPlan, trailSettle } from './novaStage'
@@ -633,6 +634,10 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         return text('Tutor mode is starting: the tutor takes it from here. Say nothing more.')
       }
     ),
+    tool('end_conversation', 'End conversation mode (they said stop, that\'s all, or they\'re done). Say a short goodbye with how they did first.', {}, async () => {
+      setConversation(false)
+      return text('Conversation mode is off.')
+    }),
     tool('tutor_done', 'End tutor mode (they want to stop, or the lesson is over). Say a short goodbye line first.', {}, async () => {
       setTutor(false)
       return text('Tutor mode is off.')

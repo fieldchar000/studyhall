@@ -492,6 +492,11 @@ export async function roamiesSdkTools(tool: Tool, skip: Set<string>, onSlow: (na
         if (parsed?.success) input = parsed.data
         // Automated tests never touch your real PC: nothing is opened, run, read from your files or captured from
         // your screen (a screenshot shows Studyhall's own hidden test window instead).
+        // (Automated tests: read_window reads only a hidden test page of the test's own, titled "Nova test…", never yours.)
+        if (OFFSCREEN && t.name === 'read_window') {
+          const tw = BrowserWindow.getAllWindows().find((w) => w.getTitle().startsWith('Nova test'))
+          if (tw) return { content: [{ type: 'text', text: `Window "${tw.getTitle()}":\n${String(await tw.webContents.executeJavaScript('document.body.innerText')).slice(0, 8000)}` }] }
+        }
         if (OFFSCREEN && TEST_STUB[t.name]) return { content: [{ type: 'text', text: TEST_STUB[t.name] }] }
         try {
           const out = await t.execute(input, { toolCallId: `r${++callSeq}`, signal: abort.signal })

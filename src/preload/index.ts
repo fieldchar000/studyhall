@@ -304,6 +304,7 @@ const api: Api = {
     openLesson: (path) => ipcRenderer.invoke('nova:openLesson', path),
     lessonsFolder: () => ipcRenderer.invoke('nova:lessonsFolder'),
     tutor: (on) => ipcRenderer.invoke('nova:tutor', on),
+    conversation: (on) => ipcRenderer.invoke('nova:conversation', on),
     promises: () => ipcRenderer.invoke('nova:promises'),
     promise: (id, op, value) => ipcRenderer.invoke('nova:promise', id, op, value),
     addPromise: (text, due) => ipcRenderer.invoke('nova:addPromise', text, due),

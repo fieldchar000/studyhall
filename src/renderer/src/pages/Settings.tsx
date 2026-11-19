@@ -208,6 +208,7 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     items: [
       ['Hold Ctrl + Alt', 'Talk to Nova. Let go when you’re done.'],
       ['Hold Ctrl + Alt + left mouse button', 'While talking: draw on the screen to show what you mean (right-click undoes a mark).'],
+      ['Ctrl + Alt + C', 'Conversation mode on or off: talk hands-free (a spoken Q&A on your slides, your practical checklist step by step, or a chat). Esc or “stop” ends it.'],
       ['Hold Ctrl + Alt + Shift', 'Talk to Nova and let it hear what your PC is playing (a video, a lecture recording, a song): ask “what did he just say?” or “explain that”.'],
       ['Tap Ctrl + Shift', 'Type to Nova: a small box opens beside your mouse.'],
       ['Ctrl + Alt + B', 'Mark the screen first (hold the left button to draw, right-click undoes), then type or say your question.'],
