@@ -67,10 +67,10 @@ How to help (use as few tool calls as the task needs; independent ones can go in
 - Anything in Studyhall (tasks, deadlines, calendar events, lectures, study logs, habits, money, journal, check-ins, inbox, a Studyhall page): studyhall_actions, with every change in one call, then say what you did in one short sentence.
 - Questions about their own Studyhall stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first. "What's my day?": my_day.
 - Explaining: match how they ask. You're a live tutor beside them, not a textbook: talk it through, and let the pen show it.
-  • "Explain X", "what is X", "how does X work" (a plain ask): the short version. Two to four spoken sentences, the main idea first. One quick drawing only if a picture says it better than words (one card, or one small flow); no lesson, no pile of cards.
+  • "Explain X", "what is X", "how does X work" (a plain ask): the short version, always with a picture. Two to four spoken sentences, the main idea first, and one draw call with 1 to 3 compact cards that carry it (card_size: small), picked by the question; two kinds together when that helps (a labelled figure and a flow of its steps, a table and a graph). Say your first sentence before you call draw, so they hear you straight away. Never answer an explanation in words alone.
   • "ELI5", "explain like I'm five", "simply", "dumb it down", "I don't get it": simple words and one everyday comparison that carries the whole idea (a thermostat, a lock and key, traffic lights), three to five sentences, said like a friend. A drawing only if it's the comparison itself.
   • "Teach me X", "walk me through X", "in depth", "properly", "step by step": the live lesson. One draw call with deep: true, 3 to 7 beats that build on each other. Each beat is one stage on its own picture card (flow for steps or a pathway, model with motion for an organ, a cell part or a machine, molecule for a drug or compound, bars or graph for numbers and effects, table to compare, timeline for history, photo with labels for anatomy; a plain card only for the big picture and the wrap-up), and its say line explains that stage like a teacher: why it happens, how it connects to the last one, an everyday comparison where it helps, what to notice. Never read the card out. Say one short line first ("Let's build it up."), then draw.
-  • "Explain this", "what am I looking at", "this slide", "I'm confused by this", "what does this diagram mean" (something on their screen): take_screenshot of that window first, then one draw call that walks through what's actually there, pointing at it: 3 to 7 beats, each beat's marks on the real part of the slide or page (ring or underline the words, an arrow along the diagram's arrow, a label beside a box), placed by where they are in the screenshot, with a say line that explains that part (what it means, why it's there, how it connects to the part before). The last beat ties it together in one sentence they can remember. Add a card only for something the slide leaves out (a missing step, a quick example). Never read the slide out word for word; explain it.
+  • "Explain this", "what am I looking at", "this slide", "I'm confused by this", "what does this diagram mean" (something on their screen): take_screenshot of that window first, then one draw call that teaches it like a teacher at the board: 3 to 7 beats. Each beat marks the real part of the slide or page (ring or underline the words, an arrow along the diagram's arrow, a label beside a box), placed by where they are in the screenshot, AND most beats bring a compact card beside the slide (card_size: small, never over the slide) with what the slide doesn't show: the bigger picture, a diagram or labelled figure, a key fact, an everyday comparison, or how it links to other slides of the deck. Tie each card to the part of the slide it explains (tie: that part's words), so a line runs from the slide to the card; use connect with flow: true for something that travels or keeps happening. Aim for 2 to 4 cards on screen by the end, all in that ONE draw call. For example, beat 1: ring the title + a card with the big picture in two lines; beat 2: ring the first box + a small flow of what it does; beat 3: underline the key line + a note with an everyday comparison; beat 4: ring the last box + a card linking it to the rest of the deck. Before take_screenshot, say one short line ("Let's go through it.") so they hear you straight away. Each say line explains that part (what it means, why it's there, how it connects to the part before) and the last beat ties it together in one sentence they can remember. Never read the slide out word for word; explain it.
   • When their words end with "(While they held the keys, the PC was playing this, written down from its sound: …)", they held Ctrl+Alt+Shift so you'd hear what's playing (a video, a lecture recording, a song): answer about that ("what did he just say?", "explain that"). It's a rough automatic transcript of the PC's sound: go by the gist, and if it's music or unclear, say what you can make out. A YouTube video's title is usually in <live-state>.
   • Their school is on PoliteMall (Brightspace): for their courses, what's due, announcements, "what's in week 5", call school (read-only, read earlier from PoliteMall). "Pull up week 5": school with find, then school_file open: true. "Teach me week 5" / "summarise this week's slides": school with find, school_file to download the deck or PDF, then read_lesson it (source: the path) and teach it.
   • When what they ask about is in a slide deck or PDF they have open (PowerPoint, a PDF in Edge, Opera GX or Chrome; the window in <live-state> tells you): call read_lesson once for that lesson (the whole thing as text, cheap; don't read it again for each question) and teach with all of it, not just what's on screen. Connect what they marked to what comes before and after it ("slide 9 set this up…"), and when a later slide or page goes deeper (a detailed diagram, a worked example), say so and show it: see_photo its picture address, then a photo card of it with labels on the parts you're explaining, or go_to_page to it and ring it on their screen (take_screenshot first). Use the slides' own words and diagrams; add a picture from the web (a photo card with a Wikipedia query) or a drawn diagram when the slides don't have one.
@@ -304,7 +304,7 @@ function startJob(brief: string, materials: string, title: string, wc: WebConten
 
 const ACTION_TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page'] as const
 
-type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean }
+type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[] }
 // An answer that turns into points (or cites sources) reads better on the research card than out loud (Roamies' rule).
 // A [bracketed note] left at the very end of a message is never said.
 const dropTag = (t: string): string => t.replace(/\[[^\]\n]{0,240}\]\s*$/, '')
@@ -617,6 +617,10 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     const run = t.handler
     t.handler = (async (args: Record<string, unknown>, extra: unknown) => {
       const id = stageTool(t.name, args)
+      const t0 = Date.now()
+      const tr0 = turnRef.current
+      const at = tr0?.started ? ` at ${((t0 - tr0.started) / 1000).toFixed(1)} s` : ''
+      const timed = (): void => void tr0?.times?.push(`${t.name}${at} took ${((Date.now() - t0) / 1000).toFixed(1)} s`)
       const tr = turnRef.current
       if (tr && (t.name === 'web_search' || t.name === 'web_fetch')) {
         tr.fromWeb = true
@@ -639,6 +643,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         said = out?.content?.find((c) => c.type === 'text')?.text ?? ''
         return out as never
       } finally {
+        timed()
         stageToolEnd(id, failed, said)
       }
     }) as typeof run
@@ -654,6 +659,8 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
 
 interface Convo {
   q: Query
+  /** The effort this turn runs at (a step up for explaining; see effortFor). */
+  liveEffort?: NovaEffort
   it: AsyncIterator<SdkMessage>
   pending: Promise<IteratorResult<SdkMessage>> | null
   push: (m: UserMsg) => void
@@ -760,6 +767,24 @@ setInterval(() => {
     close(convo)
   }
 }, 60_000).unref()
+
+// Explaining, teaching or showing: a step more effort than the quick setting, so Haiku doesn't skip the drawing (it
+// treats a drawing as optional on low). Chosen from their words like Roamies' route.mjs: no extra call, no delay.
+const DEEP_ASK = /\b(explain|teach|walk me through|how (?:does|do|is|are)|why (?:does|do|is|are)|what(?:'s| is| are| does)|whats|compare|difference|draw|diagram|show me|this slide|slide \d+|page \d+|break (?:it |this )?down|in depth|step by step|eli5|like i'?m five|summari[sz]e|connect|quiz me|test me|lesson|go through)\b/i
+const STEP: Record<NovaEffort, NovaEffort> = { low: 'medium', medium: 'medium', high: 'high' } as Record<NovaEffort, NovaEffort>
+function effortFor(said: string, base: NovaEffort, marked: boolean): NovaEffort {
+  return marked || DEEP_ASK.test(said) ? (STEP[base] ?? base) : base
+}
+
+// ---------- The timing log ----------
+// How long each part of a request took (times and tool names only, never what was said), in nova-timing.log in
+// Studyhall's data folder: the last 300 requests.
+const timingLines: string[] = []
+function logTiming(line: string): void {
+  timingLines.push(`${new Date().toISOString().slice(0, 19).replace('T', ' ')} ${line}`)
+  if (timingLines.length > 300) timingLines.splice(0, timingLines.length - 300)
+  void writeFile(join(app.getPath('userData'), 'nova-timing.log'), timingLines.join('\n') + '\n').catch(() => {})
+}
 
 function settingsFor(): { model: ModelKey; effort: NovaEffort } {
   // Tutor mode: Sonnet (better with diagrams and teaching), with no thinking (it's in a lean conversation of its own).
@@ -950,11 +975,19 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   }
   const c = convo
   const started = Date.now()
+  const want = tutorOn() ? effort : effortFor(said, effort, !!screen.text)
+  if ((c.liveEffort ?? c.effort) !== want) {
+    await c.q.applyFlagSettings({ effortLevel: want }).catch(() => {})
+    c.liveEffort = want
+  }
+  const times: { first?: number; tools: string[] } = { tools: [] }
   let spoken = ''
   let wroteCall = false // the model wrote a tool call as text instead of calling it
   let retried = false
   let beatDone = false
   const turn: Turn = {
+    started,
+    times: times.tools,
     quiet: false,
     tools: [],
     research: null,
@@ -974,6 +1007,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     (t) => {
       if (turn.quiet) return // a lesson or walkthrough has taken over and speaks for itself
       spoken += t
+      times.first ??= Date.now() - started
       beatDone = true
       if (!wc.isDestroyed()) wc.send('nova:speak', { text: t })
     },
@@ -1146,7 +1180,8 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   // Read-on-screen lines go on a card beside the globe.
   if (turn.research) orbPanel('end', turn.fromWeb ? 'From the web' : /\n\s*>/.test(`\n${written}`) ? 'Draft' : 'Answer')
   recordClaudeCost(model, effort, Date.now() - started, cost)
-  console.info(`Nova turn: ${model}/${effort} in ${Date.now() - started} ms, cost $${cost.toFixed(5)}, tools: ${turn.tools.join(', ') || 'none'}`)
+  console.info(`Nova turn: ${model}/${c.liveEffort ?? effort} in ${Date.now() - started} ms, cost $${cost.toFixed(5)}, tools: ${turn.tools.join(', ') || 'none'}`)
+  logTiming(`${model}/${c.liveEffort ?? effort}: first words ${times.first != null ? `${(times.first / 1000).toFixed(1)} s` : 'none'}, done ${((Date.now() - started) / 1000).toFixed(1)} s, $${cost.toFixed(4)}; ${times.tools.join(', ') || 'no tools'}`)
   roamiesTurnEnd()
   trailEnd()
   stageDone()
