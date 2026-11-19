@@ -6,6 +6,13 @@ import { api } from '@/lib/data'
 
 let generation = 0
 let ctx: AudioContext | null = null
+let tap: MediaStreamAudioDestinationNode | null = null
+/** Nova's voice as a stream (tutor mode records it with the screen). */
+export function voiceStream(): MediaStream {
+  ctx ??= new AudioContext()
+  tap ??= ctx.createMediaStreamDestination()
+  return tap.stream
+}
 let current: AudioBufferSourceNode | null = null
 let speaking = false
 const listeners = new Set<(on: boolean) => void>()
@@ -106,6 +113,7 @@ function play(samples: Float32Array, sampleRate: number, gen: number, text?: str
     const src = ctx.createBufferSource()
     src.buffer = buf
     src.connect(ctx.destination)
+    if (tap) src.connect(tap) // (tutor mode is recording: its voice goes into the video too)
     src.onended = () => resolve()
     current = src
     envelope = loudness(samples, sampleRate)

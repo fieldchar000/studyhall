@@ -200,6 +200,7 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['Hold Ctrl + Alt + left mouse button', 'While talking: draw on the screen to show what you mean (right-click undoes a mark).'],
       ['Tap Ctrl + Shift', 'Type to Nova: a small box opens beside your mouse.'],
       ['Ctrl + Alt + B', 'Mark the screen first (hold the left button to draw, right-click undoes), then type or say your question.'],
+      ['Ctrl + Alt + T', 'Tutor mode on or off: Nova teaches you the whole lesson, stop by stop.'],
       ['Ctrl + Alt + N', 'Show or hide Nova.'],
       ['Esc', 'Stop Nova talking or drawing; cancels marks.']
     ]

@@ -287,6 +287,18 @@ export function startBrief(): void {
   send({ type: 'listen' })
 }
 
+/** Tutor mode: the voice window records the lesson (that screen and Nova's voice), or stops. */
+export function voiceRecord(on: boolean, sourceId?: string): void {
+  ensureWindow()
+  send({ type: 'record', on, ...(sourceId ? { sourceId } : {}) })
+}
+/** A request to Nova as if you'd said it (tutor mode's opening question), through the voice window. */
+export function voiceAsk(text: string): void {
+  ensureWindow()
+  const go = (): void => void (ready ? win?.webContents.send('nova:ask', text) : setTimeout(go, 300))
+  go()
+}
+
 /** Esc anywhere: Nova stops talking (and stops looking or working the screen). */
 export function voiceHush(): void {
   if (win && !win.isDestroyed()) send({ type: 'hush' })

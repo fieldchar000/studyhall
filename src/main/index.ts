@@ -48,7 +48,9 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   } else if (why !== 'not connected' && prefs.novaOffline === false) throw new Error(`Nova is paused because ${why}.`)
   return aiChat(messages, schema, maxTokens)
 }
-import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbEmote, penButton, penHooks, penMode, penUndo, setPen } from './bauer'
+import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
+import { setTutor, listLessons, openLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
+import { voiceAsk, voiceRecord } from './voice'
 import { askBeside, reportPen, startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
 import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
@@ -471,6 +473,10 @@ if (!app.requestSingleInstanceLock()) {
         handle('nova:warm', (e) => warmNova(e.sender))
         handle('nova:reset', () => resetNova())
         handle('nova:facts', () => listNovaFacts())
+        handle('nova:lessons', () => listLessons())
+        handle('nova:openLesson', (_e, path: string) => openLesson(String(path)))
+        handle('nova:lessonsFolder', () => showLessonsFolder())
+        handle('nova:tutor', (_e, on: boolean) => setTutor(!!on))
         handle('nova:promises', () => listPromises())
         handle('nova:promise', (_e, id: string, op: string, value: unknown) => (['done', 'open', 'drop', 'snooze', 'due', 'text'].includes(op) ? changePromise(String(id), op as 'done', value as string) : false))
         handle('nova:addPromise', (_e, text: string, due: string | null) => addPromise(String(text ?? ''), due ? String(due) : null))
@@ -613,6 +619,11 @@ if (!app.requestSingleInstanceLock()) {
       if (penMode() === 'talk') setPen(null)
     }
     penHooks.circled = (rect, strokes) => noteCircle(rect, strokes)
+    // Tutor mode (tutor.ts): Ctrl+Alt+T, the scholar's cap on the globe, its opening question, the lesson's recording.
+    shortcutHooks.tutor = () => toggleTutor()
+    tutorHooks.hat = (on) => orbAgent({ type: 'hat', on })
+    tutorHooks.ask = (t) => voiceAsk(t)
+    tutorHooks.record = (on, sourceId) => voiceRecord(on, sourceId)
     teachHooks.ask = (messages, onText) => claudeChat(messages, undefined, getPrefs(), 'explain', onText)
     teachHooks.prefs = getPrefs
     teachHooks.live = liveCards

@@ -24,6 +24,8 @@ let shot: { image: string; width: number; height: number } | null = null
 let suspended = false // Studyhall is closed to the tray: Bauer stays off the screen
 export const CIRCLE_SHORTCUT = 'CommandOrControl+Alt+B'
 export const ORB_SHORTCUT = 'CommandOrControl+Alt+N' // show / hide Nova
+export const TUTOR_SHORTCUT = 'CommandOrControl+Alt+T' // tutor mode on / off
+export const shortcutHooks = { tutor: (): void => {} }
 /** Automated tests: windows live far off-screen, nothing is captured, nothing takes focus. */
 const OFFSCREEN = process.env.STUDYHALL_OFFSCREEN === '1'
 
@@ -86,6 +88,9 @@ function setShortcut(on: boolean): void {
   else if (!on && globalShortcut.isRegistered(CIRCLE_SHORTCUT)) globalShortcut.unregister(CIRCLE_SHORTCUT)
   if (on && !globalShortcut.isRegistered(ORB_SHORTCUT)) globalShortcut.register(ORB_SHORTCUT, toggleOrb)
   else if (!on && globalShortcut.isRegistered(ORB_SHORTCUT)) globalShortcut.unregister(ORB_SHORTCUT)
+  // Ctrl+Alt+T: tutor mode on / off.
+  if (on && !globalShortcut.isRegistered(TUTOR_SHORTCUT)) globalShortcut.register(TUTOR_SHORTCUT, () => shortcutHooks.tutor())
+  else if (!on && globalShortcut.isRegistered(TUTOR_SHORTCUT)) globalShortcut.unregister(TUTOR_SHORTCUT)
 }
 
 /** Ctrl + Alt + N: show or hide Nova for now (the Nova page's switch decides at start-up). */

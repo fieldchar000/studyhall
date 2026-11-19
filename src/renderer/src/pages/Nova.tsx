@@ -121,6 +121,57 @@ function RoomLeft({ name, usage, cap, noExtra }: { name: string; usage: ClaudeSt
   )
 }
 
+/** Tutor mode: start it, whether lessons are recorded, and the recorded lessons to watch again. */
+function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | undefined; save: (p: Partial<Prefs>) => void }): React.JSX.Element {
+  const [lessons, setLessons] = useState<{ name: string; path: string; at: string; mb: number }[] | null>(null)
+  useEffect(() => {
+    const load = (): void =>
+      void api.nova
+        .lessons()
+        .then(setLessons)
+        .catch(() => setLessons([]))
+    load()
+    const t = setInterval(load, 20_000)
+    return () => clearInterval(t)
+  }, [])
+  return (
+    <section className="card rounded-2xl p-5">
+      <h2 className="font-semibold">Tutor mode 🎓</h2>
+      <p className="mt-1 text-[13px] text-muted">
+        {name} teaches you a whole lesson, stop by stop: the slide deck or PDF you have open, or any topic. It puts its scholar’s cap on while it’s teaching. Say “summary lesson” or “full lesson”, then “next”,
+        “go back”, “wait, what’s that?” or “quiz me” as you go. It runs on Sonnet in a lean conversation of its own, so it uses as little of your plan as it can.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button className="btn" onClick={() => void api.nova.tutor(true)}>
+          Start tutor mode
+        </button>
+        <span className="nova-keys text-[13px] text-muted">
+          or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> (again to stop)
+        </span>
+      </div>
+      <Row title="Record lessons" hint="Each tutor lesson is saved as a video (your screen and its voice) in Documents\Nova Lessons, to watch again any time without using your Claude plan.">
+        <input type="checkbox" checked={prefs?.novaRecord !== false} onChange={(e) => save({ novaRecord: e.target.checked })} aria-label="Record lessons" />
+      </Row>
+      <h3 className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">Recorded lessons</h3>
+      <ul className="mt-1 flex flex-col">
+        {(lessons ?? []).slice(0, 12).map((l) => (
+          <li key={l.path} className="flex items-center gap-2 border-t border-line py-2 text-[13px] first:border-t-0">
+            <span className="min-w-0 flex-1 truncate">{l.name}</span>
+            <span className="text-xs text-muted">{l.mb} MB</span>
+            <button className="text-xs underline" onClick={() => void api.nova.openLesson(l.path)}>
+              Watch
+            </button>
+          </li>
+        ))}
+        {lessons && !lessons.length && <li className="text-sm text-muted">None yet. They appear here after a tutor lesson.</li>}
+      </ul>
+      <button className="mt-2 text-xs text-muted underline" onClick={() => void api.nova.lessonsFolder()}>
+        Open the folder
+      </button>
+    </section>
+  )
+}
+
 /** Nova's own list (Roamies' promises): what you said you'd do and your reminders, with tick, snooze, edit and drop. */
 function PromisesCard({ name }: { name: string }): React.JSX.Element {
   const [list, setList] = useState<{ today: NovaPromise[]; later: NovaPromise[] } | null>(null)
@@ -965,6 +1016,7 @@ export function NovaPage(): React.JSX.Element {
               Full log, typing and Undo
             </button>
           </section>
+          {!phone && <TutorCard name={name} prefs={prefs} save={save} />}
           {!phone && <PromisesCard name={name} />}
           {!phone && <MemoryCard name={name} />}
           <section className="card rounded-2xl p-5">

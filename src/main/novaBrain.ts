@@ -21,6 +21,7 @@ import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
 import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMarks } from './bauer'
 import { goToPage, lessonText, readLesson } from './lessonReader'
+import { setTutor, tutorOn, tutorPrompt, tutorTitle } from './tutor'
 import { stageDone, stageStart, stageTool, stageToolEnd, trailEnd, trailPlan, trailSettle } from './novaStage'
 import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, type Seen, type SeenControl } from './eyes'
 import { doOnScreen } from './hands'
@@ -309,7 +310,7 @@ const LISTY = /\n\s*(?:[-*•]|\d+[.)])\s+\S|\n\s*sources?\s*:/i
 // spoken, so without the card it would show nowhere.
 const READ_ONLY = /\n\s*(?:>|```|\||#{1,6}\s)/
 
-async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): Promise<import('@anthropic-ai/claude-agent-sdk').McpSdkServerConfigWithInstance> {
+async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tutor = false): Promise<import('@anthropic-ai/claude-agent-sdk').McpSdkServerConfigWithInstance> {
   const { tool, createSdkMcpServer } = await import('@anthropic-ai/claude-agent-sdk')
   const text = (t: string): { content: { type: 'text'; text: string }[] } => ({ content: [{ type: 'text', text: t }] })
   const slow = (): void => turnRef.current?.onBeat()
@@ -564,6 +565,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
       async ({ source, from, to }) => {
         const l = await readLesson(source ? String(source) : 'front')
         if (typeof l === 'string') return text(l)
+        if (tutorOn()) tutorTitle(l.title)
         return text(lessonText(l, from ?? 1, to ?? l.count))
       }
     ),
@@ -574,7 +576,24 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
       async ({ page, find }) => text(await goToPage({ page: page ?? undefined, find: find ? String(find) : undefined }))
     )
   ]
-  const all = [...tools, ...lessonTools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
+  // Tutor mode on and off (tutor.ts).
+  const tutorTools = [
+    tool(
+      'start_tutor',
+      'Tutor mode: a whole lesson taught stop by stop (the deck or PDF they have open, or a topic), with the globe in its scholar\'s cap, recorded to watch again. Only when they ask for it ("tutor mode", "teach me this whole deck", "give me the full lesson"); a normal "explain this" is not tutor mode. style: summary (the big ideas, 4 to 8 stops) or full (everything, in order), if they said. After it, say nothing more.',
+      { style: z.enum(['summary', 'full']).optional(), what: z.string().max(80).optional().describe('the topic, if it isn\'t what they have open') },
+      async ({ style, what }) => {
+        setTutor(true, style, what ? String(what) : undefined)
+        return text('Tutor mode is starting: the tutor takes it from here. Say nothing more.')
+      }
+    ),
+    tool('tutor_done', 'End tutor mode (they want to stop, or the lesson is over). Say a short goodbye line first.', {}, async () => {
+      setTutor(false)
+      return text('Tutor mode is off.')
+    })
+  ]
+  const TUTOR_KEEP = new Set(['draw', 'see_photo', 'read_lesson', 'go_to_page', 'take_screenshot', 'read_window', 'tutor_done'])
+  const all = [...tools, ...lessonTools, ...tutorTools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
   // Every tool shows what it's doing beside the globe while it runs (Roamies' activity lines).
   for (const t of all) {
     const run = t.handler
@@ -610,7 +629,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }): P
   if (process.env.STUDYHALL_OFFSCREEN === '1')
     (globalThis as unknown as { __novaSizes: unknown }).__novaSizes = () =>
       [{ name: '(system prompt)', desc: systemPrompt('Nova').length, schema: 0 }, ...all.map((t) => ({ name: t.name, desc: String(t.description ?? '').length, schema: JSON.stringify(z.toJSONSchema(z.object(t.inputSchema as z.ZodRawShape))).length }))]
-  return createSdkMcpServer({ name: 'nova', version: app.getVersion(), tools: all })
+  return createSdkMcpServer({ name: 'nova', version: app.getVersion(), tools: tutor ? all.filter((t) => TUTOR_KEEP.has(t.name)) : all.filter((t) => t.name !== 'tutor_done') })
 }
 
 // ---------- The conversation ----------
@@ -629,6 +648,7 @@ interface Convo {
   dead: boolean
   resumed: boolean // it picked up a saved conversation
   costSeen: number // Claude Code reports the conversation's running total; each turn's own cost is the difference
+  tutor: boolean // tutor mode's own conversation (tutor.ts)
   lastSteady: string // the unchanging part of the last <live-state> sent (sent again only when it changes)
 }
 let convo: Convo | null = null
@@ -647,7 +667,8 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
     }
   }
   const turnRef: { current: Turn | null } = { current: null }
-  const server = await buildTools(wc, turnRef)
+  const tutor = tutorOn()
+  const server = await buildTools(wc, turnRef, tutor)
   const q = query({
     prompt: prompt() as never,
     options: {
@@ -656,7 +677,7 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
       effort,
       // Thinking only when you pick high effort: it makes every reply slower and costs more.
       thinking: effort === 'high' ? { type: 'adaptive' } : { type: 'disabled' },
-      systemPrompt: systemPrompt(getPrefs().novaName ?? 'Nova'),
+      systemPrompt: tutor ? tutorPrompt(getPrefs().novaName ?? 'Nova', userName()) : systemPrompt(getPrefs().novaName ?? 'Nova'),
       tools: ['WebSearch'], // of Claude Code's own tools, only its web search
       mcpServers: { nova: server },
       // Claude Code's own web search runs inside this conversation (much faster than a separate search); everything
@@ -666,11 +687,12 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
       maxTurns: 12,
       // The conversation is saved on this PC (never to your Claude account) so it carries on after a pause or a
       // restart; Claude Code folds older turns into a summary itself when it gets long, as Roamies does.
-      persistSession: process.env.STUDYHALL_OFFSCREEN !== '1', // (test copies save nothing)
-      ...(resumeId() ? { resume: resumeId()! } : {})
+      persistSession: process.env.STUDYHALL_OFFSCREEN !== '1' && !tutor, // (test copies and tutor lessons save nothing)
+      ...(!tutor && resumeId() ? { resume: resumeId()! } : {})
     }
   })
-  c.resumed = !!resumeId()
+  c.tutor = tutor
+  c.resumed = !tutor && !!resumeId()
   c.costSeen = 0
   c.lastSteady = ''
   const it = q[Symbol.asyncIterator]()
@@ -722,6 +744,8 @@ setInterval(() => {
 }, 60_000).unref()
 
 function settingsFor(): { model: ModelKey; effort: NovaEffort } {
+  // Tutor mode: Sonnet (better with diagrams and teaching), with no thinking (it's in a lean conversation of its own).
+  if (tutorOn()) return { model: 'sonnet', effort: 'low' }
   const p = getPrefs()
   // Auto: Haiku with little thinking, like Roamies (fast). A brain picked on the Nova page is used as it is.
   if ((p.novaBrain ?? 'auto') === 'auto') return { model: 'haiku', effort: 'low' }
@@ -737,7 +761,7 @@ function warm(wc: WebContents): void {
   if (!allowed || claudeBlocked(getPrefs())) return
   warmClaude(getPrefs(), 'explain') // a lesson's own (bigger) brain, ready in case it's needed
   const { model, effort } = settingsFor()
-  if (convo && !convo.dead && convo.wc === wc && convo.model === model && convo.effort === effort) return
+  if (convo && !convo.dead && convo.wc === wc && convo.model === model && convo.effort === effort && convo.tutor === tutorOn()) return
   close(convo)
   void open(wc, model, effort)
     .then((c) => {
@@ -902,7 +926,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     return { text: '', quiet: false, tools: [], error: blocked, notice: claudePauseNotice(p) ?? undefined }
   }
   const { model, effort } = settingsFor()
-  if (!convo || convo.dead || convo.wc !== wc || convo.model !== model || convo.effort !== effort) {
+  if (!convo || convo.dead || convo.wc !== wc || convo.model !== model || convo.effort !== effort || convo.tutor !== tutorOn()) {
     close(convo)
     convo = await open(wc, model, effort)
   }
@@ -1062,7 +1086,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
         cost += Math.max(0, total - c.costSeen)
         c.costSeen = total
         // The conversation's id, so it can be picked up again after a pause or a restart.
-        if (m.session_id && process.env.STUDYHALL_OFFSCREEN !== '1') setSetting('nova_session', { id: m.session_id, at: Date.now() })
+        if (m.session_id && process.env.STUDYHALL_OFFSCREEN !== '1' && !c.tutor) setSetting('nova_session', { id: m.session_id, at: Date.now() })
         if (m.subtype !== 'success') throw new Error(`Claude couldn’t finish (${m.subtype})`)
         // It wrote a tool call out as text instead of making it: once, ask it to really make the call.
         if (wroteCall && !turn.tools.length && !retried) {

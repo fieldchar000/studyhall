@@ -2304,6 +2304,8 @@
     },
     // Another window came to the front, or that window moved or closed: the drawing no longer sits on what it was
     // about, so all of it fades (cards too).
+    // Studyhall: a new question cuts off the drawing still being narrated (its cards stay), so the answer isn't queued behind it.
+    halt() { if (G.playing || G.q.length) stop(); },
     stale() { stop(); fadeOut(marks.filter((m) => m.alive && !m.local && !m.pinned), 0.6); },
     click(x, y) { G.wait?.click(x, y); },
     ptr(x, y) { G.ptr = [x, y]; G.wait?.ptr(x, y); },

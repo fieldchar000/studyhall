@@ -937,6 +937,7 @@ export type VoiceCommand =
   | { type: 'say'; text: string; id?: number } // say this (a walkthrough step / a lesson beat); with an id, report back when finished
   | { type: 'confirm'; id: number; question: string } // hands: ask before doing something
   | { type: 'hush' } // Esc in any app: stop talking now
+  | { type: 'record'; on: boolean; sourceId?: string } // tutor mode: record the lesson (that screen and Nova's voice), or stop
 
 /** Nova's new ears (Parakeet + wake word), PC only. */
 export interface EarsStatus {
@@ -1000,6 +1001,7 @@ export interface Prefs {
   novaNoExtra?: boolean // never use paid extra usage on your Claude account (default on)
   novaCap?: number // pause Claude when your weekly Claude usage reaches this % (default 80)
   novaSounds?: boolean // Roamies' little sound effects on the globe, drawings and agents (default on)
+  novaRecord?: boolean // tutor mode records each lesson (screen and Nova's voice) into Documents\Nova Lessons (default on)
   novaPages?: boolean // Nova may turn the pages of the slide deck or PDF you have open, and scroll a page to what it's showing you (default on)
   novaAgents?: 'auto' | 'haiku' | 'sonnet' // which model background agents use (auto: Sonnet to make things, Haiku otherwise)
   novaHideIdle?: boolean // the globe disappears when it's not needed and comes back when you talk to it (default off)
@@ -1147,6 +1149,9 @@ export interface Api {
   }
   /** Voice briefings (PC). */
   voice: {
+    /** Tutor mode's recording: a piece of the video, and the end of it. */
+    recChunk(chunk: Uint8Array): void
+    recDone(): void
     status(): Promise<VoiceStatus>
     /** One-time download of the offline speech models. */
     download(): Promise<VoiceStatus>
@@ -1231,6 +1236,12 @@ export interface Api {
     offlineExplain(said: string): Promise<string | null>
     /** A reminder on Nova's own list (due: YYYY-MM-DDTHH:mm, local time). */
     remember(text: string, due: string): Promise<string | null>
+    /** Tutor mode's recorded lessons (Documents\\Nova Lessons). */
+    lessons(): Promise<{ name: string; path: string; at: string; mb: number }[]>
+    openLesson(path: string): Promise<void>
+    lessonsFolder(): Promise<void>
+    /** Turn tutor mode on or off (like Ctrl+Alt+T). */
+    tutor(on: boolean): Promise<void>
     /** Nova's own promises list (today, later), for its page. */
     promises(): Promise<{ today: NovaPromise[]; later: NovaPromise[] }>
     promise(id: string, op: 'done' | 'open' | 'drop' | 'snooze' | 'due' | 'text', value?: string | number | null): Promise<boolean>

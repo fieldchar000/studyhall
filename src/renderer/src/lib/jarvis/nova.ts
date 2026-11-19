@@ -113,6 +113,35 @@ async function boot(opts: {
   // makes that its home (kept by Studyhall between runs).
   let kit: Any = null
   let agent: Any = null
+  let hat = false // tutor mode
+  const c0 = (): Any => R.tiles?.[0]?.creature
+  /** The cap: a flat board (dark blue with a light-blue edge), its band, and a gold tassel, in pixels like the globe. */
+  function drawHat(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+    const P = Math.max(2, Math.round(r / 9))
+    const top = y - r * 1.02
+    const px = (gx: number, gy: number, w: number, h: number, colour: string): void => {
+      ctx.fillStyle = colour
+      ctx.fillRect(Math.round(x + gx * P), Math.round(top + gy * P), w * P, h * P)
+    }
+    ctx.save()
+    // the band (sits on the globe)
+    px(-5, 2, 10, 3, '#0b1a3d')
+    px(-5, 2, 10, 1, '#4f86f0')
+    // the board: a flattened diamond
+    const rows = [3, 9, 15, 21, 15, 9, 3]
+    rows.forEach((w, i) => {
+      const half = Math.floor(w / 2)
+      px(-half, -4 + i * 0.5, w, 1, i === 0 || i === rows.length - 1 ? '#7aaaff' : '#13285c')
+      px(-half, -4 + i * 0.5, 1, 1, '#7aaaff')
+      px(half, -4 + i * 0.5, 1, 1, '#7aaaff')
+    })
+    px(0, -2.5, 1, 1, '#f2c14e') // the button
+    // the tassel: along the board to its edge, then down
+    for (let i = 1; i <= 7; i++) px(i, -2.5 + i * 0.12, 1, 1, '#f2c14e')
+    for (let i = 0; i <= 4; i++) px(8, -1.5 + i, 1, 1, '#f2c14e')
+    px(7.5, 3.5, 2, 2, '#e0a92e')
+    ctx.restore()
+  }
   const plugin = (k: Any): Any => {
     kit = k
     const p = R.agentPlugin(k)
@@ -120,6 +149,22 @@ async function boot(opts: {
     const update = p.update
     let held = false
     let from: [number, number] | null = null
+    // Tutor mode: a pixel scholar's cap on the globe (drawn over it, with the bubbles and tags).
+    const over = p.over
+    p.over = (ctx: CanvasRenderingContext2D, env: Any) => {
+      over?.(ctx, env)
+      if (hat && k.presence === 'shown' && c0()?.form !== 'cursor') drawHat(ctx, k.m.x, k.m.y, k.R)
+    }
+    const extent = p.extent
+    p.extent = () => {
+      const e = extent?.() ?? null
+      if (!hat || k.presence !== 'shown') return e
+      const R = k.R
+      const box = [k.m.x - R * 1.3, k.m.y - R * 1.9, k.m.x + R * 1.5, k.m.y - R * 0.4]
+      return e ? [Math.min(e[0], box[0]), Math.min(e[1], box[1]), Math.max(e[2], box[2]), Math.max(e[3], box[3])] : box
+    }
+    const quiet = p.quiet
+    p.quiet = () => !hat && (quiet ? quiet() : true)
     p.update = (dt: number, env: Any) => {
       update?.(dt, env)
       const m = k.m
@@ -211,6 +256,7 @@ async function boot(opts: {
     if (!agent) return
     switch (e.type) {
       case 'start':
+        R.ink?.halt?.()
         for (const j of [current, ...jobs]) if (j && j.result === undefined) {
           j.result = false
           j.h?.done(true)
@@ -235,6 +281,11 @@ async function boot(opts: {
         break
       case 'trail':
         agent.cards?.trail(e)
+        break
+      case 'hat':
+        hat = !!e.on
+        R.sfx?.play(hat ? 'expand' : 'poof')
+        R.wake?.()
         break
       case 'done':
         responding = false

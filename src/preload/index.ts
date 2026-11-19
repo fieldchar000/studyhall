@@ -192,6 +192,8 @@ const api: Api = {
     setLtaKey: (key) => ipcRenderer.invoke('oculus:setLtaKey', key)
   },
   voice: {
+    recChunk: (chunk) => ipcRenderer.send('tutor:recChunk', chunk),
+    recDone: () => ipcRenderer.send('tutor:recDone'),
     status: () => ipcRenderer.invoke('voice:status'),
     download: () => ipcRenderer.invoke('voice:download'),
     brief: () => ipcRenderer.invoke('voice:brief'),
@@ -281,6 +283,10 @@ const api: Api = {
     turn: (said, studyhall) => ipcRenderer.invoke('nova:turn', said, studyhall),
     offlineExplain: (said) => ipcRenderer.invoke('nova:offlineExplain', said),
     remember: (text, due) => ipcRenderer.invoke('nova:remember', text, due),
+    lessons: () => ipcRenderer.invoke('nova:lessons'),
+    openLesson: (path) => ipcRenderer.invoke('nova:openLesson', path),
+    lessonsFolder: () => ipcRenderer.invoke('nova:lessonsFolder'),
+    tutor: (on) => ipcRenderer.invoke('nova:tutor', on),
     promises: () => ipcRenderer.invoke('nova:promises'),
     promise: (id, op, value) => ipcRenderer.invoke('nova:promise', id, op, value),
     addPromise: (text, due) => ipcRenderer.invoke('nova:addPromise', text, due),

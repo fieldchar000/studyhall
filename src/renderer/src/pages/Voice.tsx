@@ -32,6 +32,40 @@ const youSaid = (text: string, done = false): void => {
   }
 }
 
+// ---------- Tutor mode's recording ----------
+let recorder: MediaRecorder | null = null
+async function startRecording(sourceId: string): Promise<void> {
+  if (recorder) return
+  try {
+    const screen = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      // Electron's way to capture one screen (main/tutor.ts picks it): 15 frames a second is plenty for a lesson.
+      video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 15 } } as unknown as MediaTrackConstraints
+    })
+    const { voiceStream } = await import('@/lib/voice/speak')
+    const stream = new MediaStream([...screen.getVideoTracks(), ...voiceStream().getAudioTracks()])
+    const type = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find((t) => MediaRecorder.isTypeSupported(t))
+    const r = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 1_500_000 })
+    r.ondataavailable = async (e) => {
+      if (e.data.size) api.voice.recChunk(new Uint8Array(await e.data.arrayBuffer()))
+    }
+    r.onstop = () => {
+      screen.getTracks().forEach((t) => t.stop())
+      // (the last piece is written before this)
+      setTimeout(() => api.voice.recDone(), 300)
+    }
+    r.start(5000)
+    recorder = r
+  } catch (e) {
+    console.warn('Tutor mode: couldn’t record the lesson', e)
+  }
+}
+function stopRecording(): void {
+  const r = recorder
+  recorder = null
+  if (r && r.state !== 'inactive') r.stop()
+}
+
 export default function VoicePanel(): React.JSX.Element {
   const [phase, setPhase] = useState<Phase>('idle')
   const [heard, setHeard] = useState(false)
@@ -237,7 +271,11 @@ export default function VoicePanel(): React.JSX.Element {
           } else say(c.text)
         }
         else if (c.type === 'finish') void engine.finish()
-        else if (c.type === 'hush') {
+        else if (c.type === 'record') {
+          // Tutor mode: record that screen and Nova's voice into a video (pieces go to Studyhall as they're made).
+          if (c.on && c.sourceId) void startRecording(c.sourceId)
+          else stopRecording()
+        } else if (c.type === 'hush') {
           stopSpeaking()
           void api.eyes.stop().catch(() => {})
         }
