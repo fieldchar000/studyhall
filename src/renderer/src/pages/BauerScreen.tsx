@@ -55,6 +55,7 @@ export function OrbWindow(): React.JSX.Element {
         api.bauer.onInk((op) => g.ink(op)),
         api.bauer.onLayer((b) => g.setOrigin(b.x, b.y)),
         api.bauer.onCursor((p) => g.cursor(p.x, p.y)),
+        api.bauer.onPress((p) => g.press(p.x, p.y)),
         api.bauer.onBubble((b) => g.bubble(b)),
         api.bauer.onOrb((s) => g.setState(s.state, s.cursor, s.text))
       )

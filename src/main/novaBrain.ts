@@ -788,6 +788,9 @@ setInterval(() => {
 // treats a drawing as optional on low). Chosen from their words like Roamies' route.mjs: no extra call, no delay.
 const DEEP_ASK = /\b(explain|teach|walk me through|how (?:does|do|is|are)|why (?:does|do|is|are)|what(?:'s| is| are| does)|whats|compare|difference|draw|diagram|show me|this slide|slide \d+|page \d+|break (?:it |this )?down|in depth|step by step|eli5|like i'?m five|summari[sz]e|connect|quiz me|test me|lesson|go through)\b/i
 const STEP: Record<NovaEffort, NovaEffort> = { low: 'medium', medium: 'medium', high: 'high' } as Record<NovaEffort, NovaEffort>
+/** This request is explaining or teaching (or tutor mode): its voice uses the teaching speed. */
+let teaching = false
+export const teachingNow = (): boolean => teaching
 function effortFor(said: string, base: NovaEffort, marked: boolean): NovaEffort {
   return marked || DEEP_ASK.test(said) ? (STEP[base] ?? base) : base
 }
@@ -992,6 +995,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   const c = convo
   const started = Date.now()
   const want = tutorOn() ? effort : effortFor(said, effort, !!screen.text)
+  teaching = tutorOn() || !!screen.text || DEEP_ASK.test(said)
   if ((c.liveEffort ?? c.effort) !== want) {
     await c.q.applyFlagSettings({ effortLevel: want }).catch(() => {})
     c.liveEffort = want

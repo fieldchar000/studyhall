@@ -605,7 +605,7 @@
       const o = hitAt(e.clientX, e.clientY);
       if (!o) return;
       const m = o.c.mover;
-      canvas.setPointerCapture(e.pointerId);
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* Studyhall: a press relayed by the key helper has nothing to capture */ }
       down = { o, x: e.clientX, y: e.clientY, t: performance.now() };
       m.dragging = true; m.flung = false; m.grabX = e.clientX - m.x; m.grabY = e.clientY - m.y;
       o.c.grab?.(e.clientX, e.clientY);
@@ -621,6 +621,7 @@
       else { m.mode = 'rest'; m.rest = 1; }
     };
     canvas.addEventListener('pointerup', release);
+    addEventListener('pointerup', (e) => { if (down) release(e); }); // (Studyhall: a release that lands off the canvas)
     canvas.addEventListener('pointercancel', () => { if (down) down.o.c.mover.dragging = false; down = null; });
 
     let last = performance.now(), skip = false, blank = false, nap = 0, lastSig = '';

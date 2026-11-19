@@ -253,10 +253,19 @@ export function politePageData(): unknown {
 }
 
 /** A button on the page. Teaching, summarising and flashcards hand the file to Nova; nothing is ever sent to PoliteMall. */
-export async function politeAction(a: { kind: string; courseId: number; topicId?: number; name?: string; due?: string; url?: string }): Promise<string> {
+export async function politeAction(a: { kind: string; courseId: number; topicId?: number; id?: number; name?: string; due?: string; url?: string }): Promise<string> {
   const d = schoolData()
   const c = d?.courses.find((x) => x.id === Number(a.courseId))
   if (!c) return 'That course isn’t in what Studyhall read. Press Check now.'
+  // A due quiz or assignment: its own page (the quiz's start page, the assignment's submission page).
+  if (a.kind === 'quiz' && a.id) {
+    politeGo(`${LMS}/d2l/lms/quizzing/user/quiz_summary.d2l?qi=${Number(a.id)}&ou=${c.id}`)
+    return ''
+  }
+  if (a.kind === 'assignment' && a.id) {
+    politeGo(`${LMS}/d2l/lms/dropbox/user/folder_submit_files.d2l?db=${Number(a.id)}&ou=${c.id}`)
+    return ''
+  }
   if (a.kind === 'course') {
     politeGo(`${LMS}/d2l/le/content/${c.id}/Home`)
     return ''

@@ -451,11 +451,16 @@ export function reportPen(on: boolean): void {
   }
 }
 let penWanted = false
-/** Report left clicks from any app (a drawn walkthrough waiting for your click), or stop. */
-export function reportClicks(on: boolean): void {
-  clicksWanted = on
+/** Report left clicks from any app (a drawn walkthrough waiting for your click; the mouse over Nova's layer), or
+ *  stop. Each reason asks separately; they're heard while any of them wants them. */
+const clickReasons = new Set<string>()
+export function reportClicks(on: boolean, why = 'walkthrough'): void {
+  if (on) clickReasons.add(why)
+  else clickReasons.delete(why)
+  if (clickReasons.size > 0 === clicksWanted) return
+  clicksWanted = clickReasons.size > 0
   try {
-    keys?.stdin?.write(on ? 'clicks on\n' : 'clicks off\n')
+    keys?.stdin?.write(clicksWanted ? 'clicks on\n' : 'clicks off\n')
   } catch {
     /* the helper isn't running */
   }

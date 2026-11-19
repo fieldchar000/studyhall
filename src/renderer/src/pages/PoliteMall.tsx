@@ -93,7 +93,7 @@ export function PoliteMallPage(): React.JSX.Element {
     }
   }, [])
 
-  const act = async (a: { kind: string; courseId: number; topicId?: number; name?: string; due?: string }): Promise<void> => {
+  const act = async (a: { kind: string; courseId: number; topicId?: number; id?: number; name?: string; due?: string }): Promise<void> => {
     const r = await api.polite.action(a)
     if (r) setMsg(r)
   }
@@ -127,9 +127,13 @@ export function PoliteMallPage(): React.JSX.Element {
       <div className="flex items-start gap-2">
         <span className="mt-0.5 rounded bg-accent/15 px-1.5 text-[10px] font-semibold text-accent">{d.course}</span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium" title={d.name}>
+          <button
+            className="block w-full truncate text-left text-[13px] font-medium hover:underline"
+            title={`Open ${d.name}`}
+            onClick={() => void act({ kind: d.kind, courseId: d.courseId, id: d.id })}
+          >
             {d.name}
-          </div>
+          </button>
           <div className="text-[11px] text-muted">
             {d.kind === 'quiz' ? 'Quiz' : 'Assignment'} · due {when(d.due)}
             {d.done ? (d.kind === 'quiz' ? ' · attempted' : ' · submitted') : d.kind === 'quiz' && d.allowed ? ` · ${d.allowed} attempt${d.allowed === 1 ? '' : 's'}` : ''}
@@ -145,8 +149,8 @@ export function PoliteMallPage(): React.JSX.Element {
         </div>
       </div>
       <div className="mt-1.5 flex gap-1.5 pl-1">
-        <button className="btn-ghost rounded-md border border-line px-2 py-0.5 text-[11px]" onClick={() => void act({ kind: 'course', courseId: d.courseId })}>
-          Open course
+        <button className="btn-ghost rounded-md border border-line px-2 py-0.5 text-[11px]" onClick={() => void act({ kind: d.kind, courseId: d.courseId, id: d.id })}>
+          {d.kind === 'quiz' ? 'Open quiz' : 'Open assignment'}
         </button>
         {!d.done && (
           <button className="btn-ghost rounded-md border border-line px-2 py-0.5 text-[11px]" onClick={() => void act({ kind: 'study', courseId: d.courseId, name: d.name, due: d.due })}>

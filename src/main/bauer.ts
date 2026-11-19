@@ -48,6 +48,7 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
     }
     // The cards window is only as tall as what's in it (never a full-height strip down your screen).
     else if (msg.type === 'mouse' && from && (from === orbWin || from === cardsWin)) {
+      if (from === orbWin) setOrbHot(!!msg.over && !pen && !handsBusy)
       if (from === orbWin && (pen || handsBusy)) return void mouseTrace(`${winName(from)}: mouse ${msg.over ? 'over' : 'off'} Nova, but ${pen ? 'the pen is on' : 'Nova is working an app'}, so it stays as it is`)
       from.setIgnoreMouseEvents(!msg.over, { forward: true })
     }
@@ -409,6 +410,25 @@ export function closeBauerWindows(): void {
   quitting = true
   for (const w of [orbWin, cardsWin, circleWin, pointWin]) w?.destroy()
   orbWin = cardsWin = circleWin = pointWin = null
+}
+
+// ---------- Presses on Nova's layer ----------
+// Windows doesn't always hand a press to Nova's see-through layer (it can't take focus): the release arrives but the
+// press doesn't, so cards' buttons did nothing and the globe couldn't be grabbed. While the mouse is over a part of
+// Nova, the key helper (which reads the mouse button itself) reports presses, and the layer gets them from here; it
+// only acts on one when the real press didn't arrive.
+export const orbPressHooks = { hot: (_on: boolean): void => {} }
+let orbHot = false
+function setOrbHot(on: boolean): void {
+  if (on === orbHot) return
+  orbHot = on
+  orbPressHooks.hot(on)
+}
+/** The left button went down somewhere (the key helper heard it). */
+export function orbPress(): void {
+  if (!orbHot || pen || handsBusy || !orbWin || orbWin.isDestroyed()) return
+  const p = local(screen.getCursorScreenPoint())
+  orbWin.webContents.send('bauer:press', p)
 }
 
 // ---------- The mouse recorder ----------

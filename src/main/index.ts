@@ -48,18 +48,18 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   } else if (why !== 'not connected' && prefs.novaOffline === false) throw new Error(`Nova is paused because ${why}.`)
   return aiChat(messages, schema, maxTokens)
 }
-import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
+import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, orbPress, orbPressHooks, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
 import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, showPoliteView, type PoliteRect } from './politePage'
 import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
 import { setTutor, listLessons, openLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
-import { voiceAsk, voiceRecord } from './voice'
+import { reportClicks, voiceAsk, voiceRecord } from './voice'
 import { askBeside, reportPen, startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
 import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
 import { eyes, helpOnScreen, pointerHooks, see, stopEyes, stopWalkthrough } from './eyes'
 import { forgetNovaFactById, listNovaFacts } from './novaMemory'
 import { addPromise, changePromise, listPromises, roamies, roamiesAbort, roamiesClick, roamiesEsc, testWindowShot } from './roamiesTools'
-import { factsBlock, frontWindow, noteCircle, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova } from './novaBrain'
+import { factsBlock, frontWindow, noteCircle, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova, teachingNow } from './novaBrain'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
@@ -490,7 +490,7 @@ if (!app.requestSingleInstanceLock()) {
         handle('polite:hide', () => hidePoliteView())
         handle('polite:go', (_e, url: string) => politeGo(String(url)))
         handle('polite:back', () => politeBack())
-        handle('polite:action', (_e, a: { kind: string; courseId: number; topicId?: number; name?: string; due?: string }) => politeAction(a))
+        handle('polite:action', (_e, a: { kind: string; courseId: number; topicId?: number; id?: number; name?: string; due?: string }) => politeAction(a))
         politeHooks.changed = () => mainWindow?.webContents.send('polite:changed', schoolStatus())
         handle('nova:openLesson', (_e, path: string) => openLesson(String(path)))
         handle('nova:lessonsFolder', () => showLessonsFolder())
@@ -549,7 +549,8 @@ if (!app.requestSingleInstanceLock()) {
         handle('mouth:warm', () => warmMouth())
         handle('mouth:speak', (_e, text, voice, speed) => {
           const p = getPrefs()
-          return speakMouth(String(text ?? ''), typeof voice === 'string' ? voice : (p.novaVoice ?? 'af_heart'), typeof speed === 'number' ? speed : (p.novaSpeed ?? 1.05))
+          // (explaining or teaching: the teaching speed, a little slower, unless a speed was asked for)
+          return speakMouth(String(text ?? ''), typeof voice === 'string' ? voice : (p.novaVoice ?? 'af_heart'), typeof speed === 'number' ? speed : teachingNow() ? (p.novaTeachSpeed ?? 0.92) : (p.novaSpeed ?? 1.05))
         })
         handle('claude:status', () => claudeStatus())
         handle('claude:install', () => installClaude())
@@ -632,7 +633,11 @@ if (!app.requestSingleInstanceLock()) {
       roamiesAbort()
       voiceHush()
     }
-    talkKeyHooks.click = () => roamiesClick()
+    talkKeyHooks.click = () => {
+      roamiesClick()
+      orbPress()
+    }
+    orbPressHooks.hot = (on) => reportClicks(on, 'nova layer')
     talkKeyHooks.up = () => {
       if (penMode() === 'talk') setPen(null)
     }

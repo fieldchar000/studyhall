@@ -449,6 +449,11 @@ const api: Api = {
       return () => ipcRenderer.removeListener('bauer:layer', l)
     },
     inkEvent: (msg) => ipcRenderer.send('bauer:window', { type: 'inkEvent', msg }),
+    onPress: (cb) => {
+      const l = (_e: unknown, p: { x: number; y: number }): void => cb(p)
+      ipcRenderer.on('bauer:press', l)
+      return () => ipcRenderer.removeListener('bauer:press', l)
+    },
     onPen: (cb) => {
       const l = (_e: unknown, p: Parameters<typeof cb>[0]): void => cb(p)
       ipcRenderer.on('bauer:pen', l)

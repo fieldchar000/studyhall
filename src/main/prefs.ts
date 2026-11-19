@@ -25,6 +25,7 @@ const DEFAULTS: Prefs = {
   novaCap: 80,
   novaVoice: 'af_heart',
   novaSpeed: 1.05,
+  novaTeachSpeed: 0.92,
   novaOrbSize: 'default',
   novaDrift: true,
   novaFollowUp: 'asked',

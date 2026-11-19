@@ -1004,6 +1004,7 @@ export interface Prefs {
   novaRecord?: boolean // tutor mode records each lesson (screen and Nova's voice) into Documents\Nova Lessons (default on)
   novaPages?: boolean // Nova may turn the pages of the slide deck or PDF you have open, and scroll a page to what it's showing you (default on)
   novaAgents?: 'auto' | 'haiku' | 'sonnet' // which model background agents use (auto: Sonnet to make things, Haiku otherwise)
+  novaTeachSpeed?: number // the voice's speed when explaining or teaching (default 0.92, a little slower)
   novaDuck?: boolean // other apps' sound goes quieter while you hold the talk key (default on)
   politeTasks?: boolean // PoliteMall quizzes and assignments become Studyhall tasks (default on)
   politeNotify?: boolean // a notification for new PoliteMall announcements, files and grades (default on)
@@ -1243,7 +1244,7 @@ export interface Api {
     go(url: string): Promise<void>
     back(): Promise<void>
     /** A button on the page (open, teach, summary, flashcards, save, study, course): a message to show, or ''. */
-    action(a: { kind: string; courseId: number; topicId?: number; name?: string; due?: string }): Promise<string>
+    action(a: { kind: string; courseId: number; topicId?: number; id?: number; name?: string; due?: string }): Promise<string>
   }
   /** The main window reads PDFs for Nova's lesson reader. */
   lesson: {
@@ -1333,6 +1334,8 @@ export interface Api {
     onLayer(cb: (b: { x: number; y: number }) => void): () => void
     /** (orb window) news from a drawing: a card closed, a quiz answered, a segment started */
     inkEvent(msg: Record<string, unknown>): void
+    /** (orb window) the left button went down over Nova (heard by the key helper): used when Windows didn't hand the press over */
+    onPress(cb: (p: { x: number; y: number }) => void): () => void
     /** (orb window) the pen is on (draw what you mean) or off */
     onPen(cb: (p: { on: boolean; once: boolean }) => void): () => void
     /** (orb window) the pen's marks covered this box (window coordinates), or null if nothing was drawn */

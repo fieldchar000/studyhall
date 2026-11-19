@@ -503,6 +503,7 @@ export function NovaPage(): React.JSX.Element {
   const ears = useEars()
   const mouth = useMouth()
   const [speed, setSpeed] = useState<number | null>(null)
+  const [teachSpeed, setTeachSpeed] = useState<number | null>(null)
   const [previewing, setPreviewing] = useState<string | null>(null)
   // The orb on this page ripples while a voice preview plays.
   const [talking, setTalking] = useState(false)
@@ -785,6 +786,20 @@ export function NovaPage(): React.JSX.Element {
                       aria-label="Speaking speed"
                     />
                     <span className="w-12 text-right tabular-nums">{(speed ?? prefs?.novaSpeed ?? 1.05).toFixed(2)}×</span>
+                  </Row>
+                  <Row title="Teaching speed" hint="When it explains or teaches something (and in tutor mode): a little slower, so it's easier to follow.">
+                    <input
+                      type="range"
+                      min={0.7}
+                      max={1.3}
+                      step={0.05}
+                      value={teachSpeed ?? prefs?.novaTeachSpeed ?? 0.92}
+                      onChange={(e) => setTeachSpeed(Number(e.target.value))}
+                      onPointerUp={() => teachSpeed != null && save({ novaTeachSpeed: teachSpeed })}
+                      onKeyUp={() => teachSpeed != null && save({ novaTeachSpeed: teachSpeed })}
+                      aria-label="Teaching speed"
+                    />
+                    <span className="w-12 text-right tabular-nums">{(teachSpeed ?? prefs?.novaTeachSpeed ?? 0.92).toFixed(2)}×</span>
                   </Row>
                   <Row title="Voice model" hint="Kokoro, ready">
                     <button className="nova-quiet" onClick={() => void api.mouth.remove()}>

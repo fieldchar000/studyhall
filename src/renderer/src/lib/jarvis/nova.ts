@@ -51,6 +51,8 @@ export type NovaGlobe = {
   ink(op: InkOp): void
   /** Where the mouse is (CSS px in this window), from Studyhall's own watch: the same as a mouse move. */
   cursor(x: number, y: number): void
+  /** The left button went down here (heard by the key helper): pressed for real when Windows didn't hand the press over. */
+  press(x: number, y: number): void
   /** Where this layer is on the screen (DIP), so screen places land in the right spot. */
   setOrigin(x: number, y: number): void
   /** Messages from the drawing (a card closed, a quiz answered…). */
@@ -317,6 +319,8 @@ async function boot(opts: {
     opts.onHot(h)
   }
   // Presses and releases (first, before anything else on the page handles them).
+  let realDown = -1e9
+  addEventListener('pointerdown', (e) => void (e.isTrusted && (realDown = performance.now())), true)
   addEventListener('pointerdown', (e) => trace(`press (button ${e.button}) on <${(e.target as Element | null)?.tagName?.toLowerCase() ?? '?'}> ${where(e.clientX, e.clientY)}`), true)
   addEventListener('pointerup', (e) => trace(`release ${where(e.clientX, e.clientY)}; dragging: ${c.mover.dragging ? 'yes' : 'no'}`), true)
   // Popped up beside your cursor to talk (Roamies' way): once it's all done and quiet for a few seconds, it glides
@@ -477,6 +481,16 @@ async function boot(opts: {
         R.agentHome?.hatch([pos.x, pos.y - pos.r - 28])
       } else if (op.agents) R.agentHome?.event(op.agents, { from: [c.mover.x, c.mover.y] })
       R.wake?.()
+    },
+    press(x, y) {
+      // The real press arrives first when Windows hands it over; then this one is nothing to do.
+      setTimeout(() => {
+        if (performance.now() - realDown < 250) return
+        const el = document.elementFromPoint(x, y) ?? document.body
+        trace(`press relayed by the key helper on <${el.tagName.toLowerCase()}> ${where(x, y)}`)
+        el.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1 }))
+        el.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0, buttons: 1 }))
+      }, 60)
     },
     cursor(x, y) {
       mouse = [x, y]
