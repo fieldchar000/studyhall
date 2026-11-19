@@ -15,11 +15,11 @@ import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import type { BauerCard, Prefs } from '@shared/types'
-import { claudeBase, claudeBlocked, claudeChecked, claudePauseNotice, claudeModelId, noteClaudeMessage, pickModel, recordClaudeCost, warmClaude, type ModelKey } from './claude'
+import { claudeBase, claudeBlocked, roomForDeeper, claudeChecked, claudePauseNotice, claudeModelId, noteClaudeMessage, pickModel, recordClaudeCost, warmClaude, type ModelKey } from './claude'
 import type { NovaEffort } from '@shared/types'
 import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
-import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMarks } from './bauer'
+import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMarks, orbAgent } from './bauer'
 import { goToPage, lastLesson, lessonQuizText, lessonText, readLesson } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
 import { figureText } from './figures'
@@ -64,7 +64,8 @@ Show, don't just tell: you live on their screen, and the draw tool puts drawings
 Before anything slow (a lesson, looking at or working the screen, drafting, reading files, running a command), first say one short beat of 2 to 6 words that shows you heard them ("On it.", "Sure, one sec."), then call the tool in the same reply. No beat when you answer straight away. After a tool, never repeat what you already said; only add what's new (often nothing).
 Personality: warm, a little witty, encouraging. You keep them on track: remind them of what they said they'd do, celebrate what they finish, nudge them when they're putting things off.
 It's a conversation: after you speak, you keep listening for a few seconds, so they can answer straight back. When it really helps, end with one short question (want a quick quiz on it? go deeper? shall I do the next bit?); most replies don't need one. Their next message may be that answer, so read it in the light of what you just asked.
-Their messages are usually speech transcripts: expect missing punctuation and misheard words, and act on what they most likely meant. Small talk, half sentences, or talk clearly meant for someone else: reply in a few words or not at all (an empty reply is fine).
+Their messages are usually speech transcripts: expect missing punctuation and misheard words, and act on what they most likely meant. Half sentences, or talk clearly meant for someone else: reply in a few words or not at all (an empty reply is fine). Small talk gets a short, warm reply.
+Being a friend: when they tell you about their life (their day, a friend, family, something that happened, how they feel) or vent, talk like a good friend would, not like an assistant: react, reflect back what you heard, ask about it, and take as long as the conversation needs (several sentences is fine; this is the one place long replies are right). Work out whether they want to be heard or want advice; if it's unclear, ask ("want my take, or did you just need to get that out?"). When they want advice, be concrete and practical (what to say, what to do tomorrow, what you'd do) and honest: say so kindly if they might be wrong. Use what you remember about the people and things they've mentioned, and ask how things went later. No drawings here, and don't steer them back to studying unless they asked you to keep them on track. If they sound like they're really struggling or not safe, stay with them, take it seriously, and gently mention talking to someone they trust or a helpline, without lecturing or ending the chat. If something they've shared deserves real care (a hard situation, a big decision, something that hurt), call go_deeper so your next replies get more thought.
 Tools are called for real, never written out as text (never write "[call …]"). Never claim you did something you didn't. Never invent their details (names, dates, amounts, who someone is); use what they said, what you remember and what's on screen. On a small ambiguity, take the likeliest reading and go.
 
 How to help (use as few tool calls as the task needs; independent ones can go in one turn, in the order given):
@@ -653,6 +654,10 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         return text('Tutor mode is starting: the tutor takes it from here. Say nothing more.')
       }
     ),
+    tool('go_deeper', 'They\'re opening up about something that deserves real care (venting, a hard situation with someone, a big decision, something that hurt): your next replies in this chat get more thought. Not for study questions or small talk.', {}, async () => {
+      chatDeepUntil = Date.now() + 10 * 60_000
+      return text('Your next replies will get more thought. Answer this one now, warmly.')
+    }),
     tool('end_conversation', 'End conversation mode (they said stop, that\'s all, or they\'re done). Say a short goodbye with how they did first.', {}, async () => {
       setConversation(false)
       return text('Conversation mode is off.')
@@ -714,6 +719,8 @@ interface Convo {
   q: Query
   /** The effort this turn runs at (a step up for explaining; see effortFor). */
   liveEffort?: NovaEffort
+  /** The model this turn runs on (Sonnet for a deeper chat; see chatDepth). */
+  liveModel?: ModelKey
   it: AsyncIterator<SdkMessage>
   pending: Promise<IteratorResult<SdkMessage>> | null
   push: (m: UserMsg) => void
@@ -834,6 +841,30 @@ function boardHint(said: string): string {
     return '\n(Show how it connects with show_board: their slide and the linked ones side by side, a ring on each, an arrow between.)'
   if (DEEP_ASK.test(said) && /\b(this|slides?|pages?)\b/i.test(said)) return '\n(If the lesson map shows this slide builds on or leads to other slides, show that with show_board too.)'
   return ''
+}
+
+// ---------- Deeper chats ----------
+// A heart-to-heart (venting, a hard situation, a big decision) moves the running conversation to Sonnet by itself, at
+// low effort (medium when it's long or tangled, high only for a very long one; never the top levels), and back to Haiku
+// when the chat moves on (study or a request) or after ten quiet minutes. Spotted from their words (free) or flagged
+// by Nova itself (go_deeper). Never when the week's Claude is running low (roomForDeeper). Nova's page can make it
+// always quick or always deeper instead.
+let chatDeepUntil = 0
+const HEART = /\b(i feel|i'?m (?:so |really |kinda |kind of )?(?:stressed|sad|upset|angry|mad|tired|exhausted|anxious|lonely|worried|overwhelmed|hurt|annoyed|frustrated|scared|lost|confused about (?:my|what))|i can'?t (?:deal|cope|stop thinking)|my (?:friend|best friend|mum|mom|dad|parents|boyfriend|girlfriend|bf|gf|partner|sister|brother|family|classmate|groupmate|lecturer|teacher|boss|ex)\b|we (?:had|got into) (?:a|an) (?:fight|argument)|broke up|don'?t know what to do|should i\b|what would you do|can i (?:vent|rant)|need to (?:vent|rant|talk)|it (?:really )?hurt|i cried|crying|nobody|no one (?:cares|understands))/i
+function chatDepth(said: string): { deep: boolean; effort: NovaEffort } {
+  const p = getPrefs()
+  const mode = p.novaChatDepth ?? 'auto'
+  const words = said.trim().split(/\s+/).length
+  const studyish = DEEP_ASK.test(said) && !HEART.test(said)
+  if (mode === 'quick' || studyish) {
+    if (studyish) chatDeepUntil = 0
+    return { deep: false, effort: 'low' }
+  }
+  const heart = HEART.test(said) || (words > 45 && /\b(i|me|my)\b/i.test(said) && !studyish)
+  if (mode === 'deeper' || heart) chatDeepUntil = Math.max(chatDeepUntil, Date.now() + 10 * 60_000)
+  const deep = Date.now() < chatDeepUntil && roomForDeeper(p)
+  const effort: NovaEffort = words > 180 ? 'high' : words > 60 || /\b(should i|don'?t know what to do|what would you do)\b/i.test(said) ? 'medium' : 'low'
+  return { deep, effort }
 }
 
 /** This request is explaining or teaching (or tutor mode): its voice uses the teaching speed. */
@@ -1045,9 +1076,18 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   const want = tutorOn() ? effort : effortFor(said, effort, !!screen.text)
   teaching = tutorOn() || !!screen.text || DEEP_ASK.test(said)
   explainStart(said, /Window in front: ([^\n]*)/.exec(liveState)?.[1] ?? '', teaching)
-  if ((c.liveEffort ?? c.effort) !== want) {
-    await c.q.applyFlagSettings({ effortLevel: want }).catch(() => {})
-    c.liveEffort = want
+  // A heart-to-heart: Sonnet for this chat (same conversation, no restart), at chat effort; else back to the usual.
+  const chat = tutorOn() ? { deep: false, effort: want } : chatDepth(said)
+  const useModel: ModelKey = chat.deep ? 'sonnet' : model
+  const useEffort: NovaEffort = chat.deep ? chat.effort : want
+  if ((c.liveModel ?? c.model) !== useModel) {
+    await c.q.setModel(claudeModelId(useModel)).catch(() => {})
+    c.liveModel = useModel
+    orbAgent({ type: 'deeper', on: useModel === 'sonnet' && model !== 'sonnet' })
+  }
+  if ((c.liveEffort ?? c.effort) !== useEffort) {
+    await c.q.applyFlagSettings({ effortLevel: useEffort }).catch(() => {})
+    c.liveEffort = useEffort
   }
   const times: { first?: number; tools: string[] } = { tools: [] }
   let spoken = ''
@@ -1249,10 +1289,10 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   }
   // Read-on-screen lines go on a card beside the globe.
   if (turn.research) orbPanel('end', turn.fromWeb ? 'From the web' : /\n\s*>/.test(`\n${written}`) ? 'Draft' : 'Answer')
-  recordClaudeCost(model, effort, Date.now() - started, cost)
+  recordClaudeCost(c.liveModel ?? model, c.liveEffort ?? effort, Date.now() - started, cost)
   explainEnd()
-  console.info(`Nova turn: ${model}/${c.liveEffort ?? effort} in ${Date.now() - started} ms, cost $${cost.toFixed(5)}, tools: ${turn.tools.join(', ') || 'none'}`)
-  logTiming(`${model}/${c.liveEffort ?? effort}: first words ${times.first != null ? `${(times.first / 1000).toFixed(1)} s` : 'none'}, done ${((Date.now() - started) / 1000).toFixed(1)} s, $${cost.toFixed(4)}; ${times.tools.join(', ') || 'no tools'}`)
+  console.info(`Nova turn: ${c.liveModel ?? model}/${c.liveEffort ?? effort} in ${Date.now() - started} ms, cost $${cost.toFixed(5)}, tools: ${turn.tools.join(', ') || 'none'}`)
+  logTiming(`${c.liveModel ?? model}/${c.liveEffort ?? effort}: first words ${times.first != null ? `${(times.first / 1000).toFixed(1)} s` : 'none'}, done ${((Date.now() - started) / 1000).toFixed(1)} s, $${cost.toFixed(4)}; ${times.tools.join(', ') || 'no tools'}`)
   roamiesTurnEnd()
   trailEnd()
   stageDone()

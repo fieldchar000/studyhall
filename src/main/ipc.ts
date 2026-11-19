@@ -329,6 +329,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     if ('novaCap' in patch && Number.isFinite(Number(patch.novaCap))) clean.novaCap = Math.min(100, Math.max(10, Math.round(Number(patch.novaCap))))
     if (typeof patch.novaVoice === 'string' && /^[a-z]{2}_[a-z]+$/.test(patch.novaVoice)) clean.novaVoice = patch.novaVoice
     if ('novaSpeed' in patch && Number.isFinite(Number(patch.novaSpeed))) clean.novaSpeed = Math.min(1.3, Math.max(0.8, Number(patch.novaSpeed)))
+    if ('novaChatDepth' in patch && ['auto', 'quick', 'deeper'].includes(String(patch.novaChatDepth))) clean.novaChatDepth = String(patch.novaChatDepth) as Prefs['novaChatDepth']
     if ('novaTeachSpeed' in patch && Number.isFinite(Number(patch.novaTeachSpeed))) clean.novaTeachSpeed = Math.min(1.3, Math.max(0.7, Number(patch.novaTeachSpeed)))
     if ('novaOrbSize' in patch && ['small', 'default', 'cursor'].includes(String(patch.novaOrbSize))) clean.novaOrbSize = String(patch.novaOrbSize) as Prefs['novaOrbSize']
     if ('novaFollowUp' in patch && ['off', 'asked', 'always'].includes(String(patch.novaFollowUp))) clean.novaFollowUp = String(patch.novaFollowUp) as Prefs['novaFollowUp']

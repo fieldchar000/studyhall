@@ -121,6 +121,7 @@ async function boot(opts: {
   let agent: Any = null
   let hat = false // tutor mode
   let live = false // conversation mode
+  let deeper = false // a deeper chat (Sonnet)
   const c0 = (): Any => R.tiles?.[0]?.creature
   /** The cap: a flat board (dark blue with a light-blue edge), its band, and a gold tassel, in pixels like the globe. */
   function drawHat(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
@@ -161,6 +162,18 @@ async function boot(opts: {
     p.over = (ctx: CanvasRenderingContext2D, env: Any) => {
       over?.(ctx, env)
       if (hat && k.presence === 'shown' && c0()?.form !== 'cursor') drawHat(ctx, k.m.x, k.m.y, k.R)
+      // A deeper chat: a faint warm glow behind the globe.
+      if (deeper && k.presence === 'shown') {
+        const g = ctx.createRadialGradient(k.m.x, k.m.y, k.R * 0.6, k.m.x, k.m.y, k.R * 1.6)
+        g.addColorStop(0, 'rgba(168,200,255,0.18)')
+        g.addColorStop(1, 'rgba(168,200,255,0)')
+        ctx.save()
+        ctx.fillStyle = g
+        ctx.beginPath()
+        ctx.arc(k.m.x, k.m.y, k.R * 1.6, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+      }
       // Conversation mode: a soft ring round the globe that breathes, so you know it's listening hands-free.
       if (live && k.presence === 'shown') {
         const t = performance.now() / 1000
@@ -305,6 +318,10 @@ async function boot(opts: {
         break
       case 'trail':
         agent.cards?.trail(e)
+        break
+      case 'deeper':
+        deeper = !!e.on
+        R.wake?.()
         break
       case 'live':
         live = !!e.on

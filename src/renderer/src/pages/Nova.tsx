@@ -959,6 +959,13 @@ export function NovaPage(): React.JSX.Element {
               <Row title="Hide when idle" hint="It disappears a few seconds after it's done and comes back when you talk to it, it speaks, or it draws something.">
                 <input type="checkbox" checked={prefs?.novaHideIdle === true} onChange={(e) => save({ novaHideIdle: e.target.checked })} aria-label="Hide when idle" />
               </Row>
+              <Row title="Chats" hint="When you open up about something (venting, a friend, a big decision), Nova switches to Sonnet by itself for more thoughtful replies, and back when the chat moves on. It stays quick if your week's Claude is running low.">
+                <select className="field-boxed text-sm" value={prefs?.novaChatDepth ?? 'auto'} onChange={(e) => save({ novaChatDepth: e.target.value as 'auto' | 'quick' | 'deeper' })} aria-label="Chats">
+                  <option value="auto">Auto (deeper when it matters)</option>
+                  <option value="quick">Always quick</option>
+                  <option value="deeper">Always deeper</option>
+                </select>
+              </Row>
               <Row
                 title="Save my explanations to Notes"
                 hint="Every explanation Nova draws for goes onto that day's “Nova notes” page: your question, what it said and pictures of its cards. You can always say “save that” (or press the save icon on a card) to save one as its own note."

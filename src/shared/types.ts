@@ -1005,6 +1005,7 @@ export interface Prefs {
   novaRecord?: boolean // tutor mode records each lesson (screen and Nova's voice) into Documents\Nova Lessons (default on)
   novaPages?: boolean // Nova may turn the pages of the slide deck or PDF you have open, and scroll a page to what it's showing you (default on)
   novaAgents?: 'auto' | 'haiku' | 'sonnet' // which model background agents use (auto: Sonnet to make things, Haiku otherwise)
+  novaChatDepth?: 'auto' | 'quick' | 'deeper' // chats: Nova goes deeper (Sonnet) by itself for a heart-to-heart (auto), or always quick / always deeper
   novaAutoNotes?: boolean // every explanation Nova draws for is added to the day's "Nova notes" page (default off)
   novaTeachSpeed?: number // the voice's speed when explaining or teaching (default 0.92, a little slower)
   novaDuck?: boolean // other apps' sound goes quieter while you hold the talk key (default on)

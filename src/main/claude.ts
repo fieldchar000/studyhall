@@ -245,6 +245,16 @@ export async function removeClaude(): Promise<ClaudeStatus> {
   return set({ installed: false, signedIn: false, progress: 0 })
 }
 
+/** Room for the deeper (Sonnet) chats: false when this week's usage is within 15 points of your cap, or the 5-hour
+ *  window is nearly used up, so a long heart-to-heart never eats what's left for Nova's lessons (or spills over). */
+export function roomForDeeper(prefs: Prefs): boolean {
+  const u = state.usage
+  const cap = prefs.novaCap ?? 80
+  if (u?.sevenDay != null && u.sevenDay >= cap - 15) return false
+  if (u?.fiveHour != null && u.fiveHour >= 85) return false
+  return true
+}
+
 /** Is Claude usable right now, under your settings? (null = yes, otherwise why not) */
 export function claudeBlocked(prefs: Prefs): string | null {
   if (!state.installed || !state.signedIn) return 'not connected'
