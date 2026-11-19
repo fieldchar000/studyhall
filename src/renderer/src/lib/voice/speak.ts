@@ -207,8 +207,8 @@ export async function speakAndWait(text: string, voice?: string, speed?: number)
 // them fits before a search, a page, the screen or a drawing.
 const BEATS = [
   'One sec.', 'On it.', 'Hang on.', 'Hold on.', 'Got it.', 'Okay.', 'Sure.', 'Right.', 'Alright.', 'Gotcha.',
-  'Checking.', "Let's see.", 'Sure thing.', 'Coming up.', 'Sec.', 'One moment.', 'Bear with.', 'Hmm, okay.', 'Got you.', 'Right, sec.',
-  'Sure, sec.', 'Okay, sec.', 'Roger.', 'Yep.', 'Yep, sec.', 'Two secs.', 'Hold tight.', 'Mm-hmm.', 'Will do.', 'Righto.',
+  'Checking.', "Let's see.", 'Sure thing.', 'Coming up.', 'One moment.', 'Hmm, okay.', 'Got you.',
+  'Roger.', 'Yep.', 'Two secs.', 'Hold tight.', 'Mm-hmm.', 'Will do.', 'Righto.',
   'Moment.', 'Okay, checking.', 'Sure, checking.', 'Okie-dokie.'
 ]
 const RECENT = 8 // a beat isn't picked again until this many others have played

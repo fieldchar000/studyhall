@@ -4,6 +4,7 @@
 // than it plays, where the smaller "int8" one barely keeps up.
 
 import { app } from 'electron'
+import { speakable } from './speakable'
 import { readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import { join } from 'node:path'
@@ -123,7 +124,7 @@ export async function speakMouth(text: string, voice: string, speed: number): Pr
   const a = loadAddon()
   const t0 = Date.now()
   const out = (await (a.offlineTtsGenerateAsync(h, {
-    text: text.slice(0, 600),
+    text: speakable(text).slice(0, 600), // (numbers, symbols and Greek letters said as words: see speakable.ts)
     sid: VOICES[voice] ?? VOICES.af_heart,
     speed: Math.max(0.7, Math.min(1.5, speed || 1)),
     enableExternalBuffer: false // (Electron doesn't allow the add-on's own buffers)
