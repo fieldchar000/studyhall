@@ -21,6 +21,7 @@ import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
 import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMarks } from './bauer'
 import { goToPage, lessonText, readLesson } from './lessonReader'
+import { schoolFile, schoolText } from './politemall'
 import { setTutor, tutorOn, tutorPrompt, tutorTitle } from './tutor'
 import { stageDone, stageStart, stageTool, stageToolEnd, trailEnd, trailPlan, trailSettle } from './novaStage'
 import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, type Seen, type SeenControl } from './eyes'
@@ -70,6 +71,7 @@ How to help (use as few tool calls as the task needs; independent ones can go in
   • "ELI5", "explain like I'm five", "simply", "dumb it down", "I don't get it": simple words and one everyday comparison that carries the whole idea (a thermostat, a lock and key, traffic lights), three to five sentences, said like a friend. A drawing only if it's the comparison itself.
   • "Teach me X", "walk me through X", "in depth", "properly", "step by step": the live lesson. One draw call with deep: true, 3 to 7 beats that build on each other. Each beat is one stage on its own picture card (flow for steps or a pathway, model with motion for an organ, a cell part or a machine, molecule for a drug or compound, bars or graph for numbers and effects, table to compare, timeline for history, photo with labels for anatomy; a plain card only for the big picture and the wrap-up), and its say line explains that stage like a teacher: why it happens, how it connects to the last one, an everyday comparison where it helps, what to notice. Never read the card out. Say one short line first ("Let's build it up."), then draw.
   • "Explain this", "what am I looking at", "this slide", "I'm confused by this", "what does this diagram mean" (something on their screen): take_screenshot of that window first, then one draw call that walks through what's actually there, pointing at it: 3 to 7 beats, each beat's marks on the real part of the slide or page (ring or underline the words, an arrow along the diagram's arrow, a label beside a box), placed by where they are in the screenshot, with a say line that explains that part (what it means, why it's there, how it connects to the part before). The last beat ties it together in one sentence they can remember. Add a card only for something the slide leaves out (a missing step, a quick example). Never read the slide out word for word; explain it.
+  • Their school is on PoliteMall (Brightspace): for their courses, what's due, announcements, "what's in week 5", call school (read-only, read earlier from PoliteMall). "Pull up week 5": school with find, then school_file open: true. "Teach me week 5" / "summarise this week's slides": school with find, school_file to download the deck or PDF, then read_lesson it (source: the path) and teach it.
   • When what they ask about is in a slide deck or PDF they have open (PowerPoint, a PDF in Edge, Opera GX or Chrome; the window in <live-state> tells you): call read_lesson once for that lesson (the whole thing as text, cheap; don't read it again for each question) and teach with all of it, not just what's on screen. Connect what they marked to what comes before and after it ("slide 9 set this up…"), and when a later slide or page goes deeper (a detailed diagram, a worked example), say so and show it: see_photo its picture address, then a photo card of it with labels on the parts you're explaining, or go_to_page to it and ring it on their screen (take_screenshot first). Use the slides' own words and diagrams; add a picture from the web (a photo card with a Wikipedia query) or a drawn diagram when the slides don't have one.
   • From their own study files (they name their notes, a week, a module or a file): find_material, then read_material, then teach it the same live way (draw beats from what their notes say), or teach with material_id when they ask for a lesson with a quiz at the end.
   After a live lesson, stop: the drawing speaks its lines. Offer one next step in a few words only if it helps ("Want me to quiz you on it?").
@@ -576,6 +578,21 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       async ({ page, find }) => text(await goToPage({ page: page ?? undefined, find: find ? String(find) : undefined }))
     )
   ]
+  // PoliteMall (politemall.ts): their courses, read earlier from Brightspace (read-only).
+  const schoolTools = [
+    tool(
+      'school',
+      "Their PoliteMall (the school's Brightspace): leave course out for every course, what's due in the next 2 weeks and the latest announcements; give course (code or name) for its content by week, assignments (submitted or not), quizzes, grades and announcements; add find (\"week 5\", \"5\", or words of a title) for those modules' files and links. Read-only.",
+      { course: z.string().max(80).optional(), find: z.string().max(60).optional() },
+      async ({ course, find }) => text(schoolText(course ? String(course) : undefined, find ? String(find) : undefined))
+    ),
+    tool(
+      'school_file',
+      'A file from PoliteMall: downloads a topic (by its topic number from school) so you can read_lesson it and teach it ("teach me week 5", "summarise this week\'s slides"), or open: true shows it to them in the PoliteMall window ("pull up week 5").',
+      { course: z.string().max(80), topic: z.number().int(), open: z.boolean().optional() },
+      async ({ course, topic, open }) => text(await schoolFile(String(course), topic, !!open))
+    )
+  ]
   // Tutor mode on and off (tutor.ts).
   const tutorTools = [
     tool(
@@ -592,8 +609,8 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       return text('Tutor mode is off.')
     })
   ]
-  const TUTOR_KEEP = new Set(['draw', 'see_photo', 'read_lesson', 'go_to_page', 'take_screenshot', 'read_window', 'tutor_done'])
-  const all = [...tools, ...lessonTools, ...tutorTools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
+  const TUTOR_KEEP = new Set(['draw', 'see_photo', 'read_lesson', 'go_to_page', 'take_screenshot', 'read_window', 'tutor_done', 'school', 'school_file'])
+  const all = [...tools, ...lessonTools, ...schoolTools, ...tutorTools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
   // Every tool shows what it's doing beside the globe while it runs (Roamies' activity lines).
   for (const t of all) {
     const run = t.handler

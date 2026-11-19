@@ -49,6 +49,7 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   return aiChat(messages, schema, maxTokens)
 }
 import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
+import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
 import { setTutor, listLessons, openLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
 import { voiceAsk, voiceRecord } from './voice'
 import { askBeside, reportPen, startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
@@ -338,7 +339,7 @@ function createWindow(forceShow = false): void {
 /** Lock down every window/frame: no navigation away, no popups, no webviews. */
 function hardenContents(): void {
   app.on('web-contents-created', (_e, contents) => {
-    if (isVideoContents(contents.session) || isSpotifyContents(contents.session) || isOculusContents(contents.session)) return // own rules
+    if (isVideoContents(contents.session) || isSpotifyContents(contents.session) || isOculusContents(contents.session) || isPoliteContents(contents.session)) return // own rules
     contents.on('will-navigate', (e, url) => {
       if (!url.startsWith(APP_ORIGIN) && !(DEV_URL && url.startsWith(DEV_URL))) e.preventDefault()
     })
@@ -474,6 +475,12 @@ if (!app.requestSingleInstanceLock()) {
         handle('nova:reset', () => resetNova())
         handle('nova:facts', () => listNovaFacts())
         handle('nova:lessons', () => listLessons())
+        // PoliteMall (politemall.ts): you sign in yourself in its window; Studyhall reads it, never posts.
+        handle('polite:status', () => schoolStatus())
+        handle('polite:open', () => openPoliteMall())
+        handle('polite:sync', () => syncSchool())
+        handle('polite:signOut', () => signOutSchool())
+        politeHooks.changed = () => mainWindow?.webContents.send('polite:changed', schoolStatus())
         handle('nova:openLesson', (_e, path: string) => openLesson(String(path)))
         handle('nova:lessonsFolder', () => showLessonsFolder())
         handle('nova:tutor', (_e, on: boolean) => setTutor(!!on))
@@ -751,6 +758,7 @@ if (!app.requestSingleInstanceLock()) {
     buddyHooks.cards = (c) => showCards(c)
     buddyHooks.away = () => novaAway
     startBuddy()
+    startSchool()
   })
 
   app.on('before-quit', () => (quitting = true))

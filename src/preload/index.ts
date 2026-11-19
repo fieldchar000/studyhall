@@ -2,7 +2,7 @@
 // The UI sees only window.api — no Node, no Electron, no raw IPC.
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { Api } from '@shared/types'
+import type { Api, PoliteStatus } from '@shared/types'
 
 /** Subscribe to a main->UI event; returns an unsubscribe function. */
 function on(channel: string, cb: () => void): () => void {
@@ -268,6 +268,17 @@ const api: Api = {
     },
     speak: (text, voice, speed) => ipcRenderer.invoke('mouth:speak', text, voice, speed),
     warm: () => ipcRenderer.invoke('mouth:warm')
+  },
+  polite: {
+    status: () => ipcRenderer.invoke('polite:status'),
+    open: () => ipcRenderer.invoke('polite:open'),
+    sync: () => ipcRenderer.invoke('polite:sync'),
+    signOut: () => ipcRenderer.invoke('polite:signOut'),
+    onChanged: (cb) => {
+      const l = (_e: unknown, s: PoliteStatus): void => cb(s)
+      ipcRenderer.on('polite:changed', l)
+      return () => ipcRenderer.removeListener('polite:changed', l)
+    }
   },
   lesson: {
     onPdf: (cb) => {

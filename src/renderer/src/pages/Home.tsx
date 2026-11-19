@@ -890,7 +890,7 @@ function SubscriptionsPanel(): React.JSX.Element {
             Subscribe
           </button>
           <p className="text-[11px] leading-snug text-muted">
-            Google: Calendar settings → your calendar → “Secret address in iCal format”. Outlook: Settings → Calendar → Shared calendars → Publish → ICS link.
+            PoliteMall: Calendar → Subscribe (at the bottom) → All courses → copy the link. Google: Calendar settings → your calendar → “Secret address in iCal format”. Outlook: Settings → Calendar → Shared calendars → Publish → ICS link.
             Read-only. Feeds can lag behind the source by several hours (Google sometimes up to a day).
           </p>
         </div>

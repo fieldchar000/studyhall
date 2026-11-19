@@ -1225,6 +1225,14 @@ export interface Api {
   }
   /** Nova's Claude brain (PC only). */
   /** Nova's conversation (PC): one fast Claude call per request, with Nova's tools, speaking as it streams. */
+  /** PoliteMall (Brightspace): you sign in yourself in its window; Studyhall reads your courses (read-only). */
+  polite: {
+    status(): Promise<PoliteStatus>
+    open(): Promise<void>
+    sync(): Promise<PoliteStatus>
+    signOut(): Promise<void>
+    onChanged(cb: (s: PoliteStatus) => void): () => void
+  }
   /** The main window reads PDFs for Nova's lesson reader. */
   lesson: {
     onPdf(cb: (req: { op: 'text' | 'page'; data: Uint8Array; n?: number; width?: number }) => Promise<string>): () => void
@@ -1345,3 +1353,6 @@ export interface Api {
     hideOrb(): void
   }
 }
+
+/** PoliteMall's connection: off (never signed in), signed in (with when it last read it), signed out (the session ran out), checking, or an error. */
+export type PoliteStatus = { state: 'off' | 'signed-in' | 'signed-out' | 'checking' | 'error'; at: string | null; courses: number; error: string | null }

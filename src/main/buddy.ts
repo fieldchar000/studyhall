@@ -13,6 +13,7 @@ import { getDb, getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
 import { eyes } from './eyes'
 import * as timer from './timer'
+import { schoolBrief } from './politemall'
 
 export const buddyHooks = {
   say: (_text: string): void => {},
@@ -127,13 +128,19 @@ export function briefText(): { say: string; card: BauerCard } {
   const pLate = promised.filter((p) => p.due != null && p.due < start.getTime())
   if (pToday.length) parts.push(`You said you'd ${pToday.slice(0, 3).map((p) => `${p.text.replace(/^./, (c) => c.toLowerCase())}${new Date(p.due!).getHours() || new Date(p.due!).getMinutes() ? ` at ${hm(new Date(p.due!).toISOString())}` : ''}`).join(', ')}${pToday.length > 3 ? `, and ${pToday.length - 3} more` : ''}.`)
   if (pLate.length) parts.push(`${pLate.length === 1 ? `"${pLate[0].text}" from your list is` : `${pLate.length} things on your list are`} still waiting.`)
-  if (!today.length && !overdue.length && !pToday.length && !pLate.length) parts.push('Nothing due. Good day to get ahead.')
+  // PoliteMall: what's due in the next 3 days that you haven't submitted, and announcements since yesterday.
+  const school = schoolBrief()
+  if (school.due.length) parts.push(`On PoliteMall, ${school.due.slice(0, 3).map((x) => `${x.what.replace(/^[^:]*: /, '')} is due ${new Date(x.due).toDateString() === now.toDateString() ? `today at ${hm(x.due)}` : new Date(x.due).toLocaleDateString('en-GB', { weekday: 'long' })}`).join(', ')}${school.due.length > 3 ? `, and ${school.due.length - 3} more` : ''}.`)
+  if (school.news.length) parts.push(`${school.news.length === 1 ? 'There’s a new announcement' : `There are ${school.news.length} new announcements`}: ${school.news.slice(0, 2).map((n) => n.what).join('; ')}.`)
+  if (!today.length && !overdue.length && !pToday.length && !pLate.length && !school.due.length) parts.push('Nothing due. Good day to get ahead.')
   const items = [
     ...events.slice(0, 6).map((e) => ({ label: e.all_day || e.start_at.length === 10 ? 'All day' : hm(e.start_at), detail: e.title })),
     ...today.slice(0, 4).map((t) => ({ label: 'Due', detail: t.title })),
     ...overdue.slice(0, 3).map((t) => ({ label: 'Overdue', detail: t.title })),
     ...pToday.slice(0, 4).map((p) => ({ label: hm(new Date(p.due!).toISOString()), detail: `Promise: ${p.text}` })),
-    ...pLate.slice(0, 3).map((p) => ({ label: 'Waiting', detail: `Promise: ${p.text}` }))
+    ...pLate.slice(0, 3).map((p) => ({ label: 'Waiting', detail: `Promise: ${p.text}` })),
+    ...school.due.slice(0, 4).map((x) => ({ label: new Date(x.due).toLocaleDateString('en-GB', { weekday: 'short' }), detail: x.what })),
+    ...school.news.slice(0, 3).map((n) => ({ label: 'News', detail: n.what }))
   ]
   return {
     say: parts.join(' '),
