@@ -141,7 +141,13 @@ export async function see(opts: { hwnd?: number; offscreen?: boolean; screenshot
 /** A JPEG of one area of the screen (Nova's own windows are hidden from capture). */
 /** A close-up of part of the screen (JPEG data URL), e.g. what you circled. Never in automated tests. */
 export async function captureArea(rect: Electron.Rectangle): Promise<string | null> {
-  if (OFFSCREEN) return null
+  // (Automated tests: only a hidden test page of the test's own, titled "Nova test…", never your screen.)
+  if (OFFSCREEN) {
+    const tw = BrowserWindow.getAllWindows().find((w) => w.getTitle().startsWith('Nova test'))
+    if (!tw) return null
+    const img = await tw.webContents.capturePage({ x: Math.max(0, Math.round(rect.x)), y: Math.max(0, Math.round(rect.y)), width: Math.round(rect.width), height: Math.round(rect.height) }).catch(() => null)
+    return img && !img.isEmpty() ? `data:image/jpeg;base64,${img.toJPEG(85).toString('base64')}` : null
+  }
   return (await captureRect(rect).catch(() => null))?.image ?? null
 }
 

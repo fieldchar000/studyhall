@@ -72,8 +72,10 @@ How to help (use as few tool calls as the task needs; independent ones can go in
 - Anything in Studyhall (tasks, deadlines, calendar events, lectures, study logs, habits, money, journal, check-ins, inbox, a Studyhall page): studyhall_actions, with every change in one call, then say what you did in one short sentence.
 - Questions about their own Studyhall stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first. "What's my day?": my_day.
 - Explaining: match how they ask. You're a live tutor beside them, not a textbook: talk it through, and let the pen show it.
+  • How you explain depends on how they asked; what you show depends on the topic. Every explanation (explain, ELI5, how, why, teach, a follow-up that's a new question) gets one draw call with: 1 or 2 fact cards (card or note, card_size small: the big idea and 3 or 4 key facts; two when the topic has two sides or a lot to it), a flow (the steps of how it works, or for history the order of events), and one more visual picked by the topic: a thing with parts (an organ, a cell, a black hole, a machine) → find_figure (a real labelled figure) or a model you build (with motion for something that moves or spins); something happening at cell or molecule level (photosynthesis, a drug at its receptor, an enzyme) → find_illustrations and a scene; history → timeline; comparing → table; numbers → bars or graph. 3 or 4 cards in all. Only a quick fact, a yes or no, or a reaction gets words alone.
   • "Explain X", "what is X", "how does X work" (a plain ask): the short version, always with a picture. Two to four spoken sentences, the main idea first, and one draw call with 1 to 3 compact cards that carry it (card_size: small), picked by the question; two kinds together when that helps (a labelled figure and a flow of its steps, a table and a graph). Say your first sentence before you call draw, so they hear you straight away. Never answer an explanation in words alone.
-  • "ELI5", "explain like I'm five", "simply", "dumb it down", "I don't get it": simple words and one everyday comparison that carries the whole idea (a thermostat, a lock and key, traffic lights), three to five sentences, said like a friend. A drawing only if it's the comparison itself.
+  • "ELI5", "explain like I'm five", "simply", "dumb it down", "I don't get it": simple words and one everyday comparison that carries the whole idea (a thermostat, a lock and key, traffic lights), three to five sentences, said like a friend. The visuals are the same set, kept simple (the fact card in plain words, a short flow, the comparison as a picture where it helps).
+  • "Why is X", "why does X": cause and effect, the reasoning link by link (the flow shows the chain of causes). "How does X work": the mechanism, step by step.
   • "Teach me X", "walk me through X", "in depth", "properly", "step by step": the live lesson. One draw call with deep: true, 3 to 7 beats that build on each other. Each beat is one stage on its own picture card (flow for steps or a pathway, model with motion for an organ, a cell part or a machine, molecule for a drug or compound, bars or graph for numbers and effects, table to compare, timeline for history, photo with labels for anatomy; a plain card only for the big picture and the wrap-up), and its say line explains that stage like a teacher: why it happens, how it connects to the last one, an everyday comparison where it helps, what to notice. Never read the card out. Say one short line first ("Let's build it up."), then draw.
   • "Explain this", "what am I looking at", "this slide", "I'm confused by this", "what does this diagram mean" (something on their screen): take_screenshot of that window first, then one draw call that teaches it like a teacher at the board: 3 to 7 beats. Each beat marks the real part of the slide or page (ring or underline the words, an arrow along the diagram's arrow, a label beside a box), placed by where they are in the screenshot, AND most beats bring a compact card beside the slide (card_size: small, never over the slide) with what the slide doesn't show: the bigger picture, a diagram or labelled figure, a key fact, an everyday comparison, or how it links to other slides of the deck. Tie each card to the part of the slide it explains (tie: that part's words), so a line runs from the slide to the card; use connect with flow: true for something that travels or keeps happening. Aim for 2 to 4 cards on screen by the end, all in that ONE draw call. For example, beat 1: ring the title + a card with the big picture in two lines; beat 2: ring the first box + a small flow of what it does; beat 3: underline the key line + a note with an everyday comparison; beat 4: ring the last box + a card linking it to the rest of the deck. Before take_screenshot, say one short line ("Let's go through it.") so they hear you straight away. Each say line explains that part (what it means, why it's there, how it connects to the part before) and the last beat ties it together in one sentence they can remember. Never read the slide out word for word; explain it.
   • When their words end with "(While they held the keys, the PC was playing this, written down from its sound: …)", they held Ctrl+Alt+Shift so you'd hear what's playing (a video, a lecture recording, a song): answer about that ("what did he just say?", "explain that"). It's a rough automatic transcript of the PC's sound: go by the gist, and if it's music or unclear, say what you can make out. A YouTube video's title is usually in <live-state>.
@@ -247,15 +249,34 @@ export function noteCircle(rect: Electron.Rectangle, strokes: { x: number; y: nu
   })()
 }
 /** For the request: what was just circled (picture and text), else the text you've highlighted, if any. */
+/** A circled diagram or picture, described closely by Sonnet on its own (just the picture, about 1 to 2 cents), so the
+ *  quick model explains what's really in it: every label, part and arrow. Skipped when Claude is paused or low. */
+async function lookClosely(image: string): Promise<string> {
+  const p = getPrefs()
+  if (claudeBlocked(p) || !roomForDeeper(p)) return ''
+  const ask = claudeChat(
+    [
+      { role: 'system', content: 'Describe exactly what is inside the area marked in blue in this picture (a diagram, chart or picture from a student\'s lecture slide or notes): what it shows, then every label, part and arrow and where each sits (top left, centre…), and how the parts connect. Plain sentences, under 150 words. Only what is really there.' },
+      { role: 'user', content: [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: 'What is in the marked area?' }] }
+    ],
+    undefined,
+    { ...p, novaBrain: 'sonnet', novaEffort: 'low' },
+    'look'
+  ).catch(() => '')
+  return String((await Promise.race([ask, new Promise<string>((r) => setTimeout(() => r(''), 15_000))])) ?? '').trim().slice(0, 1200)
+}
+
 async function screenContext(): Promise<{ text: string; image: string | null }> {
   if (circled) {
     const c = await circled.catch(() => null)
     circled = null
-    if (c && Date.now() - c.at < 90_000)
+    if (c && Date.now() - c.at < 90_000) {
+      const look = c.image && (c.text ?? '').length < 150 ? await lookClosely(c.image) : ''
       return {
-        text: `They marked part of their screen while asking (the picture is attached; it's ringed on screen now)${c.marks ? `. In their words: "${c.marks}"` : ''}${c.text ? `. Words the app reports there: «${c.text}»` : ''}. "This" / "that" means what they circled. Go by the picture: explain the content they circled (their lecture slide, notes, diagram, question), never the app around it (its menus, ribbon, toolbars, warning bars or buttons), unless they circled only a button or ask about the app itself.`,
+        text: `${look ? `What's inside what they circled, looked at closely: ${look}\nExplain THIS (their diagram or picture) part by part: ring or label its real parts on their screen as you go, then 1 or 2 fact cards, and a flow or another diagram where it helps. ` : ''}They marked part of their screen while asking (the picture is attached; it's ringed on screen now)${c.marks ? `. In their words: "${c.marks}"` : ''}${c.text ? `. Words the app reports there: «${c.text}»` : ''}. "This" / "that" means what they circled. Go by the picture: explain the content they circled (their lecture slide, notes, diagram, question), never the app around it (its menus, ribbon, toolbars, warning bars or buttons), unless they circled only a button or ask about the app itself.`,
         image: c.image
       }
+    }
   }
   const sel = await selectionNow().catch(() => null)
   if (sel) {
@@ -859,6 +880,27 @@ function howToHint(said: string): string {
     : ''
 }
 
+/** An explanation: which visual goes with the fact cards and the flow, from the topic (the quick model otherwise
+ *  drew a flow and nothing else). And a follow-up that's really a new question gets its own cards. */
+const PARTS = /\b(heart|brain|cell|kidney|nephron|neuron|synapse|eye|ear|skin|bone|joint|muscle|lungs?|liver|stomach|tooth|leaf|flower|chloroplast|mitochondri\w*|nucleus|black hole|atom|planet|star|galaxy|volcano|engine|circuit|motor|skeleton|skull|spine|artery|vein)\b/i
+const MOLECULAR = /\b(photosynth\w*|respiration|enzyme|receptor|hormone|insulin|drug|blocker|inhibitor|protein|dna|rna|mitosis|meiosis|immune|antibod\w*|antigen|vaccine|virus|bacteri\w*|osmosis|diffusion|neurotransmitter|action potential)\b/i
+const HISTORY = /\b(history|historical|when did|timeline|war|revolution|invented|invention|discovered|origins?|evolution of)\b/i
+const COMPARE = /\b(compare|comparison|difference|differ|versus|vs\.?)\b/i
+const NUMBERS = /\b(how (?:much|many)|rate|percentage|statistics?|growth|population|trend|amount)\b/i
+const QUESTION = /\b(what|why|how|does|do|is|are|can|when|where|which|who)\b/i
+const TRIVIAL = /^\s*(really|cool|nice|ok(?:ay)?|yes|yeah|no|nope|thanks|thank you|wait|huh|wow|lol|and then|so|right|got it|i see)\b[\s\S]{0,25}$/i
+let lastExplained = 0 // when the last explanation was (for telling a new question from a reaction)
+function visualHint(said: string): string {
+  const explaining = DEEP_ASK.test(said) && !isHowTo(said) && !TRIVIAL.test(said)
+  const words = said.trim().split(/\s+/).length
+  const followUp = !explaining && Date.now() - lastExplained < 10 * 60_000 && QUESTION.test(said) && words >= 5 && !TRIVIAL.test(said)
+  if (!explaining && !followUp) return ''
+  const extra = PARTS.test(said) ? 'a real labelled figure (find_figure) or a model you build' : MOLECULAR.test(said) ? 'a scene (find_illustrations)' : HISTORY.test(said) ? 'a timeline' : COMPARE.test(said) ? 'a table' : NUMBERS.test(said) ? 'bars or a graph' : 'the visual that fits best (a figure, a scene, a model, a timeline, a table or a chart)'
+  return followUp
+    ? `\n(This is a new question, not a reaction: answer it with its own cards: a fact card, and a flow or ${extra} where it helps.)`
+    : `\n(Show it as: 1 or 2 fact cards + a flow + ${extra}.)`
+}
+
 /** A slide question with a deck read (or named): a note to show links between slides on the study board (the quick
  *  model otherwise draws a table and the slides never appear side by side). Studyhall decides from the words. */
 function boardHint(said: string): string {
@@ -1103,6 +1145,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   const want = tutorOn() ? effort : effortFor(said, effort, !!screen.text)
   teaching = tutorOn() || !!screen.text || DEEP_ASK.test(said)
   explainStart(said, /Window in front: ([^\n]*)/.exec(liveState)?.[1] ?? '', teaching)
+  if (teaching) lastExplained = Date.now()
   // A heart-to-heart: Sonnet for this chat (same conversation, no restart), at chat effort; else back to the usual.
   const chat = tutorOn() ? { deep: false, effort: want } : chatDepth(said)
   const useModel: ModelKey = chat.deep ? 'sonnet' : model
@@ -1228,7 +1271,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     message: {
       role: 'user',
       content: [
-        { type: 'text', text: `${recapFor(c)}${liveFor(c, liveState)}${screen.text ? `\n${screen.text}` : ''}\n\n${said}${agentish ? '\n(They asked for an agent: call send_agent.)' : ''}${boardHint(said)}${howToHint(said)}` },
+        { type: 'text', text: `${recapFor(c)}${liveFor(c, liveState)}${screen.text ? `\n${screen.text}` : ''}\n\n${said}${agentish ? '\n(They asked for an agent: call send_agent.)' : ''}${boardHint(said)}${howToHint(said)}${visualHint(said)}` },
         ...(screen.image ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: screen.image.replace(/^data:image\/\w+;base64,/, '') } }] : [])
       ]
     },
