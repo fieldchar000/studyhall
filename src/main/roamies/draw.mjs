@@ -1,4 +1,4 @@
-// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/draw.mjs, unchanged except the DrawShape export added at the end)
+// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/draw.mjs, unchanged except the DrawShape export added at the end, and photoCredits: Studyhall names the author and licence of a figure it found)
 // The draw tool's pieces: the beats-and-marks schema (checked before anything draws), where each mark goes on the
 // real screen, the parts already drawn (p1, p2 …) so follow-ups can edit them, photos and favicons for cards, and a
 // small SMILES reader for molecules, a small LaTeX reader for maths, the layering of flow diagrams and the countries a
@@ -423,9 +423,11 @@ async function imageData(url, opts) {
   if (!IMAGE.test(type)) throw new Error("That link isn't a picture.");
   return `data:${type};base64,${buf.toString('base64')}`;
 }
+/** Studyhall: the credit line for a picture address it found (a Wikimedia Commons figure: author · licence). */
+export const photoCredits = new Map();
 /** A named thing's picture: its Wikipedia summary thumbnail (query), or a picture URL the model already found. */
 export async function photoFor({ query, url }, { fetchImpl = fetch } = {}) {
-  if (url) return { src: await imageData(url, { fetchImpl, max: LIMITS.photoBytes }), credit: new URL(url).hostname.replace(/^www\./, '') };
+  if (url) return { src: await imageData(url, { fetchImpl, max: LIMITS.photoBytes }), credit: photoCredits.get(url) ?? new URL(url).hostname.replace(/^www\./, '') };
   // Titles are case-sensitive after the first letter, which Wikipedia always capitalises.
   const title = String(query).trim().replace(/\s+/g, '_'), page = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.charAt(0).toUpperCase() + title.slice(1))}`;
   const { buf } = await getChecked(page, { fetchImpl, max: 200_000, accept: 'application/json' });

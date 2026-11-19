@@ -1,5 +1,5 @@
 // Copied from Roamies 0.1.41 (showcase/roamies/ink.js) by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies
-// Studyhall changes: a lesson's own slide or page on a photo card is shown as it is (see photo()); and only the colours and fonts below and colours further down (your dark blue and light blue instead of teal; Studyhall's fonts).
+// Studyhall changes: a lesson's own slide or page, and a Wikimedia Commons figure, on a photo card are shown as they are (see photo()); and only the colours and fonts below and colours further down (your dark blue and light blue instead of teal; Studyhall's fonts).
 // Roamies drawing on screen: the Sidekick turns into its cursor and draws hand-drawn teal marks with its tip (the
 // same pen as the user's ⌃⌥ ink: teal, a dark edge so it reads on white, a soft glow), paced to its voice with a
 // caption at the bottom. Screen marks follow each thing's real shape; cards and diagrams go on calm space beside the
@@ -875,8 +875,10 @@
     async photo(m) {
       const cells = [], cap = m.text || m.title || m.query || '';
       // Studyhall: a slide or page of the lesson you have open is shown as it is (larger, not as LED dots), so it can be read.
-      const lesson = /^https:\/\/lesson\.studyhall\.app\//.test(m.url ?? '');
-      if (lesson) m.credit = 'from your lesson';
+      // (and a labelled figure from Wikimedia Commons, which find_figure found: its detail must stay readable too)
+      const ownSlide = /^https:\/\/lesson\.studyhall\.app\//.test(m.url ?? '');
+      const lesson = ownSlide || /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(m.url ?? '');
+      if (ownSlide) m.credit = 'from your lesson';
       // The picture first (at most 4 s), so the card takes its shape and nothing is cropped.
       const img = m.src && !m.missing ? await new Promise((res) => {
         const i = new Image(), t = setTimeout(() => res(null), 4000);

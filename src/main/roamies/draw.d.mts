@@ -10,3 +10,5 @@ export function describeParts(entries: any[]): string
 export function faviconFor(url: string, o?: any): Promise<string | null>
 export function resolveTargets(beats: any[], look: any): Promise<any[]>
 export const DrawShape: Record<string, any>
+
+export const photoCredits: Map<string, string>
