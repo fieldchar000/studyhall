@@ -26,6 +26,8 @@ const PAL = [
 type InkOp = {
   play?: unknown
   clear?: Record<string, unknown>
+  /** pictures of the cards on screen, asked for under this id (saving an explanation as a note) */
+  snapshot?: string
   reminders?: Record<string, unknown>
   stale?: boolean
   click?: { x: number; y: number }
@@ -484,6 +486,7 @@ async function boot(opts: {
         endTalk()
         R.ink?.play(op.play)
       } else if (op.clear) R.ink?.clear(op.clear)
+      else if (op.snapshot) R.ink?.snapshot?.(op.snapshot)
       else if (op.reminders) R.ink?.reminders(op.reminders)
       else if (op.stale) R.ink?.stale()
       else if (op.click) R.ink?.click(op.click.x, op.click.y)

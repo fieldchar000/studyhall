@@ -2384,6 +2384,16 @@
     // about, so all of it fades (cards too).
     // Studyhall: a new question cuts off the drawing still being narrated (its cards stay), so the answer isn't queued behind it.
     halt() { if (G.playing || G.q.length) stop(); },
+    // Studyhall: a picture of each card on screen now (for saving an explanation as a note).
+    snapshot(id) {
+      const out = [], seen = new Set();
+      for (const m of marks) {
+        if (!m.alive || !m.card || m.leaving || m.local || seen.has(m.part)) continue;
+        seen.add(m.part);
+        try { out.push({ title: String(m.title ?? m.o?.title ?? m.kind ?? 'card').slice(0, 60), data: cardImage(m).toDataURL('image/png') }); } catch { /* a card that can't be drawn to a picture */ }
+      }
+      R.ink.send?.({ type: 'card_images', id, images: out.slice(0, 8) });
+    },
     stale() { stop(); fadeOut(marks.filter((m) => m.alive && !m.local && !m.pinned), 0.6); },
     click(x, y) { G.wait?.click(x, y); },
     ptr(x, y) { G.ptr = [x, y]; G.wait?.ptr(x, y); },

@@ -15,7 +15,7 @@ import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { getPrefs } from './prefs'
 import { get, getProfileId, getSetting, setSetting } from './db'
-import { agentsUi, orbPanel, inkClear, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
+import { agentsUi, orbPanel, inkClear, inkSnapshot, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
 import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
 import { stageDone } from './novaStage'
 import { lessonFetch } from './lessonReader'
@@ -206,7 +206,11 @@ inkHooks.event = (msg) => {
   else if (t === 'list_toggle' && store) {
     const c = store.getCommitment(String(msg.id))
     if (c) void store.updateCommitment(c.id, { status: c.status === 'done' ? 'open' : 'done' }).then(() => showList(0))
+  } else if (t === 'card_images' && typeof msg.id === 'string') {
+    snapshotWaiters.get(msg.id)?.(Array.isArray(msg.images) ? (msg.images as { title: string; data: string }[]) : [])
+    snapshotWaiters.delete(msg.id)
   } else if (t === 'card_image' && typeof msg.data === 'string') {
+    cardSaved() // ("Save" on a card: the explanation goes to Notes too)
     // "Save" on a card: a picture of it in Pictures\Nova cards.
     const dir = join(app.getPath('pictures'), 'Nova cards')
     const name = `${String(msg.title ?? 'card').replace(/[^\w -]+/g, '').slice(0, 50) || 'card'} ${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.png`
@@ -441,6 +445,23 @@ export const roamiesTurnEnd = (): void => {
 
 let callSeq = 0
 let abort = new AbortController()
+// ---------- Pictures of the cards on screen (saving an explanation as a note) ----------
+const snapshotWaiters = new Map<string, (images: { title: string; data: string }[]) => void>()
+let snapSeq = 0
+export function cardSnapshots(): Promise<{ title: string; data: string }[]> {
+  const id = `s${++snapSeq}`
+  return new Promise((resolve) => {
+    snapshotWaiters.set(id, resolve)
+    inkSnapshot(id)
+    setTimeout(() => {
+      if (snapshotWaiters.delete(id)) resolve([])
+    }, 3000)
+  })
+}
+/** Someone pressed Save on a card (explanations.ts listens). */
+export const cardSavedHooks = { saved: (): void => {} }
+const cardSaved = (): void => cardSavedHooks.saved()
+
 /** Stop what's running (talking to Nova again, or Esc): a tool waiting on something ends at once. */
 export function roamiesAbort(): void {
   setHandsActive(false)

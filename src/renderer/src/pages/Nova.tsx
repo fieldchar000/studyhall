@@ -960,6 +960,12 @@ export function NovaPage(): React.JSX.Element {
                 <input type="checkbox" checked={prefs?.novaHideIdle === true} onChange={(e) => save({ novaHideIdle: e.target.checked })} aria-label="Hide when idle" />
               </Row>
               <Row
+                title="Save my explanations to Notes"
+                hint="Every explanation Nova draws for goes onto that day's “Nova notes” page: your question, what it said and pictures of its cards. You can always say “save that” (or press the save icon on a card) to save one as its own note."
+              >
+                <input type="checkbox" checked={prefs?.novaAutoNotes === true} onChange={(e) => save({ novaAutoNotes: e.target.checked })} aria-label="Save my explanations to Notes" />
+              </Row>
+              <Row
                 title="Quieter while I talk"
                 hint="Other apps (videos, music) turn down while you hold the talk key, and back up when you let go. Hold Ctrl + Alt + Shift instead to have Nova listen to what's playing."
               >

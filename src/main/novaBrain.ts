@@ -24,6 +24,7 @@ import { goToPage, lastLesson, lessonQuizText, lessonText, readLesson } from './
 import { schoolFile, schoolText } from './politemall'
 import { figureText } from './figures'
 import { setConversation } from './conversation'
+import { explainDrew, explainEnd, explainSaid, explainStart, saveExplanation } from './explanations'
 import { illustrationsText } from './illustrations'
 import { setTutor, tutorOn, tutorPrompt, tutorTitle } from './tutor'
 import { stageDone, stageStart, stageTool, stageToolEnd, trailEnd, trailPlan, trailSettle } from './novaStage'
@@ -80,6 +81,7 @@ How to help (use as few tool calls as the task needs; independent ones can go in
   • From their own study files (they name their notes, a week, a module or a file): find_material, then read_material, then teach it the same live way (draw beats from what their notes say), or teach with material_id when they ask for a lesson with a quiz at the end.
   After a live lesson, stop: the drawing speaks its lines. Offer one next step in a few words only if it helps ("Want me to quiz you on it?").
 - Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file, find_material first, then read_material (to answer or teach from them) or quiz_me.
+- "Save that" / "save this as notes" (after you explained something): save_explanation. "Save that as flashcards" / "make flashcards from that": save_flashcards with the key points of what you just explained (5 to 12 cards, one fact each, question on the front), the deck named after the topic ("Nephron", "Beta blockers"), or after one of their modules only when the topic clearly belongs to it (a nephron isn't Chemistry).
 - "Quiz me" / "test me", or "yes" to a quiz you offered: quiz_me straight away (from a study file's own questions with material_id, their flashcards, or, with neither, the deck you read and what you just explained: give topic), then ask question 1 in the same reply and run it yourself, one question per reply. Offer save_flashcards for the ones they missed. Never answer a quiz request without starting the quiz.
 - The web: "pull up a video on X", "a study music playlist": youtube, then open the best real result. "Find me a source for…", facts that change: WebSearch, then web_fetch to read a page (offset reads on). Music to study to: play_music (Spotify in Studyhall; they have Premium), or a YouTube playlist if they ask for YouTube. Never make up links: only open ones a search gave you.
 - Notes from a video or page: video_transcript (YouTube) or web_fetch, then save_note (and save_flashcards if they want cards). A revision sheet or summary from their own study files, saved into Studyhall's Notes ("make a revision sheet from all my week 3 notes"): start_job with a full brief; just say you're on it.
@@ -528,6 +530,12 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       }
     ),
     tool(
+      'save_explanation',
+      'Save the explanation you just gave as a note in Studyhall\'s Notes: their question, what you said, and pictures of the cards you drew (filed under the module). For "save that", "save this as notes", "keep this". Free: nothing is written by you.',
+      { title: z.string().max(100).optional().describe('only if they named one') },
+      async ({ title }) => text(await saveExplanation(title ? String(title) : undefined))
+    ),
+    tool(
       'save_note',
       'Save notes into Studyhall\'s Notes (Markdown: # headings, - bullets, plain paragraphs).',
       { title: z.string(), markdown: z.string() },
@@ -563,6 +571,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   // rules), the web, promises, facts, plan steps and focus (main/roamiesTools.ts).
   turnHooks.speak = (line) => {
     if (turnRef.current?.quiet || wc.isDestroyed()) return false
+    explainSaid(`${line} `)
     wc.send('nova:speak', { text: `${line} ` })
     return true
   }
@@ -650,6 +659,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     const run = t.handler
     t.handler = (async (args: Record<string, unknown>, extra: unknown) => {
       const id = stageTool(t.name, args)
+      if (t.name === 'draw') explainDrew()
       const t0 = Date.now()
       const tr0 = turnRef.current
       const at = tr0?.started ? ` at ${((t0 - tr0.started) / 1000).toFixed(1)} s` : ''
@@ -1013,6 +1023,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   const started = Date.now()
   const want = tutorOn() ? effort : effortFor(said, effort, !!screen.text)
   teaching = tutorOn() || !!screen.text || DEEP_ASK.test(said)
+  explainStart(said, /Window in front: ([^\n]*)/.exec(liveState)?.[1] ?? '', teaching)
   if ((c.liveEffort ?? c.effort) !== want) {
     await c.q.applyFlagSettings({ effortLevel: want }).catch(() => {})
     c.liveEffort = want
@@ -1045,6 +1056,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
       if (turn.quiet) return // a lesson or walkthrough has taken over and speaks for itself
       spoken += t
       times.first ??= Date.now() - started
+      explainSaid(t)
       beatDone = true
       if (!wc.isDestroyed()) wc.send('nova:speak', { text: t })
     },
@@ -1217,6 +1229,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   // Read-on-screen lines go on a card beside the globe.
   if (turn.research) orbPanel('end', turn.fromWeb ? 'From the web' : /\n\s*>/.test(`\n${written}`) ? 'Draft' : 'Answer')
   recordClaudeCost(model, effort, Date.now() - started, cost)
+  explainEnd()
   console.info(`Nova turn: ${model}/${c.liveEffort ?? effort} in ${Date.now() - started} ms, cost $${cost.toFixed(5)}, tools: ${turn.tools.join(', ') || 'none'}`)
   logTiming(`${model}/${c.liveEffort ?? effort}: first words ${times.first != null ? `${(times.first / 1000).toFixed(1)} s` : 'none'}, done ${((Date.now() - started) / 1000).toFixed(1)} s, $${cost.toFixed(4)}; ${times.tools.join(', ') || 'no tools'}`)
   roamiesTurnEnd()

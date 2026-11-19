@@ -197,6 +197,10 @@ export function setHandsActive(on: boolean): void {
 export function lookAtRect(r: Electron.Rectangle): void {
   orbTo(besideRect(r))
 }
+/** Asks the overlay for pictures of the cards on screen (they come back as an ink event, card_images). */
+export function inkSnapshot(id: string): void {
+  orbWin?.webContents.send('bauer:ink', { snapshot: id })
+}
 export function inkClear(e: Record<string, unknown> = {}): void {
   orbWin?.webContents.send('bauer:ink', { clear: e })
 }
