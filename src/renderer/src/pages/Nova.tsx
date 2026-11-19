@@ -552,9 +552,9 @@ export function NovaPage(): React.JSX.Element {
                   onChange={(v) => save({ novaFollowUp: v as Prefs['novaFollowUp'] })}
                 />
               </Row>
-              <Row title="Draw while you talk" hint="While you hold the talk keys, your mouse draws on the screen (no clicking needed): go round what you mean and the loop snaps shut, or underline it. The marks fade when you let go.">
+              <Row title="Draw while you talk" hint="While you hold the talk keys, hold the left mouse button to draw on the screen: circle, underline or point at what you mean (right-click undoes the last mark). Or press Ctrl+Alt+B to mark first and then type. The marks fade when they’ve been sent.">
                 <span className="nova-keys">
-                  hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd> + move
+                  hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd> + drag
                 </span>
               </Row>
               <Row title="Type instead" hint="Opens a small box beside your cursor">

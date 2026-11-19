@@ -355,8 +355,18 @@ let keys: ChildProcess | null = null
 let keysWanted = false
 /** Start the small helper that notices the talk keys (PC app only; never in automated tests). */
 /** The talk keys going down and up (the pen draws while they are held). */
-export const talkKeyHooks = { down: (): void => {}, up: (): void => {}, esc: (): void => {}, click: (): void => {} }
+export const talkKeyHooks = { down: (): void => {}, up: (): void => {}, esc: (): void => {}, click: (): void => {}, lmb: (_down: boolean): void => {}, rmb: (): void => {} }
 let clicksWanted = false
+/** The pen is on: the key helper reports the mouse buttons (it draws while the left one is held). */
+export function reportPen(on: boolean): void {
+  penWanted = on
+  try {
+    keys?.stdin?.write(on ? 'pen on\n' : 'pen off\n')
+  } catch {
+    /* the helper isn't running */
+  }
+}
+let penWanted = false
 /** Report left clicks from any app (a drawn walkthrough waiting for your click), or stop. */
 export function reportClicks(on: boolean): void {
   clicksWanted = on
@@ -387,6 +397,7 @@ export function startKeys(): void {
         }
       })
       if (clicksWanted) child.stdin?.write('clicks on\n')
+      if (penWanted) child.stdin?.write('pen on\n')
       child.on('exit', () => {
         if (keys === child) keys = null
       })
@@ -402,6 +413,8 @@ function onKey(e: string): void {
   if (suspended) return
   if (e === 'esc') return talkKeyHooks.esc()
   if (e === 'click') return talkKeyHooks.click()
+  if (e === 'lmb-down' || e === 'lmb-up') return talkKeyHooks.lmb(e === 'lmb-down')
+  if (e === 'rmb-down') return talkKeyHooks.rmb()
   if (e === 'ptt-down') {
     talkKeyHooks.down()
     ensureWindow()
@@ -424,6 +437,27 @@ function onKey(e: string): void {
     win!.focus()
     send({ type: 'type' })
   }
+}
+
+/** The typing box beside your marks (Ctrl+Alt+B): to the right of them, or below if there's no room. */
+export function askBeside(r: Electron.Rectangle): void {
+  ensureWindow()
+  atCursor = true
+  const area = screen.getDisplayMatching(r).workArea
+  const h = H_SMALL
+  const right = r.x + r.width + 16 + W <= area.x + area.width
+  const x = right ? r.x + r.width + 16 : Math.max(area.x + 8, Math.min(r.x, area.x + area.width - W - 8))
+  const y = right ? Math.max(area.y + 8, Math.min(r.y, area.y + area.height - h - 8)) : Math.min(r.y + r.height + 12, area.y + area.height - h - 8)
+  if (process.env.STUDYHALL_OFFSCREEN === '1') {
+    // (automated tests: never on screen, never taking the keyboard)
+    win!.setBounds({ x: -30000, y: -30000, width: W, height: h })
+    win!.showInactive()
+  } else {
+    win!.setBounds({ x: Math.round(x), y: Math.round(y), width: W, height: h })
+    win!.show()
+    win!.focus()
+  }
+  send({ type: 'type' })
 }
 
 /** Just below-right of the mouse (kept on its screen). */

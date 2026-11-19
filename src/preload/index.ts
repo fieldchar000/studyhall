@@ -378,6 +378,7 @@ const api: Api = {
     micLevel: (v) => ipcRenderer.send('bauer:window', { type: 'mic', v }),
     orb: (state, text) => ipcRenderer.send('bauer:window', { type: 'orb', state, text }),
     mouse: (over) => ipcRenderer.send('bauer:window', { type: 'mouse', over }),
+    marks: () => ipcRenderer.invoke('bauer:marks'),
     shot: () => ipcRenderer.invoke('bauer:shot'),
     closeCircle: () => ipcRenderer.send('bauer:window', { type: 'closeCircle' }),
     onCircle: (cb) => {

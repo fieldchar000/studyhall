@@ -1320,6 +1320,8 @@ export interface Api {
     micLevel(v: number): void
     orb(state: OrbState, text?: string): void
     mouse(over: boolean): void
+    /** Start marking on screen (like Ctrl+Alt+B): your marks go with the next question. */
+    marks(): Promise<void>
     shot(): Promise<{ image: string; width: number; height: number } | null>
     closeCircle(): void
     onCircle(cb: () => void): () => void

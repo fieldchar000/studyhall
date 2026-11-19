@@ -143,6 +143,8 @@ export function SettingsPage(): React.JSX.Element {
       </section>
       )}
 
+      {!phone && <ShortcutsCard />}
+
       <section className="card mb-4 p-5">
         <h2 className="mb-1 font-semibold">Your data</h2>
         {phone ? (
@@ -186,5 +188,57 @@ export function SettingsPage(): React.JSX.Element {
 
       <UpdatesCard version={data?.version} />
     </div>
+  )
+}
+
+/** Every keyboard shortcut in one place. "Anywhere" ones work in any app while Studyhall is running. */
+const SHORTCUTS: { group: string; items: [string, string][] }[] = [
+  {
+    group: 'Nova (anywhere in Windows)',
+    items: [
+      ['Hold Ctrl + Alt', 'Talk to Nova. Let go when you’re done.'],
+      ['Hold Ctrl + Alt + left mouse button', 'While talking: draw on the screen to show what you mean (right-click undoes a mark).'],
+      ['Tap Ctrl + Shift', 'Type to Nova: a small box opens beside your mouse.'],
+      ['Ctrl + Alt + B', 'Mark the screen first (hold the left button to draw, right-click undoes), then type or say your question.'],
+      ['Ctrl + Alt + N', 'Show or hide Nova.'],
+      ['Esc', 'Stop Nova talking or drawing; cancels marks.']
+    ]
+  },
+  {
+    group: 'Studyhall (anywhere in Windows)',
+    items: [['Quick capture (above)', 'Opens a box; what you type goes to your Inbox. Ctrl + Shift + Space unless you changed it.']]
+  },
+  {
+    group: 'Inside Studyhall',
+    items: [
+      ['Ctrl + K', 'Search everything, or jump to a page.'],
+      ['Esc', 'Close a panel, menu or popup.'],
+      ['Space or Enter', 'Flashcards and active recall: show the answer.'],
+      ['Ctrl + Enter', 'Add the flashcard you’re writing; send an answer in active recall.'],
+      ['Home / End', 'PDF viewer: first or last page.']
+    ]
+  }
+]
+function ShortcutsCard(): React.JSX.Element {
+  return (
+    <section className="card mb-4 p-5">
+      <h2 className="mb-1 font-semibold">Keyboard shortcuts</h2>
+      <p className="mb-3 text-sm text-muted">Everything you can do from the keyboard.</p>
+      {SHORTCUTS.map((g) => (
+        <div key={g.group} className="mb-3 last:mb-0">
+          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">{g.group}</h3>
+          <table className="w-full text-sm">
+            <tbody>
+              {g.items.map(([keys, what]) => (
+                <tr key={keys} className="border-t border-line first:border-t-0">
+                  <td className="w-56 py-1.5 pr-3 align-top font-medium">{keys}</td>
+                  <td className="py-1.5 text-muted">{what}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </section>
   )
 }

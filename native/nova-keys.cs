@@ -5,6 +5,8 @@
 //  • Esc pressed = "esc" (Nova stops talking or drawing, from any app).
 //  • Only while Studyhall asks ("clicks on" on its input, until "clicks off"): a left mouse click = "click" (a drawn
 //    walkthrough waiting for your click on a step). Studyhall reads where the cursor is itself.
+//  • Only while the pen is on ("pen on" … "pen off"): the left button pressed and let go ("lmb-down", "lmb-up": the
+//    pen draws while it's held) and the right button pressed ("rmb-down": undo the last mark).
 // It only checks those keys a few times a second (GetAsyncKeyState); it never records or prints which other keys you
 // press. It exits when Studyhall closes its input.
 
@@ -34,6 +36,7 @@ static class NovaKeys
 
     static void Say(string s) { lock (Console.Out) { Console.Out.WriteLine(s); Console.Out.Flush(); } }
     static volatile bool clicks = false;
+    static volatile bool pen = false; // the pen is on: report the mouse buttons ("lmb-down", "lmb-up", "rmb-down")
 
     static void Main()
     {
@@ -47,12 +50,14 @@ static class NovaKeys
                 {
                     if (line.Trim() == "clicks on") clicks = true;
                     else if (line.Trim() == "clicks off") clicks = false;
+                    else if (line.Trim() == "pen on") pen = true;
+                    else if (line.Trim() == "pen off") pen = false;
                 }
             }
             catch { }
             Environment.Exit(0);
         }) { IsBackground = true }.Start();
-        bool escWas = false, clickWas = false;
+        bool escWas = false, clickWas = false, lmbWas = false, rmbWas = false;
 
         const int TICK = 25, HOLD_MS = 250, TAP_MS = 600;
         int talkHeld = 0;      // ms Ctrl+Alt has been held on their own
@@ -77,6 +82,12 @@ static class NovaKeys
             bool click = Down(0x01);
             if (clicks && click && !clickWas) Say("click");
             clickWas = click;
+            // ----- The pen: it draws while the left button is held; the right button undoes the last mark -----
+            if (pen && click != lmbWas) Say(click ? "lmb-down" : "lmb-up");
+            lmbWas = click;
+            bool rmb = Down(0x02);
+            if (pen && rmb && !rmbWas) Say("rmb-down");
+            rmbWas = rmb;
 
             // ----- Hold Ctrl + Alt to talk -----
             bool talkCombo = ctrl && lalt && !altgr && !shift;

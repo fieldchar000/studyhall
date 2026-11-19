@@ -48,8 +48,8 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   } else if (why !== 'not connected' && prefs.novaOffline === false) throw new Error(`Nova is paused because ${why}.`)
   return aiChat(messages, schema, maxTokens)
 }
-import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbEmote, penHooks, penMode, setPen } from './bauer'
-import { startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
+import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbEmote, penButton, penHooks, penMode, penUndo, setPen } from './bauer'
+import { askBeside, reportPen, startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
 import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
 import { eyes, helpOnScreen, pointerHooks, see, stopEyes, stopWalkthrough } from './eyes'
@@ -450,6 +450,7 @@ if (!app.requestSingleInstanceLock()) {
           return t ? String(await t.execute({ text: String(text).slice(0, 200), due: String(due), kind: 'reminder' }, {})) : null
         })
         handle('nova:turn', async (e, said: string, studyhall: string) => {
+          if (penMode() === 'marks') setPen(null) // (your marks go with this question)
           const p = getPrefs()
           const now = new Date()
           // The window in front and the memory part, read at the same time.
@@ -545,6 +546,7 @@ if (!app.requestSingleInstanceLock()) {
         handle('bauer:clearCards', () => clearCards())
         handle('bauer:wiki', (_e, topic: string) => wikiSummary(String(topic)).catch(() => null))
         handle('bauer:circle', () => startCircle())
+        handle('bauer:marks', () => setPen('marks'))
         handle('bauer:openApp', (_e, name: string) => openApp(String(name)))
         handle('bauer:shot', () => takeShot())
         handle('app:goto', (_e, page: string) => showWindow(String(page)))
@@ -590,13 +592,18 @@ if (!app.requestSingleInstanceLock()) {
     handsHooks.show = showPointer
     handsHooks.hide = hidePointer
     handsHooks.confirm = voiceConfirm
-    // The pen: hold the talk keys and drag to circle what you mean; Ctrl+Alt+B circles first, then asks.
+    // The pen: hold the talk keys (or press Ctrl+Alt+B) and draw with the left button held to mark what you mean.
     talkKeyHooks.down = () => {
       roamiesAbort() // talking to Nova again stops what it was doing
-      setPen('talk')
+      setPen('talk') // (marks made with Ctrl+Alt+B are kept: now they go with what you say)
     }
+    talkKeyHooks.lmb = (down) => penButton(down)
+    talkKeyHooks.rmb = () => penUndo()
+    penHooks.buttons = (on) => reportPen(on)
+    penHooks.marked = (rect) => askBeside(rect)
     // Esc in any app: Nova stops talking and drawing, as Roamies does. Clicks: for a drawn walkthrough waiting on one.
     talkKeyHooks.esc = () => {
+      if (penMode()) setPen(null, true) // (the marks are cancelled)
       roamiesEsc()
       roamiesAbort()
       voiceHush()
@@ -605,10 +612,7 @@ if (!app.requestSingleInstanceLock()) {
     talkKeyHooks.up = () => {
       if (penMode() === 'talk') setPen(null)
     }
-    penHooks.circled = (rect, once) => {
-      noteCircle(rect)
-      if (once) startBrief() // (circled with Ctrl+Alt+B: now say what you want to know)
-    }
+    penHooks.circled = (rect, strokes) => noteCircle(rect, strokes)
     teachHooks.ask = (messages, onText) => claudeChat(messages, undefined, getPrefs(), 'explain', onText)
     teachHooks.prefs = getPrefs
     teachHooks.live = liveCards

@@ -280,11 +280,30 @@ export default function VoicePanel(): React.JSX.Element {
     }
     const el = card.current
     if (!el) return
-    const fit = (): void => api.voice.show(el.scrollHeight + 2, phase === 'review' || phase === 'error' || phase === 'typing')
+    // The height of what's in it (down to its last part, plus the bottom padding). Not scrollHeight: the card is
+    // stretched to fill its window, so that grew by 2 px with every resize and the box ran away down the screen.
+    const fit = (): void => {
+      const last = el.lastElementChild as HTMLElement | null
+      const h = last ? last.getBoundingClientRect().bottom - el.getBoundingClientRect().top + 16 : el.scrollHeight
+      api.voice.show(Math.ceil(h), phase === 'review' || phase === 'error' || phase === 'typing')
+    }
     fit()
+    // The card itself is the window's size, so its parts are watched instead (and parts coming and going).
     const ro = new ResizeObserver(fit)
-    ro.observe(el)
-    return () => ro.disconnect()
+    const watch = (): void => {
+      ro.disconnect()
+      for (const c of Array.from(el.children)) ro.observe(c)
+    }
+    watch()
+    const mo = new MutationObserver(() => {
+      watch()
+      fit()
+    })
+    mo.observe(el, { childList: true })
+    return () => {
+      ro.disconnect()
+      mo.disconnect()
+    }
   }, [phase])
 
   // Little messages close themselves (not while your mouse is on the card).
@@ -345,7 +364,7 @@ export default function VoicePanel(): React.JSX.Element {
           </div>
           <div className="truncate text-[12px] text-muted">
             {phase === 'listening' && (engine.pushToTalk ? 'Let go of Ctrl + Alt when you’re done.' : 'Stop talking for a moment when you’re done.')}
-            {phase === 'typing' && 'Type, then press Enter. Esc closes.'}
+            {phase === 'typing' && 'Type, then Enter. ✎ marks the screen (hold the left button to draw). Esc closes.'}
             {phase === 'confirm' && 'The ring shows where. Nothing happens unless you allow it.'}
             {phase === 'thinking' && 'Thinking…'}
             {phase === 'did' && (did?.actions.length ? `Undo it here or in ${name}’s log.` : '')}
@@ -395,13 +414,25 @@ export default function VoicePanel(): React.JSX.Element {
             void act(t)
           }}
         >
-          <input
-            autoFocus
-            className="w-full select-text rounded-lg border border-line bg-canvas px-3 py-2 text-[14px] outline-none"
-            placeholder="Add milk to my tasks for tomorrow…"
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-          />
+          <div className="flex items-center gap-2">
+            <input
+              autoFocus
+              className="w-full select-text rounded-lg border border-line bg-canvas px-3 py-2 text-[14px] outline-none"
+              placeholder="Add milk to my tasks for tomorrow…"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+            />
+            {/* Mark something on screen first (like Ctrl+Alt+B): your marks go with what you type here. */}
+            <button
+              type="button"
+              className="shrink-0 rounded-lg border border-line px-2.5 py-2 text-[13px] text-muted hover:text-ink"
+              title="Mark on screen: hold the left button to draw, right-click undoes, Esc cancels"
+              aria-label="Mark on screen"
+              onClick={() => void api.bauer.marks()}
+            >
+              ✎
+            </button>
+          </div>
         </form>
       )}
 

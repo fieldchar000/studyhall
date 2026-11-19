@@ -8,7 +8,7 @@
 // Everything still runs through the same locked-down Claude Code as the rest of Nova (claude.ts): none of Claude Code's
 // own tools, no connectors, no project files, nothing saved to your Claude account.
 
-import { app, BrowserWindow, clipboard, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, clipboard, nativeImage, shell, type WebContents } from 'electron'
 import { exec } from 'node:child_process'
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -178,15 +178,49 @@ function findControl(pool: SeenControl[], find: string, seen: Seen | null): Seen
 
 // ---------- What you circled or highlighted (goes with your request) ----------
 
-let circled: Promise<{ rect: Electron.Rectangle; image: string | null; text: string; at: number }> | null = null
+let circled: Promise<{ rect: Electron.Rectangle; image: string | null; text: string; marks: string; at: number }> | null = null
 /** You circled part of your screen (the pen): ring it, and get a close-up and the text in it ready for your request. */
-export function noteCircle(rect: Electron.Rectangle): void {
+// Your marks drawn into the close-up (blue, a dark edge), as Roamies does, so Nova sees exactly what you marked.
+function drawMarks(dataUrl: string, area: Electron.Rectangle, strokes: { x: number; y: number }[][]): string {
+  const img = nativeImage.createFromDataURL(dataUrl)
+  const { width: w, height: h } = img.getSize()
+  if (!w || !h || !strokes.length) return dataUrl
+  const k = w / area.width
+  const px = Buffer.from(img.toBitmap()) // BGRA
+  const dot = (cx: number, cy: number, r: number, [b, g, rr]: [number, number, number]): void => {
+    for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++)
+      for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
+        if (x < 0 || y < 0 || x >= w || y >= h || (x - cx) ** 2 + (y - cy) ** 2 > r * r) continue
+        const i = (y * w + x) * 4
+        px[i] = b
+        px[i + 1] = g
+        px[i + 2] = rr
+        px[i + 3] = 255
+      }
+  }
+  const r = Math.max(2, 2.6 * k)
+  for (const [radius, colour] of [[r + 1.6, [51, 22, 8]], [r, [240, 134, 79]]] as [number, [number, number, number]][])
+    for (const st of strokes)
+      for (let i = 0; i < st.length; i++) {
+        const a = st[Math.max(0, i - 1)]
+        const b = st[i]
+        const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) * k))
+        for (let j = 0; j <= n; j++) dot(((a.x + ((b.x - a.x) * j) / n) - area.x) * k, ((a.y + ((b.y - a.y) * j) / n) - area.y) * k, radius, colour)
+      }
+  return `data:image/jpeg;base64,${nativeImage.createFromBitmap(px, { width: w, height: h }).toJPEG(80).toString('base64')}`
+}
+
+export function noteCircle(rect: Electron.Rectangle, strokes: { x: number; y: number }[][] = []): void {
   setSubject(rect)
-  showMarks([{ rect, label: 'you circled this' }])
+  showMarks([{ rect, label: strokes.length > 1 ? 'your marks' : 'you marked this' }])
   circled = (async () => {
     const pad = 14
     const area = { x: rect.x - pad, y: rect.y - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 }
-    const [image, seen] = await Promise.all([captureArea(area), see({ screenshot: false }).catch(() => null)])
+    const [shot, seen] = await Promise.all([captureArea(area), see({ screenshot: false }).catch(() => null)])
+    const image = shot && strokes.length ? drawMarks(shot, area, strokes) : shot
+    // What each mark is (Roamies' marks.mjs): "I circled something at the top left, then underlined…".
+    const { describeMarks } = await import('./roamies/marks.mjs')
+    const marks = strokes.length ? describeMarks(strokes.map((st) => st.map((p) => [p.x, p.y] as [number, number])), [area.x, area.y, area.width, area.height]) : ''
     // The words Windows reports there come from the app's own controls (its buttons, tabs and bars), not from what's drawn
     // on a slide or in a picture. So for a big circle (a slide, a diagram, a page) none are sent: the picture says what's
     // there. For a small one (a word, a button) only what's really inside it (its centre within the circle) goes along.
@@ -197,7 +231,7 @@ export function noteCircle(rect: Electron.Rectangle): void {
       return cx >= area.x && cx <= area.x + area.width && cy >= area.y && cy <= area.y + area.height && c.rect.width <= area.width * 1.2
     }
     const text = big ? '' : [...new Set((seen?.controls ?? []).filter(inside).map((c) => c.name.trim()).filter(Boolean))].join(' · ').slice(0, 1500)
-    return { rect, image, text, at: Date.now() }
+    return { rect, image, text, marks, at: Date.now() }
   })()
 }
 /** For the request: what was just circled (picture and text), else the text you've highlighted, if any. */
@@ -207,7 +241,7 @@ async function screenContext(): Promise<{ text: string; image: string | null }> 
     circled = null
     if (c && Date.now() - c.at < 90_000)
       return {
-        text: `They circled part of their screen while asking (the picture is attached; it's ringed on screen now)${c.text ? `. Words the app reports there: «${c.text}»` : ''}. "This" / "that" means what they circled. Go by the picture: explain the content they circled (their lecture slide, notes, diagram, question), never the app around it (its menus, ribbon, toolbars, warning bars or buttons), unless they circled only a button or ask about the app itself.`,
+        text: `They marked part of their screen while asking (the picture is attached; it's ringed on screen now)${c.marks ? `. In their words: "${c.marks}"` : ''}${c.text ? `. Words the app reports there: «${c.text}»` : ''}. "This" / "that" means what they circled. Go by the picture: explain the content they circled (their lecture slide, notes, diagram, question), never the app around it (its menus, ribbon, toolbars, warning bars or buttons), unless they circled only a button or ask about the app itself.`,
         image: c.image
       }
   }
@@ -830,6 +864,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   roamiesTurnStart()
   // What's highlighted or circled, and Claude's sign-in check, at the same time (not one after the other).
   const [screen] = await Promise.all([screenContext().catch(() => ({ text: '', image: null })), claudeChecked()])
+  if (process.env.STUDYHALL_OFFSCREEN === '1' && screen.text) console.info('screen context>', screen.text.slice(0, 600))
   const news = [roamiesNotes(), said.startsWith('(') ? '' : agentsBlock(said)].filter(Boolean).join('\n')
   if (news) screen.text = [screen.text, news].filter(Boolean).join('\n')
   // "Send an agent to…": the agents' corner hatches one while the brief is written (as in Roamies).

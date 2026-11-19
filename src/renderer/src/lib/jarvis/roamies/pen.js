@@ -1,5 +1,5 @@
 // Copied from Roamies 0.1.41 (showcase/roamies/pen.js) by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies
-// Studyhall changes: only the colours (your dark blue and light blue instead of teal).
+// Studyhall changes: the colours (your dark blue and light blue instead of teal), and 'undo' (the last mark goes).
 // The user's pen on Windows: while the talk keys are held, the voice helper follows the cursor and sends its trail
 // here (voice "ink" messages, in global screen points; voice-win/src/ink.rs). Drawn like voice/ink.swift draws it
 // on macOS: teal with a dark edge and a soft glow, dimmer until it snaps shut round something (then a glow pulse and
@@ -81,6 +81,7 @@
       R.sfx?.play('tick');
       cur = null;
     } else if (m.ev === 'drop' && cur) { fade(cur, 350); cur = null; }
+    else if (m.ev === 'undo') { const s = strokes.filter((x) => x.fadeAt == null).pop(); if (s) strokes.splice(strokes.indexOf(s), 1); cur = null; } // Studyhall: right-click takes the last mark back
     else if (m.ev === 'fade') { cur = null; for (const s of strokes) if (s.fadeAt == null) fade(s, 450, (+m.after || 0) * 1000); }
     redraw();
   };

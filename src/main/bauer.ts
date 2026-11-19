@@ -48,7 +48,7 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
       from.setIgnoreMouseEvents(!msg.over, { forward: true })
     }
     else if (msg.type === 'inkEvent' && from === orbWin && msg.msg && typeof msg.msg === 'object') inkHooks.event(msg.msg as Record<string, unknown>)
-    else if (msg.type === 'penCancel' && from === orbWin) setPen(null, true)
+    // (right-click on the pen layer: the key helper reports it, and the last mark goes; nothing to do here)
     // A lesson is talking about one card: the globe floats over beside it (left of the cards).
     else if (msg.type === 'cardAt' && from === cardsWin && cardsWin && [msg.x, msg.y, msg.h].every((v) => Number.isFinite(Number(v)))) {
       const b = cardsWin.getBounds()
@@ -82,7 +82,7 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
 function setShortcut(on: boolean): void {
   if (OFFSCREEN) return
   // Ctrl+Alt+B: draw one circle on your live screen (no frozen picture, no full-screen window), then ask.
-  if (on && !globalShortcut.isRegistered(CIRCLE_SHORTCUT)) globalShortcut.register(CIRCLE_SHORTCUT, () => setPen('once'))
+  if (on && !globalShortcut.isRegistered(CIRCLE_SHORTCUT)) globalShortcut.register(CIRCLE_SHORTCUT, () => setPen('marks'))
   else if (!on && globalShortcut.isRegistered(CIRCLE_SHORTCUT)) globalShortcut.unregister(CIRCLE_SHORTCUT)
   if (on && !globalShortcut.isRegistered(ORB_SHORTCUT)) globalShortcut.register(ORB_SHORTCUT, toggleOrb)
   else if (!on && globalShortcut.isRegistered(ORB_SHORTCUT)) globalShortcut.unregister(ORB_SHORTCUT)
@@ -284,35 +284,68 @@ export function sendOrb(state: OrbState, text?: string): void {
   orbWin.webContents.send('bauer:orb', { state, text, cursor })
 }
 
-// ---------- The pen: circle or underline what you mean, on your live screen ----------
-// Roamies' Windows pen: while you hold the talk keys (or once after Ctrl+Alt+B) Studyhall follows your cursor itself
-// and draws its trail on the globe's layer (penTrail.ts decides when a loop snaps shut round something; a line that
-// stops without closing fades). It never depends on the layer receiving mouse events, so it works over any window.
-// Let go (or finish the one circle) and the marks fade, and Nova gets the circled area (a close-up and the text in it)
-// with your question. It can't get stuck: it ends when you let go, after one circle, on right-click, or by itself.
+// ---------- The pen: mark what you mean, on your live screen ----------
+// Roamies' Windows pen: Studyhall follows your cursor itself and draws its trail on the globe's layer (penTrail.ts),
+// so it never depends on the layer receiving mouse events and works over any window. A mark is drawn while the left
+// mouse button is held (move without drawing in between); right-click takes the last mark back; Esc cancels.
+//  • 'talk': while you hold the talk keys. Let go and the marks go with what you said.
+//  • 'marks': Ctrl+Alt+B (or the pen button in the typing box). Mark as much as you like; after your first mark the
+//    typing box opens beside them; your question (typed or said) goes with all of them.
+// Nova gets a close-up of the area with your marks drawn on it, and what each mark is (Roamies' marks.mjs). It can't
+// get stuck: it ends when the marks are sent, on Esc, or by itself after a while.
 
-let pen: 'talk' | 'once' | null = null
+export type PenMode = 'talk' | 'marks'
+let pen: PenMode | null = null
 let penTimer: NodeJS.Timeout | null = null
 let trail: PenTrail | null = null
 let trailTimer: ReturnType<typeof setInterval> | null = null
-export const penMode = (): 'talk' | 'once' | null => pen
+export const penMode = (): PenMode | null => pen
 export const penHooks = {
-  /** A circle was drawn: what's in it (screen rect). */
-  circled: (_rect: Electron.Rectangle, _once: boolean): void => {}
+  /** The marks are done: the area they're about (screen rect, DIP) and each stroke (screen points). */
+  circled: (_rect: Electron.Rectangle, _strokes: Spot[][], _mode: PenMode): void => {},
+  /** Ctrl+Alt+B: the first mark is down, so the typing box opens beside the marks (screen rect, DIP). */
+  marked: (_rect: Electron.Rectangle): void => {},
+  /** The key helper should (or no longer) report the mouse buttons. */
+  buttons: (_on: boolean): void => {}
 }
 const penSend = (events: PenEvent[]): void => {
   if (!events.length || !orbWin || orbWin.isDestroyed()) return
   for (const e of events) orbWin.webContents.send('bauer:ink', { pen: e })
 }
+const round = (r: { x: number; y: number; width: number; height: number }): Electron.Rectangle => ({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) })
+let askedBeside = false
 /** One step of the trail (exported for automated tests, which can't move your mouse). */
-export function penFeed(p: Spot, dt: number): void {
+export function penFeed(p: Spot): void {
   if (!trail) return
-  const events = trail.feed(p, dt)
+  const events = trail.feed(p)
   penSend(events)
-  // Ctrl+Alt+B: one circle, then ask.
-  if (pen === 'once' && events.some((e) => e.ev === 'snap')) setPen(null)
+  if (events.some((e) => e.ev === 'snap')) markDone()
 }
-export function setPen(mode: 'talk' | 'once' | null, cancel = false): void {
+/** The left button: down starts a mark, up ends it (exported for tests). */
+export function penButton(down: boolean, p: Spot = screen.getCursorScreenPoint()): void {
+  if (!trail) return
+  penSend(trail.button(down, p))
+  if (!down) markDone()
+}
+/** Right-click: the last mark goes. */
+export function penUndo(): void {
+  if (!trail) return
+  penSend(trail.undo())
+}
+// A mark finished: in 'marks' mode, the typing box opens beside them (once).
+function markDone(): void {
+  // Each mark gives you more time (Ctrl+Alt+B mode ends by itself 10 minutes after your last mark).
+  if (pen === 'marks') {
+    if (penTimer) clearTimeout(penTimer)
+    penTimer = setTimeout(() => setPen(null, true), 600_000)
+  }
+  if (pen !== 'marks' || askedBeside || !trail) return
+  const area = trail.area()
+  if (!area) return
+  askedBeside = true
+  penHooks.marked(round(area))
+}
+export function setPen(mode: PenMode | null, cancel = false): void {
   if (suspended || (OFFSCREEN && !process.env.STUDYHALL_PEN_TEST)) mode = null
   if (penTimer) clearTimeout(penTimer)
   penTimer = null
@@ -321,34 +354,30 @@ export function setPen(mode: 'talk' | 'once' | null, cancel = false): void {
   pen = mode
   if (!orbWin || orbWin.isDestroyed()) return
   if (mode) {
-    if (was) return void (penTimer = setTimeout(() => setPen(null), mode === 'once' ? 12_000 : 120_000))
+    if (was) return void (penTimer = setTimeout(() => setPen(null), mode === 'marks' ? 600_000 : 120_000))
     if (!orbWin.isVisible()) orbWin.showInactive()
     if (!OFFSCREEN) layerOn(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()))
     // Clicks while you draw don't reach the app underneath (Ctrl+Alt+click isn't something you meant).
     orbWin.setIgnoreMouseEvents(false)
-    orbWin.webContents.send('bauer:pen', { on: true, once: mode === 'once' })
+    orbWin.webContents.send('bauer:pen', { on: true, once: mode === 'marks' })
     trail = new PenTrail()
-    if (!OFFSCREEN) {
-      let last = Date.now()
-      trailTimer = setInterval(() => {
-        const now = Date.now()
-        penFeed(screen.getCursorScreenPoint(), now - last)
-        last = now
-      }, 16)
-    }
-    penTimer = setTimeout(() => setPen(null), mode === 'once' ? 12_000 : 120_000)
+    askedBeside = false
+    penHooks.buttons(true)
+    if (!OFFSCREEN) trailTimer = setInterval(() => penFeed(screen.getCursorScreenPoint()), 16)
+    penTimer = setTimeout(() => setPen(null, mode === 'marks'), mode === 'marks' ? 600_000 : 120_000)
   } else if (was) {
     if (trailTimer) clearInterval(trailTimer)
     trailTimer = null
+    penHooks.buttons(false)
     const t = trail
     trail = null
     orbWin.webContents.send('bauer:pen', { on: false, once: false })
     orbWin.setIgnoreMouseEvents(true, { forward: true })
     if (!t) return
-    const { events, area } = t.end()
+    const { events, area, strokes } = t.end()
     penSend(events)
     if (cancel || !area || area.width < 4 || area.height < 4) return
-    penHooks.circled({ x: Math.round(area.x), y: Math.round(area.y), width: Math.round(area.width), height: Math.round(area.height) }, was === 'once')
+    penHooks.circled(round(area), strokes, was)
   }
 }
 
@@ -738,4 +767,4 @@ export async function openApp(name: string): Promise<boolean> {
 }
 
 // Automated tests only (hidden test copies can't move your mouse): reach the pen and the grab check directly.
-if (OFFSCREEN) (globalThis as unknown as { __novaTest: unknown }).__novaTest = { setPen, penFeed, penHooks, orb: () => orbWin }
+if (OFFSCREEN) (globalThis as unknown as { __novaTest: unknown }).__novaTest = { setPen, penFeed, penButton, penUndo, penHooks, orb: () => orbWin }
