@@ -1,4 +1,4 @@
-// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/draw.mjs, unchanged except the DrawShape export added at the end, and photoCredits: Studyhall names the author and licence of a figure it found)
+// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/draw.mjs, unchanged except the DrawShape export added at the end, photoCredits: Studyhall names the author and licence of a figure it found; and the scene card: drawings from Studyhall's illustration kit placed on a card)
 // The draw tool's pieces: the beats-and-marks schema (checked before anything draws), where each mark goes on the
 // real screen, the parts already drawn (p1, p2 …) so follow-ups can edit them, photos and favicons for cards, and a
 // small SMILES reader for molecules, a small LaTeX reader for maths, the layering of flow diagrams and the countries a
@@ -13,7 +13,7 @@ export const TONES = ['accent', 'teal', 'amber', 'coral', 'lilac', 'sky', 'lime'
 // Marks on the real screen (they need a place on it), actions in apps, and cards drawn on calm space.
 export const SCREEN = ['point', 'target', 'hover', 'ring', 'frame', 'underline', 'strike', 'check', 'cross', 'connect', 'trace', 'num', 'label', 'write', 'scroll', 'spotlight', 'highlight', 'line', 'curve', 'arrow', 'circle', 'rect'];
 export const ACTIONS = ['emote', 'sfx', 'type', 'copy', 'open', 'handoff', 'button'];
-export const CARDS = ['card', 'note', 'list', 'mindmap', 'clip', 'sources', 'photo', 'graph', 'legend', 'timeline', 'molecule', 'model', 'flow', 'table', 'bars', 'map', 'math', 'geometry', 'quiz', 'ticket', 'medal'];
+export const CARDS = ['card', 'note', 'list', 'mindmap', 'clip', 'sources', 'photo', 'graph', 'legend', 'timeline', 'molecule', 'model', 'flow', 'table', 'bars', 'map', 'math', 'geometry', 'quiz', 'ticket', 'medal', 'scene'];
 export const KINDS = [...SCREEN, ...ACTIONS, ...CARDS];
 // Drawn from a list of points (screenshot pixels) instead of one place.
 const PATHS = new Set(['trace', 'line', 'curve', 'arrow']);
@@ -58,6 +58,12 @@ const Mark = z.object({
   nodes: z.array(z.object({ id: z.string().min(1).max(16), text: z.string().min(1).max(60), shape: z.enum(NODE_SHAPES).optional(), tone: z.enum(TONES).optional() })).max(LIMITS.nodes).optional(),
   links: z.array(z.object({ from: z.string().min(1).max(16), to: z.string().min(1).max(16), label: z.string().max(30).optional(), flow: z.boolean().optional() })).max(LIMITS.links).optional(),
   flow: z.boolean().optional(), animate: z.boolean().optional(),
+  // Studyhall: a scene card's pieces (drawings from find_illustrations, on a 0–100 grid; links join them by id).
+  pieces: z.array(z.object({
+    id: z.string().min(1).max(16), icon: z.string().min(1).max(120), x: num, y: num,
+    size: z.enum(['small', 'medium', 'large']).optional(), label: z.string().max(40).optional(),
+    move: z.object({ to: pair, loop: z.boolean().optional(), secs: num.optional() }).optional(), pulse: z.boolean().optional(),
+  })).max(10).optional(),
   columns: z.array(z.string().max(30)).max(LIMITS.columns).optional(),
   rows: z.array(z.array(z.string().max(80)).max(LIMITS.columns)).max(LIMITS.rows).optional(),
   bars: z.array(z.object({ label: z.string().min(1).max(30), value: num, tone: z.enum(TONES).optional() })).max(LIMITS.bars).optional(),
@@ -136,6 +142,11 @@ export function checkDraw(args) {
       if (m.kind === 'clip') need(m.title && m.text, 'title and text');
       if (m.kind === 'sources') need(m.sources?.length, 'sources');
       if (m.kind === 'photo') need(m.query || m.url, 'query (a thing with a Wikipedia page) or url');
+      if (m.kind === 'scene') {
+        need(m.pieces?.length, 'pieces ([{id, icon (an id from find_illustrations), x, y on a 0–100 grid, size, label}])');
+        const ids = new Set((m.pieces ?? []).map((p) => p.id));
+        for (const q of m.links ?? []) if (!ids.has(q.from) || !ids.has(q.to)) out.push(`${where}: link ${q.from} → ${q.to} joins a piece that isn't there (pieces: ${[...ids].join(', ')}).`);
+      }
       if (m.kind === 'scroll' && m.dir === 'right') out.push(`${where}: dir for scroll is up or down.`);
       // The kinds with a structure of their own: each says what is wrong in words the model can fix.
       const more = CHECKS[m.kind] ?? (m.kind === 'photo' && m.labels ? CHECKS.labels : null);

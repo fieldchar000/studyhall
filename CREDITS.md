@@ -42,6 +42,16 @@ https://github.com/KenKaiii/Roamies
 - Nova's brain follows Roamies' design. It makes one fast Claude call with Nova's own tools and
   plays short filler lines ("beats") the moment something slow starts. It speaks each sentence as it
   streams in, keeps the conversation as memory, and keeps promises and facts it can be asked to forget.
+- Studyhall changes to `draw.mjs`, `tools.mjs` and `ink.js` (all AGPL-3.0-only, like the rest of Roamies' code): the
+  scene card, figure credits, cards placed on a screenshot's empty space, and Commons figures shown undithered.
+
+## Pictures Nova shows
+
+- **Figure cards** come from [Wikimedia Commons](https://commons.wikimedia.org). Only freely licensed files are used
+  (public domain, CC0 or Creative Commons with attribution). Each card shows its author and licence.
+- **Scene cards** are built from [Bioicons](https://bioicons.com) by Simon Dürr and contributors, which includes
+  Servier Medical Art (CC BY 3.0/4.0). Each drawing's licence is CC0, MIT or Creative Commons; a CC BY drawing's
+  author and licence show on the card. Drawings are fetched when first used and kept on your PC; none are bundled.
 
 ## Speech models
 

@@ -1,4 +1,4 @@
-// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/tools.mjs). Studyhall changes: an optional photoFetch (Studyhall answers its lesson pictures), an optional shotBusy (where a screenshot is busy, so cards go on its empty parts), and an optional hostShot (the host takes the screenshot, as on Linux), used by automated test copies so they never capture your real screen.
+// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/tools.mjs). Studyhall changes: an optional photoFetch (Studyhall answers its lesson pictures), an optional shotBusy (where a screenshot is busy, so cards go on its empty parts), an optional iconFetch (the drawings of a scene card), and an optional hostShot (the host takes the screenshot, as on Linux), used by automated test copies so they never capture your real screen.
 // The agent's tools: screen capture, reading and working other apps (the "hands" helper), files, commands,
 // web pages and memory. Every file, command, URL and open goes through safety.mjs first.
 import { execFile, spawn } from 'node:child_process';
@@ -231,7 +231,7 @@ export function sideSearchFor(route) {
 // Every request and redirect hop of web_fetch goes through safety.mjs, by name and by the addresses it resolves to.
 export const guardFetch = async (url) => { const v = await checkFetch(url); return v.level === BLOCK ? `Blocked for safety: ${v.reason}` : null; };
 
-export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null, shotBusy = null }) {
+export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null, shotBusy = null, iconFetch = null }) {
   // Relative paths (and run_command) start in workdir: the home folder for the chat, its own folder for an agent.
   const at = (p) => { const s = String(p ?? ''); return /^~(?=$|\/|\\)/.test(s) || path.isAbsolute(s) || /^[a-z]:[\\/]/i.test(s) ? s : path.join(workdir, s); };
   const where = workdir === HOME ? "the user's home folder" : `its working folder (${workdir})`;
@@ -597,6 +597,12 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
     await Promise.all(marks.map(async (m) => {
       if (m.kind === 'photo') {
         try { Object.assign(m, await photos.get(m)); } catch (e) { m.missing = true; notes.push(`No photo for ${m.query ?? 'that link'} (${e.message}); drew its frame and caption only.`); }
+      } else if (m.kind === 'scene' && iconFetch) {
+        const credit = new Set();
+        await Promise.all((m.pieces ?? []).map(async (p) => {
+          try { const g = await iconFetch(p.icon); p.src = g.src; credit.add(g.credit); } catch (e) { p.missing = true; notes.push(`No drawing for ${p.id} (${e.message}); drew its outline.`); }
+        }));
+        m.credit = [...credit].join('; ');
       } else if (m.kind === 'sources' || m.sources?.length) {
         m.sources = await Promise.all(m.sources.map(async (x) => ({ ...x, icon: checkDrawAction({ kind: 'favicon', url: x.url }).level === BLOCK ? null : await faviconFor(x.url).catch(() => null) })));
       }

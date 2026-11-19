@@ -19,6 +19,7 @@ import { agentsUi, orbPanel, inkClear, inkClick, inkHooks, inkPlay, inkReminders
 import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
 import { stageDone } from './novaStage'
 import { lessonFetch } from './lessonReader'
+import { illustration } from './illustrations'
 import { claudeAgentRoute, claudeBlocked, claudeModelId, claudeReady } from './claude'
 import { buddyHooks, startFocus, stopFocus } from './buddy'
 import { screen } from 'electron'
@@ -281,6 +282,7 @@ export function roamies(): Promise<Any> {
       // Pictures of the lesson you have open (https://lesson.studyhall.app/…) come from Studyhall itself.
       photoFetch: lessonFetch,
       shotBusy: async (file: string) => busyCells(nativeImage.createFromPath(file)),
+      iconFetch: (id: string) => illustration(id),
       // Automated tests: the screenshot is of a test window (placed, for drawing, as if at the top left of the main
       // screen), never your real screen.
       ...(OFFSCREEN

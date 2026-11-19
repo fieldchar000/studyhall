@@ -1045,7 +1045,69 @@
     quiz: (m) => drawQuiz(m),
     ticket: (m) => drawTicket(m),
     medal: (m) => drawMedal(m),
+    scene: (m) => drawScene(m),
   };
+
+  // ---------------------------------------------------------------- scenes (Studyhall)
+  // Drawings from Studyhall's illustration kit placed on a card (a 0–100 grid), each with its label; arrows between
+  // them; and motion: a piece that travels to dock somewhere (once, or again and again), a pulse, dots flowing along
+  // an arrow. The drawings are shown as they are, in their own colours.
+  async function drawScene(m) {
+    const S = scr(), W = Math.min(S[2] - S[0] - 48, 560), H = 320, SZ = { small: 56, medium: 86, large: 124 };
+    const pieces = await Promise.all((m.pieces ?? []).map((p) => new Promise((res) => {
+      const base = { ...p, s: SZ[p.size ?? 'medium'] ?? 86, img: null };
+      if (!p.src || p.missing) return res(base);
+      const i = new Image(), tm = setTimeout(() => res(base), 4000);
+      i.onload = () => { clearTimeout(tm); res({ ...base, img: i.naturalWidth && i.naturalHeight ? i : null }); };
+      i.onerror = () => { clearTimeout(tm); res(base); };
+      i.src = p.src;
+    })));
+    const pad = 54, gx = (v) => pad + (clamp(v, 0, 100) / 100) * (W - pad * 2), gy = (v) => pad - 14 + (clamp(v, 0, 100) / 100) * (H - pad * 2);
+    const byId = new Map(pieces.map((p) => [p.id, p])), links = m.links ?? [];
+    const credRows = m.credit ? wrapRows(m.credit, W - 24, `400 10px ${MONO}`) : [];
+    const h = 26 + H + credRows.length * 14 + 8;
+    const moving = pieces.some((p) => p.move || p.pulse) || links.some((q) => q.flow);
+    const at = (p, age) => {
+      let x = gx(p.x), y = gy(p.y);
+      if (p.move?.to) {
+        const secs = clamp(p.move.secs ?? 2.2, 0.6, 8), start = pieces.indexOf(p) * 0.18 + 0.9;
+        let f = reduced() ? 1 : (age - start) / secs;
+        f = p.move.loop && !reduced() ? Math.min(1, Math.max(0, f) % 1.6) : clamp(f, 0, 1); // (a pause at the end of each trip)
+        const e = f < 0.5 ? 2 * f * f : 1 - (-2 * f + 2) ** 2 / 2;
+        x += (gx(p.move.to[0]) - x) * e; y += (gy(p.move.to[1]) - y) * e;
+      }
+      return [x, y];
+    };
+    await card(m, W, h, function (b, l, t, x, y, age) {
+      const t0 = pieces.length * 0.18 + 0.35;
+      links.forEach((q, i) => {
+        const A = byId.get(q.from), B = byId.get(q.to);
+        if (!A || !B) return;
+        const u = reduced() ? 1 : clamp((age - t0 - i * 0.25) / 0.4, 0, 1);
+        if (u <= 0) return;
+        const [x1, y1] = at(A, age), [x2, y2] = at(B, age), d = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / d, uy = (y2 - y1) / d;
+        const sx = x + x1 + ux * (A.s * 0.5 + 2), sy = y + y1 + uy * (A.s * 0.5 + 2), ex = x + x2 - ux * (B.s * 0.5 + 6), ey = y + y2 - uy * (B.s * 0.5 + 6);
+        b.save(); b.strokeStyle = MID; b.lineWidth = 2; b.beginPath(); b.moveTo(sx, sy); b.lineTo(sx + (ex - sx) * u, sy + (ey - sy) * u); b.stroke();
+        if (u >= 1) { b.fillStyle = MID; b.beginPath(); b.moveTo(ex, ey); b.lineTo(ex - ux * 9 - uy * 5, ey - uy * 9 + ux * 5); b.lineTo(ex - ux * 9 + uy * 5, ey - uy * 9 - ux * 5); b.closePath(); b.fill(); }
+        b.restore();
+        if (u < 1) return;
+        if (q.flow) { const L = Math.hypot(ex - sx, ey - sy), gap = L / Math.max(1, Math.round(L / 40)), d0 = reduced() ? gap / 2 : (t * 55) % gap; l.fillStyle = HOT; for (let s = d0; s < L; s += gap) l.fillRect(Math.round(sx + ux * s) - 2, Math.round(sy + uy * s) - 2, 4, 4); }
+        if (q.label) typed(b, q.label, (sx + ex) / 2 + uy * 11, (sy + ey) / 2 - ux * 11 + 4, SMALL, DIM, (age - t0 - i * 0.25 - 0.3) / 0.3, { anchor: 'middle', rim: 3 });
+      });
+      pieces.forEach((p, i) => {
+        const u = reduced() ? 1 : clamp((age - i * 0.18) / 0.35, 0, 1);
+        if (u <= 0) return;
+        const [px, py] = at(p, age), k = p.pulse && !reduced() ? 1 + 0.07 * Math.sin(t * 5) : 1, s = p.s * k;
+        if (p.img) {
+          const a = p.img.naturalWidth / p.img.naturalHeight, iw = a >= 1 ? s : s * a, ih = a >= 1 ? s / a : s;
+          b.save(); b.globalAlpha *= u; b.imageSmoothingEnabled = true; b.drawImage(p.img, x + px - iw / 2, y + py - ih / 2, iw, ih); b.restore();
+        } else { b.save(); b.globalAlpha *= u * 0.6; b.strokeStyle = MID; b.lineWidth = 1.5; b.strokeRect(x + px - s / 2, y + py - s / 2, s, s); b.restore(); }
+        if (p.label) typed(b, p.label, x + px, y + py + p.s / 2 + 14, SMALL, TEXT, (age - i * 0.18 - 0.2) / 0.3, { anchor: 'middle', rim: 3 });
+      });
+      credRows.forEach((r, i) => typed(b, r, x + W / 2, y + H + 6 + i * 14, `400 10px ${MONO}`, DIM, (age - 0.8) / 0.4, { anchor: 'middle' }));
+    }, { title: m.title || 'scene', live: () => moving && !reduced() });
+    sfx('scan');
+  }
 
   // ---------------------------------------------------------------- molecules: a 2D layout from the parsed SMILES
   // Ring templates (each small ring wants to be a regular polygon) plus springs on bonds and 120° angles, and a push
