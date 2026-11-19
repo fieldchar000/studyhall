@@ -2449,6 +2449,13 @@
     // about, so all of it fades (cards too).
     // Studyhall: a new question cuts off the drawing still being narrated (its cards stay), so the answer isn't queued behind it.
     halt() { if (G.playing || G.q.length) stop(); },
+    // Studyhall: a new question's first drawing: the last answer's cards and rings go (pinned ones stay), so they
+    // don't pile up over the next slide.
+    clearOld() {
+      const old = marks.filter((m) => m.alive && !m.pinned && !m.local && !m.leaving);
+      for (const id of new Set(old.map((m) => m.part).filter(Boolean))) R.ink.send?.({ type: 'ink_closed', part: id });
+      fadeOut(old, 0.4);
+    },
     // Studyhall: a picture of each card on screen now (for saving an explanation as a note).
     snapshot(id) {
       const out = [], seen = new Set();

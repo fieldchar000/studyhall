@@ -121,6 +121,7 @@ async function boot(opts: {
   let agent: Any = null
   let hat = false // tutor mode
   let live = false // conversation mode
+  let freshAnswer = false // a new request: its first drawing clears the last answer's cards
   let deeper = false // a deeper chat (Sonnet)
   const c0 = (): Any => R.tiles?.[0]?.creature
   /** The cap: a flat board (dark blue with a light-blue edge), its band, and a gold tassel, in pixels like the globe. */
@@ -293,6 +294,7 @@ async function boot(opts: {
     if (!agent) return
     switch (e.type) {
       case 'start':
+        freshAnswer = true
         R.ink?.halt?.()
         for (const j of [current, ...jobs]) if (j && j.result === undefined) {
           j.result = false
@@ -501,6 +503,11 @@ async function boot(opts: {
       if (op.agent) agentEvent(op.agent)
       else if (op.play) {
         endTalk()
+        // The first drawing of a new answer: the last answer's cards make way.
+        if (freshAnswer) {
+          freshAnswer = false
+          R.ink?.clearOld?.()
+        }
         R.ink?.play(op.play)
       } else if (op.clear) R.ink?.clear(op.clear)
       else if (op.snapshot) R.ink?.snapshot?.(op.snapshot)

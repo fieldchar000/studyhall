@@ -595,15 +595,22 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   // plan_steps: Roamies' step trail beside the globe, ticking off as each part's tool calls succeed.
   turnHooks.plan = (args) => trailPlan(args)
   // The lesson reader: the whole deck or PDF they have open (lessonReader.ts).
+  // The decks read in this conversation: asking about another slide of one doesn't read the whole thing again.
+  const readHere = new Map<string, number>()
   const lessonTools = [
     tool(
       'read_lesson',
       'The whole slide deck or PDF they have open (PowerPoint, or a PDF in Edge, Opera GX or Chrome), or a .pptx/.pdf file or PDF web address you name: every slide or page\'s text (and a deck\'s speaker notes), as text, plus which slide they\'re on. Slides or pages with a diagram or picture list its address: look at it with see_photo (that url), then show it on a photo card with labels, or go_to_page and ring it on their screen. Cheap: read it once per lesson and use what you read. For a normal web page use read_window instead.',
-      { source: z.string().optional().describe('leave out for what they have open; else a .pptx/.pdf path or a PDF address'), from: z.number().int().min(1).optional().describe('first slide/page to include (for long ones)'), to: z.number().int().min(1).optional(), topic: z.string().max(80).optional().describe('for "teach me X": the slides about X come first, in order') },
-      async ({ source, from, to, topic }) => {
+      { source: z.string().optional().describe('leave out for what they have open; else a .pptx/.pdf path or a PDF address'), from: z.number().int().min(1).optional().describe('first slide/page to include (for long ones)'), to: z.number().int().min(1).optional(), topic: z.string().max(80).optional().describe('for "teach me X": the slides about X come first, in order'), again: z.boolean().optional().describe('read it all again even if you already did in this conversation (it changed, or you lost track)') },
+      async ({ source, from, to, topic, again }) => {
         const l = await readLesson(source ? String(source) : 'front')
         if (typeof l === 'string') return text(l)
         if (tutorOn()) tutorTitle(l.title)
+        // Already read in this conversation (the last hour): its text and lesson map are above; don't pay for them twice.
+        const seen = readHere.get(l.id)
+        if (!again && !from && !to && !topic && seen && Date.now() - seen < 3_600_000)
+          return text(`You already read "${l.title}" (${l.count} ${l.kind === 'slides' ? 'slides' : 'pages'}) in this conversation: use that text and its lesson map, above.${l.current ? ` They're on ${l.kind === 'slides' ? 'slide' : 'page'} ${l.current} now.` : ''} (again: true reads it all once more.)`)
+        readHere.set(l.id, Date.now())
         return text(lessonText(l, from ?? 1, to ?? l.count, 16_000, topic ? String(topic) : undefined))
       }
     ),
