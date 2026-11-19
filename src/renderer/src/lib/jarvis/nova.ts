@@ -423,8 +423,12 @@ async function boot(opts: {
           listen = null
           R.sfx?.play('heard')
         } else {
+          // Done with what you said (nothing more is coming: it was too short to act on, or nothing was heard): both
+          // bubbles go, or "what was heard" stayed up for good.
           listen?.close()
           listen = null
+          heard?.close()
+          heard = null
         }
         return
       }

@@ -167,7 +167,7 @@ const NOTESY = /\b(notes?|lecture|slides?|week\s*\d+|lab|study|revision|chapter|
 let onTitle: { title: string; since: number } | null = null
 let lastOffer: { title: string; at: number } | null = null
 export function lastOffered(): string {
-  return lastOffer && Date.now() - lastOffer.at < 10 * 60_000 ? `You just offered them (out loud) a quick quiz on "${lastOffer.title}". A "yes" means: find_material for it (or use what's on screen) and quiz_me, 5 questions.` : ''
+  return lastOffer && Date.now() - lastOffer.at < 10 * 60_000 ? `You just offered them (out loud) a quick quiz on "${lastOffer.title}". A "yes" means: start it now: find_material for it and quiz_me with that file, or, if it isn't one of their files, read_lesson (a deck or PDF) or read_window (a page) for what's on screen, then quiz_me with topic. 5 questions; ask question 1 in this reply.` : ''
 }
 
 async function offerTick(): Promise<void> {

@@ -20,7 +20,7 @@ import type { NovaEffort } from '@shared/types'
 import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
 import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMarks } from './bauer'
-import { goToPage, lessonText, readLesson } from './lessonReader'
+import { goToPage, lastLesson, lessonQuizText, lessonText, readLesson } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
 import { figureText } from './figures'
 import { illustrationsText } from './illustrations'
@@ -79,7 +79,7 @@ How to help (use as few tool calls as the task needs; independent ones can go in
   • From their own study files (they name their notes, a week, a module or a file): find_material, then read_material, then teach it the same live way (draw beats from what their notes say), or teach with material_id when they ask for a lesson with a quiz at the end.
   After a live lesson, stop: the drawing speaks its lines. Offer one next step in a few words only if it helps ("Want me to quiz you on it?").
 - Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file, find_material first, then read_material (to answer or teach from them) or quiz_me.
-- "Quiz me" / "test me": quiz_me (from a study file's own questions, or their flashcards), then run it yourself, one question per reply. Offer save_flashcards for the ones they missed.
+- "Quiz me" / "test me", or "yes" to a quiz you offered: quiz_me straight away (from a study file's own questions with material_id, their flashcards, or, with neither, the deck you read and what you just explained: give topic), then ask question 1 in the same reply and run it yourself, one question per reply. Offer save_flashcards for the ones they missed. Never answer a quiz request without starting the quiz.
 - The web: "pull up a video on X", "a study music playlist": youtube, then open the best real result. "Find me a source for…", facts that change: WebSearch, then web_fetch to read a page (offset reads on). Music to study to: play_music (Spotify in Studyhall; they have Premium), or a YouTube playlist if they ask for YouTube. Never make up links: only open ones a search gave you.
 - Notes from a video or page: video_transcript (YouTube) or web_fetch, then save_note (and save_flashcards if they want cards). A revision sheet or summary from their own study files, saved into Studyhall's Notes ("make a revision sheet from all my week 3 notes"): start_job with a full brief; just say you're on it.
 - "Summarise what I copied", "turn this into flashcards": read_clipboard first. "Notes on the left, lecture on the right": list_windows if you need the names, then arrange_windows. A document into their apps with their Claude connectors: draft_document.
@@ -406,7 +406,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     ),
     tool(
       'quiz_me',
-      'Start a spoken quiz: questions from their study file (its own built-in quizzes first) or their flashcards. Returns the questions with answers for YOU to ask one at a time.',
+      'Start a spoken quiz. From their study file (material_id: its own built-in quizzes first), their flashcards (flashcards), or, with neither, from the deck or PDF you last read with them and what you just explained (give topic: what to be quizzed on). Returns the questions (or the material to write them from) for YOU to ask one at a time.',
       {
         material_id: z.string().optional(),
         flashcards: z.string().optional().describe('a deck name, or "due" for the cards due'),
@@ -425,10 +425,22 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
           from = m.title
           qs = m.quiz
           notesText = focusText(m.text, String(topic ?? ''), 9000)
-        } else {
-          const fc = flashcardQuestions(String(flashcards ?? ''))
+        } else if (flashcards) {
+          const fc = flashcardQuestions(String(flashcards))
           from = fc.deck
           qs = fc.quiz
+        } else {
+          // "Quiz me on this" after explaining or teaching: the lesson they have open (or read with you), else what you
+          // just explained, which is in the conversation.
+          const l = lastLesson()
+          if (l) {
+            from = l.title
+            notesText = lessonQuizText(l, String(topic ?? ''))
+          }
+          if (!notesText) {
+            const rules0 = 'Run the quiz out loud: one question per reply, ending with the question mark. When they answer: right or not in a few words, the correct answer, and the why in one short sentence, then the next question in the same reply. Keep score; accept answers by meaning. After the last one, go back over the ones they missed once, then the score, and offer to save the missed ones as flashcards (save_flashcards). "Stop" ends it with the score so far.'
+            return text(`Quiz them on ${topic ? `"${String(topic)}"` : 'what you just explained'} (${n} questions): write good questions yourself from what you explained in this conversation (mix multiple choice and short answer, simple to harder), then start with question 1 now.\n${rules0}`)
+          }
         }
         const words = String(topic ?? '').toLowerCase().match(/[a-z0-9]{4,}/g) ?? []
         if (words.length) {
@@ -440,7 +452,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
           .sort((a, b) => a[0] - b[0])
           .map((x) => x[1])
           .slice(0, n)
-        const rules = 'Run the quiz out loud: one question per reply. Say the question, then for multiple choice the options as "A, … B, … C, …" in your sentences (no "- " lines), and end with the question mark so they can answer straight away. When they answer: say right or not in a few words, the correct answer, and the why in one short sentence, then the next question in the same reply. Keep score. Accept answers by letter, by the option\'s words or by meaning; for written answers, judge the meaning against the model answer and be fair. After the last one, go back over the ones they missed once, then give the score and offer to save the missed ones as flashcards (save_flashcards). "Stop" ends it with the score so far.'
+        const rules = 'Run the quiz out loud: one question per reply. For multiple choice, say the options first as "A, … B, … C, …" in your sentences (no "- " lines), then the question itself last, ending with the question mark, so they can answer straight away. When they answer: say right or not in a few words, the correct answer, and the why in one short sentence, then the next question in the same reply. Keep score. Accept answers by letter, by the option\'s words or by meaning; for written answers, judge the meaning against the model answer and be fair. After the last one, go back over the ones they missed once, then give the score and offer to save the missed ones as flashcards (save_flashcards). "Stop" ends it with the score so far.'
         if (!qs.length)
           return text(`${from ? `"${from}" has no built-in quiz questions` : 'No flashcards found'}. ${notesText ? `Write ${n} good questions yourself from these notes (mix multiple choice and short answer), then run them.\n${rules}\n\nNotes:\n${notesText}` : 'Tell them, and offer a quiz on a topic instead.'}`)
         const list = qs

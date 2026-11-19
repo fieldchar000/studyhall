@@ -217,7 +217,26 @@ export async function readLesson(target = 'front'): Promise<Lesson | string> {
   if (fr.url) return `That's a web page (${fr.app}), not a PDF or slide deck: read it with read_window instead (it gives the whole page).`
   return `${fr.app} isn't a slide deck or a PDF I can read. Open the deck in PowerPoint, or the PDF in Edge, Opera GX or Chrome.`
 }
+/** The deck or PDF read most recently (in the last two hours), for "quiz me on this". */
+let lastRead: { l: Lesson; at: number } | null = null
+export function lastLesson(): Lesson | null {
+  return lastRead && Date.now() - lastRead.at < 2 * 3_600_000 ? lastRead.l : null
+}
+/** A lesson's text for writing quiz questions: the pages about the topic first (all of it when no topic). */
+export function lessonQuizText(l: Lesson, topic: string, budget = 9000): string {
+  const on = topic ? topicPages(l, topic) : []
+  const pages = on.length ? l.pages.filter((p) => on.includes(p.n)) : l.pages
+  const label = l.kind === 'slides' ? 'Slide' : 'Page'
+  let out = ''
+  for (const p of pages) {
+    const t = `${label} ${p.n}: ${p.text}${p.notes ? ` (notes: ${p.notes})` : ''}\n`
+    if (out.length + t.length > budget) break
+    out += t
+  }
+  return out
+}
 function remember(l: Lesson | string): Lesson | string {
+  if (typeof l !== 'string') lastRead = { l, at: Date.now() }
   if (typeof l !== 'string') lessons.set(l.id, l)
   return l
 }

@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { VoiceState } from '@shared/types'
 import { describe, parseBrief, type BriefAction } from '@/lib/brief'
-import { handleSpeech, say, undoLog } from '@/lib/bauer/agent'
+import { handleSpeech, markAsked, say, undoLog } from '@/lib/bauer/agent'
 import { wakeWordHeard } from '@/lib/bauer/heard'
 import { applyBrief, loadBriefContext } from '@/lib/briefApply'
 import { api } from '@/lib/data'
@@ -148,7 +148,7 @@ export default function VoicePanel(): React.JSX.Element {
         if (prefs.bauerTalk !== false && !r.quiet) say(r.reply)
         // Follow-up: Nova has finished talking, so it listens a few seconds for your answer, no key or "Hey Nova".
         const mode = prefs.novaFollowUp ?? 'asked'
-        if (r.followUp && (mode === 'always' || (mode === 'asked' && /\?["'”’)]*\s*$/.test(r.reply.trim())))) {
+        if (r.followUp && (mode === 'always' || (mode === 'asked' && (r.asking || /\?["'”’)]*\s*$/.test(r.reply.trim()))))) {
           followUp.current = true
           woke.current = false
           setHeard(false)
@@ -275,6 +275,8 @@ export default function VoicePanel(): React.JSX.Element {
             })
         } else if (c.type === 'listen') {
           void api.eyes.stop().catch(() => {}) // talking to Nova stops a lesson or walkthrough
+          // (Studyhall asking it to listen, e.g. after Nova offered a quiz out loud: what comes back is an answer.)
+          if (!c.ptt) markAsked()
           void listen(!!c.ptt, !!c.hear)
         } else if (c.type === 'stop') engine.cancel()
         else if (c.type === 'wake') engine.externalWake()

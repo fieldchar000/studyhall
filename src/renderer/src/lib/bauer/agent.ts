@@ -575,7 +575,7 @@ function studyhallState(ctx: BriefContext, now: Date): string {
 }
 
 let sayListener = false
-async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; quiet: boolean; followUp: boolean } | null> {
+async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; quiet: boolean; followUp: boolean; asking: boolean } | null> {
   if (!sayListener) {
     sayListener = true
     api.nova.onSay((t) => say(t)) // a walkthrough finishing later
@@ -637,7 +637,13 @@ async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: M
     if (!actions.length && reply) await logAnswer(text, reply, source)
     // A lesson or walkthrough is still talking: no follow-up listening on top of it.
     const followUp = !r.tools.some((t) => t === 'teach' || t === 'help_on_screen' || t === 'quiz')
-    return { reply, actions, logId, quiet: true, followUp }
+    // A quiz is on (it asks one question per reply, sometimes ending on its options rather than a "?"): listen for
+    // the answer after every reply until it's over (the score is given) or ten minutes pass.
+    if (r.tools.includes('quiz_me')) quizUntil = Date.now() + 10 * 60_000
+    if (quizUntil && /\b(?:final score|you got \d+ out of|that's the end of the quiz|quiz is over)\b/i.test(reply)) quizUntil = 0
+    const asking = Date.now() < quizUntil || /\?["'”’)]*\s*$/.test(reply.trim())
+    if (asking) markAsked()
+    return { reply, actions, logId, quiet: true, followUp, asking }
   } finally {
     for (const off of offs) off()
   }
@@ -713,18 +719,27 @@ let intro = ''
 const ABOUT_SCREEN = /\b(explain|what am i looking at|what('s| is) (this|that)|this (slide|page|diagram|picture|graph|chart|question)|on my screen|confus)/i
 
 /** Everything Nova hears goes through here: teach, explain, answer, look at your screen, or act. */
-export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean }> {
+/** Nova has just asked them something (a question at the end of a reply, a quiz, its offer of one): for two minutes
+ *  short replies ("yes please", "B", "the heart") are answers, not small talk to ignore. */
+let askedAt = 0
+let quizUntil = 0
+export function markAsked(): void {
+  askedAt = Date.now()
+}
+
+export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean; asking?: boolean }> {
   paused = null
   intro = ''
   const r = await handleSpeechInner(raw, source, mode)
   if (intro && !r.ignored) return { ...r, reply: `${intro} ${r.reply}`.trim(), quiet: false }
   return r
 }
-async function handleSpeechInner(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean }> {
+async function handleSpeechInner(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean; asking?: boolean }> {
   const text = stripWake(raw)
   // Small talk, one word, half a sentence: say nothing, do nothing, log nothing.
   const nothing = { reply: source === 'typed' ? 'I didn’t find anything to do in that.' : '', actions: [] as BriefAction[], logId: null, ignored: true }
-  if (isChitChat(text)) return nothing
+  // (Unless Nova has just asked them something: then "yes please", "B" or "the heart" is the answer.)
+  if (isChitChat(text) && Date.now() - askedAt > 120_000) return nothing
   // Clear, simple commands are done right here, without Claude (instant, and free).
   if (onPc()) {
     const q = await quickCommand(text, source, mode).catch((e) => (console.warn('Nova: quick command failed', e), null))
