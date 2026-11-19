@@ -2110,12 +2110,20 @@
     if (mark) { mark.waiting = true; park(mark.parkAt[2], mark.parkAt[0], mark.parkAt[1]); touch(); }
     return new Promise((resolve) => {
       let hoverAt = 0;
-      const done = (r) => { clearTimeout(timer); clearInterval(tick); G.wait = null; if (b.wait === 'click') R.ink.invoke?.('ink_wait', { on: false }); if (mark) mark.waiting = false; park(null); resolve(r); };
-      const timer = setTimeout(() => done('timeout'), (b.wait === 'click' ? 125 : 65) * 1000);
-      const tick = setInterval(() => { if (gen !== G.gen) done('skipped'); }, 200);
+      // Studyhall: a "Next ›" pill beside the step, for when the click on the control isn't picked up. It goes however
+      // the step ends (clicked, Next, timed out, stopped).
+      let nextPill = null;
+      const finish = (r) => { if (nextPill) { nextPill.alive = false; nextPill = null; touch(); } clearTimeout(timer); clearInterval(tick); G.wait = null; if (b.wait === 'click') R.ink.invoke?.('ink_wait', { on: false }); if (mark) mark.waiting = false; park(null); resolve(r); };
+      const timer = setTimeout(() => finish('timeout'), (b.wait === 'click' ? 125 : 65) * 1000);
+      const tick = setInterval(() => { if (gen !== G.gen) finish('skipped'); }, 200);
+      if (b.wait === 'click') {
+        const pw = 64, ph = 24, r = () => { const x = rect[0] + rect[2] + 8 + pw > W ? rect[0] - pw - 8 : rect[0] + rect[2] + 8; return [Math.max(4, x), Math.max(4, rect[1]), pw, ph]; };
+        nextPill = add({ z: 8, kind: 'next', local: true, box: () => grow(r(), 4), hover: false, draw(bb, l, t) { const q = r(); chip(bb, q[0], q[1], q[2], q[3], 'Next ›', t - this.born, { color: this.hover ? HOT : DIM, hover: this.hover }); }, hits() { return [{ rect: r(), kind: 'next' }]; } });
+      }
       G.wait = {
-        click: (x, y) => { if (b.wait === 'click' && inside(rect, x, y)) done('clicked'); },
-        ptr: (x, y) => { if (b.wait !== 'hover') return; if (inside(rect, x, y)) { hoverAt ||= now(); if (now() - hoverAt > 0.5) done('hovered'); } else hoverAt = 0; },
+        next: () => finish('clicked'),
+        click: (x, y) => { if (b.wait === 'click' && inside(rect, x, y)) finish('clicked'); },
+        ptr: (x, y) => { if (b.wait !== 'hover') return; if (inside(rect, x, y)) { hoverAt ||= now(); if (now() - hoverAt > 0.5) finish('hovered'); } else hoverAt = 0; },
       };
       if (b.wait === 'click') R.ink.invoke?.('ink_wait', { on: true });
     });
@@ -2374,10 +2382,10 @@
   const setHover = (h) => {
     const m = h?.m ?? null;
     if (hovered && hovered !== m) { hovered.hover = false; hovered.hoverClose = false; hovered.hoverFull = false; hovered.hoverSave = false; hovered.hoverPin = false; hovered.hoverGrip = false; hovered.hoverId = null; hovered.setHover?.(false); }
-    if (m) { m.hover = h.kind === 'button' || h.kind === 'link' || h.kind === 'clearall'; m.hoverClose = h.kind === 'close'; m.hoverFull = h.kind === 'full'; m.hoverSave = h.kind === 'save'; m.hoverPin = h.kind === 'pin'; m.hoverGrip = h.kind === 'resize'; m.hoverId = h.kind === 'tick' || h.kind === 'pick' ? h.id : null; m.setHover?.(h.kind === 'button'); }
+    if (m) { m.hover = h.kind === 'button' || h.kind === 'link' || h.kind === 'clearall' || h.kind === 'next'; m.hoverClose = h.kind === 'close'; m.hoverFull = h.kind === 'full'; m.hoverSave = h.kind === 'save'; m.hoverPin = h.kind === 'pin'; m.hoverGrip = h.kind === 'resize'; m.hoverId = h.kind === 'tick' || h.kind === 'pick' ? h.id : null; m.setHover?.(h.kind === 'button'); }
     if (hovered !== m || m) touch(0.2);
     hovered = m;
-    document.documentElement.style.cursor = h && (h.kind === 'button' || h.kind === 'close' || h.kind === 'full' || h.kind === 'save' || h.kind === 'pin' || h.kind === 'link' || h.kind === 'clearall' || h.kind === 'tick' || h.kind === 'pick') ? 'pointer' : h?.kind === 'drag' ? 'grab' : h?.kind === 'resize' ? 'nwse-resize' : 'default';
+    document.documentElement.style.cursor = h && (h.kind === 'button' || h.kind === 'close' || h.kind === 'full' || h.kind === 'save' || h.kind === 'pin' || h.kind === 'link' || h.kind === 'clearall' || h.kind === 'next' || h.kind === 'tick' || h.kind === 'pick') ? 'pointer' : h?.kind === 'drag' ? 'grab' : h?.kind === 'resize' ? 'nwse-resize' : 'default';
   };
   const ours = (e) => !!hitAt(e.clientX, e.clientY) || !!drag || !!sizing;
   addEventListener('pointerdown', (e) => {
@@ -2391,6 +2399,7 @@
     else if (h.kind === 'link') { sfx('pip'); R.ink.send?.({ type: 'open_link', url: h.url }); }
     else if (h.kind === 'pick') { h.m.pick?.(h.id); touch(1); }
     else if (h.kind === 'clearall') clearEverything();
+    else if (h.kind === 'next') { sfx('pip'); G.wait?.next?.(); }
     else if (h.kind === 'full') toggleFull(h.m);
     else if (h.kind === 'save') saveCard(h.m, h.title);
     else if (h.kind === 'resize') { sizing = { m: h.m }; sfx('grab'); touch(); }

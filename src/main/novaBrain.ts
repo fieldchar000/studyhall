@@ -310,7 +310,15 @@ function startJob(brief: string, materials: string, title: string, wc: WebConten
 
 const ACTION_TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page'] as const
 
-type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[] }
+type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean }
+/** A how-to's drawing that rings a control without waiting for the click (the walkthrough then stopped at step one):
+ *  its last step waits for the click, so it carries on from there. */
+function needsClick(args: Record<string, unknown>): void {
+  const beats = args.beats as { wait?: string; marks?: { kind?: string; at?: unknown }[] }[] | undefined
+  if (!Array.isArray(beats) || beats.some((b) => b?.wait)) return
+  const on = [...beats].reverse().find((b) => b?.marks?.some((m) => ['target', 'ring', 'point', 'frame', 'circle', 'rect', 'highlight', 'spotlight'].includes(String(m?.kind)) && m?.at))
+  if (on) on.wait = 'click'
+}
 // An answer that turns into points (or cites sources) reads better on the research card than out loud (Roamies' rule).
 // A [bracketed note] left at the very end of a message is never said.
 const dropTag = (t: string): string => t.replace(/\[[^\]\n]{0,240}\]\s*$/, '')
@@ -680,6 +688,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   for (const t of all) {
     const run = t.handler
     t.handler = (async (args: Record<string, unknown>, extra: unknown) => {
+      if (t.name === 'draw' && turnRef.current?.howTo) needsClick(args)
       const id = stageTool(t.name, args)
       if (t.name === 'draw') explainDrew()
       const t0 = Date.now()
@@ -839,6 +848,17 @@ setInterval(() => {
 // treats a drawing as optional on low). Chosen from their words like Roamies' route.mjs: no extra call, no delay.
 const DEEP_ASK = /\b(explain|teach|walk me through|how (?:does|do|is|are)|why (?:does|do|is|are)|what(?:'s| is| are| does)|whats|compare|difference|draw|diagram|show me|this slide|slide \d+|page \d+|break (?:it |this )?down|in depth|step by step|eli5|like i'?m five|summari[sz]e|connect|quiz me|test me|lesson|go through)\b/i
 const STEP: Record<NovaEffort, NovaEffort> = { low: 'medium', medium: 'medium', high: 'high' } as Record<NovaEffort, NovaEffort>
+/** "How do I print this", "show me how to…" in an app: walked through on screen one step at a time (the quick model
+ *  otherwise rang the first control and stopped). Studyhall decides from the words, at no cost. */
+const HOWTO = /\b(how (?:do|can|would|should) i|show me how|walk me through|where (?:do i|can i) (?:find|turn|change|set)|how to)\b/i
+const APP_TASK = /\b(?:print|sav|export|chang|turn(?:ing)? (?:on|off)|add|insert|find|open|shar|format|set(?:ting)? ?up|install|mak|delet|remov|renam|download|upload|attach|resiz|crop|sort|filter|undo|cop(?:y|ie|ying)|past|enabl|disabl|sign(?:ing)? (?:in|out)|log(?:ging)? (?:in|out)|switch|send|submit|screenshot|record|zoom|mut|unmut|bookmark|pin)\w*\b/i
+export const isHowTo = (said: string): boolean => HOWTO.test(said) && APP_TASK.test(said) && !/\b(work|works|happen|happens|mean|means)\b/i.test(said)
+function howToHint(said: string): string {
+  return isHowTo(said)
+    ? "\n(This is a how-to in an app: walk them through it on their screen, one step at a time. take_screenshot, then draw a target on this step's control with a short label and wait 'click'. When the result says they clicked, take_screenshot again and do the next step the same way, until it's done, then say it's done. If you can't see the next step's control, say so and ask, never leave them waiting on a ring.)"
+    : ''
+}
+
 /** A slide question with a deck read (or named): a note to show links between slides on the study board (the quick
  *  model otherwise draws a table and the slides never appear side by side). Studyhall decides from the words. */
 function boardHint(said: string): string {
@@ -1102,6 +1122,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   let retried = false
   let beatDone = false
   const turn: Turn = {
+    howTo: isHowTo(said),
     started,
     times: times.tools,
     quiet: false,
@@ -1207,7 +1228,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     message: {
       role: 'user',
       content: [
-        { type: 'text', text: `${recapFor(c)}${liveFor(c, liveState)}${screen.text ? `\n${screen.text}` : ''}\n\n${said}${agentish ? '\n(They asked for an agent: call send_agent.)' : ''}${boardHint(said)}` },
+        { type: 'text', text: `${recapFor(c)}${liveFor(c, liveState)}${screen.text ? `\n${screen.text}` : ''}\n\n${said}${agentish ? '\n(They asked for an agent: call send_agent.)' : ''}${boardHint(said)}${howToHint(said)}` },
         ...(screen.image ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: screen.image.replace(/^data:image\/\w+;base64,/, '') } }] : [])
       ]
     },
