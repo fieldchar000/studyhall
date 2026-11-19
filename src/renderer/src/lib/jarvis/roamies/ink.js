@@ -2282,6 +2282,7 @@
 
   // ---------------------------------------------------------------- the host's way in (host.js)
   R.inkHit = (x, y) => !!drag || !!sizing || !!hitAt(x, y);
+  R.inkHitKind = (x, y) => { const h = hitAt(x, y); return h ? `${h.kind} of ${h.m.kind ?? 'card'} ${h.part ?? ''}`.trim() : null; }; // (Studyhall: the mouse recorder)
   // Every clickable area as [x, y, w, h]: Linux hosts make these part of the window's click shape (host.js).
   R.inkRects = () => {
     const out = [];

@@ -73,6 +73,8 @@ async function boot(opts: {
   onClick: () => void
   onMenu: (x: number, y: number) => void
   onHot: (hot: boolean) => void
+  /** A line for the mouse recorder (nova-mouse.log). */
+  trace?: (line: string) => void
   /** Dropped somewhere new: that's its home now (CSS px in this window). */
   onHome: (x: number, y: number) => void
   /** Is the point over something else of Nova's on this layer (the menu)? */
@@ -170,7 +172,10 @@ async function boot(opts: {
       const m = k.m
       const h = !!(m.dragging || m.flung)
       if (h && !held) from = [m.x, m.y]
-      if (held && !h && from && Math.hypot(m.x - from[0], m.y - from[1]) > k.R * 0.5) opts.onHome(m.x, m.y)
+      if (held && !h && from && Math.hypot(m.x - from[0], m.y - from[1]) > k.R * 0.5) {
+        home = { x: m.x, y: m.y }
+        opts.onHome(m.x, m.y)
+      }
       held = h
     }
     return p
@@ -197,6 +202,7 @@ async function boot(opts: {
   const cardHit = R.panelHit
   R.panelHit = (x: number, y: number) => opts.extraHit(x, y) || !!cardHit?.(x, y)
 
+  let home: { x: number; y: number } | null = opts.home
   if (opts.home) agent?.place?.(opts.home.x, opts.home.y)
   agent?.show({})
 
@@ -298,11 +304,49 @@ async function boot(opts: {
 
   // Hot zones: ask on every mouse move whether the cursor is on the globe (or its bubble, cards or menu).
   let hot = false
+  const trace = (line: string): void => opts.trace?.(line)
+  const where = (x: number, y: number): string => {
+    const mv = c.mover
+    const onGlobe = Math.hypot(x - mv.x, y - mv.y) < mv.radius * 1.2
+    return `at ${Math.round(x)},${Math.round(y)}; globe at ${Math.round(mv.x)},${Math.round(mv.y)} r${Math.round(mv.radius)}${onGlobe ? ' (ON the globe)' : ''}; Nova's part here: ${R.inkHitKind?.(x, y) ?? (R.hitTest?.(x, y) ? 'globe/bubble/panel' : 'none')}; following cursor: ${agent?.following?.() ? 'yes' : 'no'}`
+  }
   const setHot = (h: boolean): void => {
     if (h === hot) return
     hot = h
+    if (mouse) trace(`mouse ${h ? 'OVER' : 'off'} Nova ${where(mouse[0], mouse[1])}`)
     opts.onHot(h)
   }
+  // Presses and releases (first, before anything else on the page handles them).
+  addEventListener('pointerdown', (e) => trace(`press (button ${e.button}) on <${(e.target as Element | null)?.tagName?.toLowerCase() ?? '?'}> ${where(e.clientX, e.clientY)}`), true)
+  addEventListener('pointerup', (e) => trace(`release ${where(e.clientX, e.clientY)}; dragging: ${c.mover.dragging ? 'yes' : 'no'}`), true)
+  // Popped up beside your cursor to talk (Roamies' way): once it's all done and quiet for a few seconds, it glides
+  // back to its spot and stays there, instead of following your mouse for ever.
+  let busyAt = performance.now()
+  let returning: { x: number; y: number } | null = null
+  let wasFollowing = false
+  setInterval(() => {
+    const now = performance.now()
+    const following = !!agent?.following?.()
+    if (following !== wasFollowing) trace(`globe ${following ? 'STARTS' : 'stops'} following the cursor`)
+    wasFollowing = following
+    if (responding || listen?.open || drawing() || now - voice.at < 1500 || c.mover.dragging) busyAt = now
+    // On its way back: a little idle act can pause the glide part-way, so it's sent on again until it's there.
+    if (returning) {
+      const mv = c.mover
+      if (following || mv.dragging || mv.flung) returning = null
+      else if (Math.hypot(mv.x - returning.x, mv.y - returning.y) < 12) returning = null
+      else if (mv.mode === 'rest') {
+        mv.goTo(returning.x, returning.y)
+        R.wake?.()
+      }
+    }
+    if (!following || now - busyAt < 5000) return
+    const spot = home ?? { x: c.mover.x, y: c.mover.y }
+    trace(`done and quiet: globe goes back to ${Math.round(spot.x)},${Math.round(spot.y)}${home ? ' (its spot)' : ' (stays here)'}`)
+    agent?.settle?.(spot.x, spot.y)
+    returning = home ? { x: spot.x, y: spot.y } : null
+    R.wake?.()
+  }, 500)
   const onMove = (e: MouseEvent): void => {
     mouse = [e.clientX, e.clientY]
     setHot(!!R.ptr(e.clientX, e.clientY))
@@ -338,6 +382,7 @@ async function boot(opts: {
       R.wake?.()
     },
     setConfig(n) {
+      if (n.home) home = n.home
       if (R.sfx && n.sounds !== undefined) R.sfx.enabled = n.sounds
       c.setForm(n.size)
       // Hide when idle (a setting, off unless you turn it on): gone soon after it's done, back for anything it does.

@@ -5,7 +5,9 @@
 // All three are transparent, always-on-top windows that let clicks through except where they draw.
 
 import { PenTrail, type PenEvent } from './penTrail'
-import { BrowserWindow, desktopCapturer, globalShortcut, ipcMain, nativeImage, screen, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, nativeImage, screen, shell } from 'electron'
+import { join } from 'node:path'
+import { writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import type { BauerCard, LiveOp, OrbState, WikiSummary } from '@shared/types'
 import { getPrefs } from './prefs'
@@ -46,9 +48,10 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
     }
     // The cards window is only as tall as what's in it (never a full-height strip down your screen).
     else if (msg.type === 'mouse' && from && (from === orbWin || from === cardsWin)) {
-      if (from === orbWin && (pen || handsBusy)) return // (the pen draws, or Nova is working an app: the layer stays as it is)
+      if (from === orbWin && (pen || handsBusy)) return void mouseTrace(`${winName(from)}: mouse ${msg.over ? 'over' : 'off'} Nova, but ${pen ? 'the pen is on' : 'Nova is working an app'}, so it stays as it is`)
       from.setIgnoreMouseEvents(!msg.over, { forward: true })
     }
+    else if (msg.type === 'inkEvent' && from && msg.msg && typeof msg.msg === 'object' && (msg.msg as { type?: unknown }).type === 'mouse_trace') mouseTrace(`${winName(from)}: ${String((msg.msg as { line?: unknown }).line ?? '')}`)
     else if (msg.type === 'inkEvent' && from === orbWin && msg.msg && typeof msg.msg === 'object') inkHooks.event(msg.msg as Record<string, unknown>)
     // (right-click on the pen layer: the key helper reports it, and the last mark goes; nothing to do here)
     // A lesson is talking about one card: the globe floats over beside it (left of the cards).
@@ -408,6 +411,23 @@ export function closeBauerWindows(): void {
   orbWin = cardsWin = circleWin = pointWin = null
 }
 
+// ---------- The mouse recorder ----------
+// Only Nova's own see-through windows: when each one starts or stops catching clicks, and (from the pages) where a
+// press landed and what of Nova's was there. Positions and yes/no only, never what's on your screen or what you say.
+// The last few hundred lines are kept in nova-mouse.log in Studyhall's data folder, for fixing grabbing and clicking.
+const traceLines: string[] = []
+let traceTimer: ReturnType<typeof setTimeout> | null = null
+export function mouseTrace(line: string): void {
+  const d = new Date()
+  traceLines.push(`${d.toTimeString().slice(0, 8)}.${String(d.getMilliseconds()).padStart(3, '0')} ${line.slice(0, 400)}`)
+  if (traceLines.length > 600) traceLines.splice(0, traceLines.length - 600)
+  traceTimer ??= setTimeout(() => {
+    traceTimer = null
+    void writeFile(join(app.getPath('userData'), 'nova-mouse.log'), traceLines.join('\n') + '\n').catch(() => {})
+  }, 1500)
+}
+const winName = (w: BrowserWindow | null): string => (w === orbWin ? 'globe layer' : w === cardsWin ? 'cards layer' : w === pointWin ? 'rings layer' : w === circleWin ? 'circle layer' : 'other')
+
 const overlayWindow = (bounds: Electron.Rectangle, hash: string, focusable = false): BrowserWindow => {
   const w = new BrowserWindow({
     ...bounds,
@@ -428,6 +448,17 @@ const overlayWindow = (bounds: Electron.Rectangle, hash: string, focusable = fal
     // (Roamies' little sounds play without a click first.)
     webPreferences: { ...webPrefs, backgroundThrottling: false, spellcheck: false, autoplayPolicy: 'no-user-gesture-required' }
   })
+  // (every change to whether it catches clicks goes in the mouse recorder)
+  const setIgnore = w.setIgnoreMouseEvents.bind(w)
+  let ignoring: boolean | null = null
+  w.setIgnoreMouseEvents = (ignore: boolean, o?: Electron.IgnoreMouseEventsOptions) => {
+    if (ignore !== ignoring) {
+      ignoring = ignore
+      const p = screen.getCursorScreenPoint()
+      mouseTrace(`${hash} window ${ignore ? 'lets clicks through' : 'CATCHES clicks'} (mouse at ${p.x},${p.y}; window at ${JSON.stringify(w.getBounds())})`)
+    }
+    setIgnore(ignore, o)
+  }
   w.setAlwaysOnTop(true, 'screen-saver')
   w.setContentProtection(true) // Nova never shows up in screenshots or recordings (or in its own circle-to-ask)
   w.on('close', (e) => {

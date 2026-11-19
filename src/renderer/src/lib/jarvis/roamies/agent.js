@@ -978,6 +978,10 @@
         setStation(x, y); m.x = x; m.y = y; m.vx = m.vy = 0; m.mode = 'rest'; m.rest = 1;
         station.moving = false; station.flee = 0; station.quietUntil = now + 1;
       },
+      // Studyhall: is it following the cursor (it popped up beside it for a request), and gliding to a spot and
+      // staying there (Nova stays on screen, so it must stop following once you're done).
+      following: () => !!station.byCursor,
+      settle: (x, y) => { setStation(x, y); m.goTo(x, y); station.moving = true; station.rush = false; station.flee = 0; station.quietUntil = now + 2; },
       setAuto: (on, idle) => { presence.auto = !!on; if (idle) presence.idle = idle; presence.lastActive = now; },
       // A request is in progress: the Sidekick stays up for the whole turn, between its thoughts, tools and replies.
       working: (on) => { presence.working = !!on; presence.lastActive = now; },

@@ -31,7 +31,9 @@ if (screenPart === '#cards') {
     if (h === hot) return
     hot = h
     window.api.bauer.mouse(h)
+    window.api.bauer.inkEvent({ type: 'mouse_trace', line: `mouse ${h ? 'OVER' : 'off'} a card` })
   }
+  document.addEventListener('pointerdown', (e) => window.api.bauer.inkEvent({ type: 'mouse_trace', line: `press at ${e.clientX},${e.clientY} on <${(e.target as Element | null)?.tagName?.toLowerCase() ?? '?'}>${(e.target as Element | null)?.closest?.('[data-hot]') ? ' (a card)' : ''}` }), true)
   document.addEventListener('mousemove', (e) => setHot(!!(e.target as Element | null)?.closest?.('[data-hot]')), { passive: true })
   document.addEventListener('mouseleave', () => setHot(false))
   window.addEventListener('blur', () => setHot(false))

@@ -38,6 +38,7 @@ export function OrbWindow(): React.JSX.Element {
       onMenu: (x, y) => setMenu({ x, y }),
       onHot: (h) => api.bauer.mouse(h),
       onHome: (x, y) => api.bauer.orbHome(x, y),
+      trace: (line) => api.bauer.inkEvent({ type: 'mouse_trace', line }),
       extraHit: (x, y) => inside(menuRef.current, x, y),
       home: null
     }).then((g) => {
