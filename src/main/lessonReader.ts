@@ -222,15 +222,85 @@ function remember(l: Lesson | string): Lesson | string {
   return l
 }
 
-/** The lesson as text for Nova: a header, then each page (trimmed), from..to. Diagram pages carry their picture's
- *  address. */
-export function lessonText(l: Lesson, from = 1, to = l.count, budget = 16_000): string {
+// ---------- The lesson map (made here from the deck's own words: no AI, no cost) ----------
+// Like the index at the back of a textbook: the key terms, where each first comes up and where it comes back, and which
+// earlier slides each slide builds on. Nova uses it to connect the slide you're on to the rest of the deck.
+const STOP = new Set('a an the and or but of to in on at for from by with as is are was were be been being it its this that these those which who what when where why how than then so such not no can may will would should could do does did has have had into onto over under about between within without also more most less least very each other some any all both one two three four five six seven eight nine ten per via e.g i.e eg ie vs slide slides page pages week lecture figure fig table see note notes chapter section learning objectives objective outcome outcomes summary overview introduction key points'.split(' '))
+const words = (t: string): string[] =>
+  t
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}α-ωβ+\-/ ]+/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+function lessonMap(l: Lesson): { terms: { term: string; pages: number[] }[]; builds: Map<number, { from: number; via: string[] }[]> } {
+  const pagesOf = new Map<string, Set<number>>()
+  for (const p of l.pages) {
+    const w = words(`${p.text} ${p.notes}`)
+    const seen = new Set<string>()
+    for (let i = 0; i < w.length; i++)
+      for (let n = 1; n <= 3 && i + n <= w.length; n++) {
+        const g = w.slice(i, i + n)
+        if (STOP.has(g[0]) || STOP.has(g[g.length - 1]) || g.some((x) => /^\d+$/.test(x))) continue
+        const term = g.join(' ')
+        if (term.length < (n === 1 ? 5 : 6)) continue
+        seen.add(term)
+      }
+    for (const t of seen) (pagesOf.get(t) ?? pagesOf.set(t, new Set()).get(t)!).add(p.n)
+  }
+  const most = Math.max(2, Math.ceil(l.count * 0.6))
+  let terms = [...pagesOf.entries()]
+    .filter(([, s]) => s.size >= 2 && s.size <= most)
+    .map(([term, s]) => ({ term, pages: [...s].sort((a, b) => a - b), score: s.size * Math.min(3, term.split(' ').length) + term.length / 20 }))
+  // A shorter term found on exactly the same slides as a longer one is the same idea: keep the longer.
+  terms = terms.filter((t) => !terms.some((o) => o !== t && o.term.length > t.term.length && o.term.includes(t.term) && o.pages.join() === t.pages.join()))
+  terms.sort((a, b) => b.score - a.score)
+  const top = terms.slice(0, 45).sort((a, b) => a.pages[0] - b.pages[0])
+  const builds = new Map<number, { from: number; via: string[] }[]>()
+  for (const p of l.pages) {
+    const links = new Map<number, string[]>()
+    for (const t of top) if (t.pages.includes(p.n) && t.pages[0] < p.n) (links.get(t.pages[0]) ?? links.set(t.pages[0], []).get(t.pages[0])!).push(t.term)
+    const list = [...links.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 3).map(([from, via]) => ({ from, via: via.slice(0, 3) }))
+    if (list.length) builds.set(p.n, list)
+  }
+  return { terms: top.map(({ term, pages }) => ({ term, pages })), builds }
+}
+function mapText(l: Lesson): string {
+  if (l.count < 3) return ''
+  const label = l.kind === 'slides' ? 'slide' : 'page'
+  const m = lessonMap(l)
+  if (!m.terms.length) return ''
+  const terms = m.terms.map((t) => `${t.term}: ${t.pages[0]}${t.pages.length > 1 ? ` → ${t.pages.slice(1).join(', ')}` : ''}`).join('; ')
+  const builds = [...m.builds.entries()]
+    .slice(0, 40)
+    .map(([n, b]) => `${n} ← ${b.map((x) => `${x.from} (${x.via.join(', ')})`).join(', ')}`)
+    .join('; ')
+  return `\n\nLesson map (made from the deck's own words; use it to connect the ${label} they're on to the rest, like a teacher: "remember ${label} 4…", "this is why ${label} 12 matters"):\nKey terms, first ${label} → where they come back: ${terms}${builds ? `\nBuilds on (${label} ← earlier ${label}s it uses): ${builds}` : ''}`
+}
+/** The pages about a topic, in order (for "teach me X" from the deck): the ones whose words match it most. */
+function topicPages(l: Lesson, topic: string): number[] {
+  const want = words(topic).filter((w) => !STOP.has(w) && w.length > 2)
+  if (!want.length) return []
+  return l.pages
+    .map((p) => {
+      const text = ` ${words(`${p.text} ${p.notes}`).join(' ')} `
+      return { n: p.n, hits: want.filter((w) => text.includes(` ${w}`) || text.includes(w)).length }
+    })
+    .filter((x) => x.hits >= Math.max(1, Math.ceil(want.length / 2)))
+    .map((x) => x.n)
+}
+
+/** The lesson as text for Nova: a header, then each page (trimmed), from..to, then the lesson map. With a topic, the
+ *  pages about it come first, in order. Diagram pages carry their picture's address. */
+export function lessonText(l: Lesson, from = 1, to = l.count, budget = 16_000, topic?: string): string {
   const label = l.kind === 'slides' ? 'Slide' : 'Page'
   const head = `${l.kind === 'slides' ? 'Slide deck' : 'PDF'} "${l.title}" (${l.count} ${l.kind === 'slides' ? 'slides' : 'pages'}${l.app ? `, open in ${l.app}${l.protectedView ? ' (Protected View)' : ''}` : ''}${l.current ? `, they're on ${label.toLowerCase()} ${l.current}` : ''}).`
   const parts: string[] = []
   let used = head.length
   let last = from - 1
-  for (const p of l.pages.filter((x) => x.n >= from && x.n <= to)) {
+  const onTopic = topic ? topicPages(l, topic) : []
+  const order = [...l.pages.filter((x) => onTopic.includes(x.n)), ...l.pages.filter((x) => !onTopic.includes(x.n))]
+  if (onTopic.length) parts.push(`(The ${l.kind === 'slides' ? 'slides' : 'pages'} about "${topic}" come first, in order: ${onTopic.join(', ')}. Teach them as one story, in that order.)`)
+  for (const p of order.filter((x) => x.n >= from && x.n <= to)) {
     const pic = p.pictures || p.shapes >= 4 ? ` [has a diagram or picture: https://${LESSON_HOST}/${l.id}/${p.n}.jpg]` : ''
     const body = `${label} ${p.n}${pic}:\n${p.text.slice(0, 900) || '(no text)'}${p.notes ? `\nSpeaker notes: ${p.notes.slice(0, 500)}` : ''}`
     if (used + body.length > budget && parts.length) break
@@ -238,8 +308,8 @@ export function lessonText(l: Lesson, from = 1, to = l.count, budget = 16_000): 
     used += body.length
     last = p.n
   }
-  const more = last < to ? `\n(${label}s ${last + 1}–${to} not shown: read_lesson again with from: ${last + 1}.)` : ''
-  return `${head}\n\n${parts.join('\n\n')}${more}`
+  const more = !onTopic.length && last < to ? `\n(${label}s ${last + 1}–${to} not shown: read_lesson again with from: ${last + 1}.)` : ''
+  return `${head}\n\n${parts.join('\n\n')}${more}${mapText(l)}`
 }
 
 // ---------- Pictures of pages (Roamies' photo cards and see_photo fetch them from https://lesson.studyhall.app/…) ----------
