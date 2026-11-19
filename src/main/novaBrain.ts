@@ -33,7 +33,7 @@ import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { claudeChat, draftWithConnectors } from './claude'
 import { voiceConfirm, voiceSay } from './voice'
-import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard } from './roamiesTools'
+import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot } from './roamiesTools'
 import { memoryOnEnd, noteExchange } from './novaMemory'
 import { get, getProfileId } from './db'
 import { briefText, startFocus, stopFocus } from './buddy'
@@ -80,7 +80,7 @@ How to help (use as few tool calls as the task needs; independent ones can go in
   • "Explain this", "what am I looking at", "this slide", "I'm confused by this", "what does this diagram mean" (something on their screen): take_screenshot of that window first, then one draw call that teaches it like a teacher at the board: 3 to 7 beats. Each beat marks the real part of the slide or page (ring or underline the words, an arrow along the diagram's arrow, a label beside a box), placed by where they are in the screenshot, AND most beats bring a compact card beside the slide (card_size: small, never over the slide) with what the slide doesn't show: the bigger picture, a diagram or labelled figure, a key fact, an everyday comparison, or how it links to other slides of the deck. Tie each card to the part of the slide it explains (tie: that part's words), so a line runs from the slide to the card; use connect with flow: true for something that travels or keeps happening. Aim for 2 to 4 cards on screen by the end, all in that ONE draw call. For example, beat 1: ring the title + a card with the big picture in two lines; beat 2: ring the first box + a small flow of what it does; beat 3: underline the key line + a note with an everyday comparison; beat 4: ring the last box + a card linking it to the rest of the deck. Before take_screenshot, say one short line ("Let's go through it.") so they hear you straight away. Each say line explains that part (what it means, why it's there, how it connects to the part before) and the last beat ties it together in one sentence they can remember. Never read the slide out word for word; explain it.
   • When their words end with "(While they held the keys, the PC was playing this, written down from its sound: …)", they held Ctrl+Alt+Shift so you'd hear what's playing (a video, a lecture recording, a song): answer about that ("what did he just say?", "explain that"). It's a rough automatic transcript of the PC's sound: go by the gist, and if it's music or unclear, say what you can make out. A YouTube video's title is usually in <live-state>.
   • Their school is on PoliteMall (Brightspace): for their courses, what's due, announcements, "what's in week 5", call school (read-only, read earlier from PoliteMall). "Pull up week 5": school with find, then school_file open: true. "Teach me week 5" / "summarise this week's slides": school with find, school_file to download the deck or PDF, then read_lesson it (source: the path) and teach it.
-  • When what they ask about is in a slide deck or PDF they have open (PowerPoint, a PDF in Edge, Opera GX or Chrome; the window in <live-state> tells you): call read_lesson once for that lesson (the whole thing as text, cheap; don't read it again for each question) and teach with all of it, not just what's on screen. Connect what they marked to what comes before and after it ("slide 9 set this up…"), going by the lesson map at the end (where each key term first comes up and comes back, and what each slide builds on); when a slide builds on an earlier one or leads to a later one (the map shows it), show it with show_board instead of leaving their slide: slides [{page: the one they're on, rings: [{id: "a", text: the words exactly as on that slide}]}, {page: the linked one, rings: [{id: "b", text: words on it}]}] and links [{from: "a", to: "b", label: "first came up here"}]; say the link out loud. A board shows 2 or 3 slides; their own slide never moves. Every explanation of one slide or page names at least one link from the map out loud ("this builds on slide 2's receptor types", "slide 7 is where this matters") and, when it helps, a small card for that link; for a topic ("teach me beta blockers"), give read_lesson the topic and teach its slides as one story, and when a later slide or page goes deeper (a detailed diagram, a worked example), say so and show it: see_photo its picture address, then a photo card of it with labels on the parts you're explaining, or go_to_page to it and ring it on their screen (take_screenshot first). Use the slides' own words and diagrams; add a picture from the web (a photo card with a Wikipedia query) or a drawn diagram when the slides don't have one.
+  • When what they ask about is in a slide deck or PDF they have open (PowerPoint, a PDF in Edge, Opera GX or Chrome; the window in <live-state> tells you): call read_lesson once for that lesson (the whole thing as text, cheap; don't read it again for each question) and teach with all of it, not just what's on screen. Connect what they marked to what comes before and after it ("slide 9 set this up…"), going by the lesson map at the end (where each key term first comes up and comes back, and what each slide builds on); when a slide builds on an earlier one or leads to a later one (the map shows it), show it with show_board instead of leaving their slide: slides [{page: the one they're on, rings: [{id: "a", text: the words exactly as on that slide}]}, {page: the linked one, rings: [{id: "b", text: words on it}]}] and links [{from: "a", to: "b", label: "first came up here"}]; say the link out loud. On a board, underline a key term (style: underline), highlight a line to remember (style: highlight), point at part of a slide's diagram with area (see_photo its picture first), and add notes (small cards under the slides with an arrow from a ring) for what a spot means. A board shows 2 or 3 slides; their own slide never moves. Every explanation of one slide or page names at least one link from the map out loud ("this builds on slide 2's receptor types", "slide 7 is where this matters") and, when it helps, a small card for that link; for a topic ("teach me beta blockers"), give read_lesson the topic and teach its slides as one story, and when a later slide or page goes deeper (a detailed diagram, a worked example), say so and show it: see_photo its picture address, then a photo card of it with labels on the parts you're explaining, or go_to_page to it and ring it on their screen (take_screenshot first). Use the slides' own words and diagrams; add a picture from the web (a photo card with a Wikipedia query) or a drawn diagram when the slides don't have one.
   • From their own study files (they name their notes, a week, a module or a file): find_material, then read_material, then teach it the same live way (draw beats from what their notes say), or teach with material_id when they ask for a lesson with a quiz at the end.
   After a live lesson, stop: the drawing speaks its lines. Offer one next step in a few words only if it helps ("Want me to quiz you on it?").
 - Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file, find_material first, then read_material (to answer or teach from them) or quiz_me.
@@ -192,7 +192,7 @@ function findControl(pool: SeenControl[], find: string, seen: Seen | null): Seen
 
 // ---------- What you circled or highlighted (goes with your request) ----------
 
-let circled: Promise<{ rect: Electron.Rectangle; image: string | null; text: string; marks: string; at: number }> | null = null
+let circled: Promise<{ rect: Electron.Rectangle; area: Electron.Rectangle; image: string | null; text: string; marks: string; at: number; look: Promise<Look | null>; size: { width: number; height: number } | null }> | null = null
 /** You circled part of your screen (the pen): ring it, and get a close-up and the text in it ready for your request. */
 // Your marks drawn into the close-up (blue, a dark edge), as Roamies does, so Nova sees exactly what you marked.
 function drawMarks(dataUrl: string, area: Electron.Rectangle, strokes: { x: number; y: number }[][]): string {
@@ -245,36 +245,71 @@ export function noteCircle(rect: Electron.Rectangle, strokes: { x: number; y: nu
       return cx >= area.x && cx <= area.x + area.width && cy >= area.y && cy <= area.y + area.height && c.rect.width <= area.width * 1.2
     }
     const text = big ? '' : [...new Set((seen?.controls ?? []).filter(inside).map((c) => c.name.trim()).filter(Boolean))].join(' · ').slice(0, 1500)
-    return { rect, image, text, marks, at: Date.now() }
+    // A diagram or picture (little readable text): look at it closely now, while they're still talking, so the
+    // description (and where its parts are) is ready when the question arrives.
+    const look = image && text.length < 150 ? lookClosely(image) : Promise.resolve(null)
+    const size = image ? nativeImage.createFromDataURL(image).getSize() : null
+    return { rect, area, image, text, marks, at: Date.now(), look, size }
   })()
 }
 /** For the request: what was just circled (picture and text), else the text you've highlighted, if any. */
 /** A circled diagram or picture, described closely by Sonnet on its own (just the picture, about 1 to 2 cents), so the
  *  quick model explains what's really in it: every label, part and arrow. Skipped when Claude is paused or low. */
-async function lookClosely(image: string): Promise<string> {
+type Look = { opening?: string; summary: string; parts: { name: string; x: number; y: number; w: number; h: number }[] }
+const LOOK_SHAPE = {
+  type: 'object',
+  properties: {
+    opening: { type: 'string', description: 'one short spoken sentence to a student saying what this is ("This is a heart muscle cell, with its beta receptors in the membrane."), plain words, no symbols' },
+    summary: { type: 'string', description: 'what it shows and how the parts connect, under 120 words' },
+    parts: {
+      type: 'array',
+      description: 'each label, part or arrow worth pointing at (up to 8), with its box as fractions (0 to 1) of the whole picture',
+      items: { type: 'object', properties: { name: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } }, required: ['name', 'x', 'y', 'w', 'h'] }
+    }
+  },
+  required: ['opening', 'summary', 'parts']
+}
+async function lookClosely(image: string): Promise<Look | null> {
   const p = getPrefs()
-  if (claudeBlocked(p) || !roomForDeeper(p)) return ''
+  if (claudeBlocked(p) || !roomForDeeper(p)) return null
   const ask = claudeChat(
     [
-      { role: 'system', content: 'Describe exactly what is inside the area marked in blue in this picture (a diagram, chart or picture from a student\'s lecture slide or notes): what it shows, then every label, part and arrow and where each sits (top left, centre…), and how the parts connect. Plain sentences, under 150 words. Only what is really there.' },
-      { role: 'user', content: [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: 'What is in the marked area?' }] }
+      { role: 'system', content: 'Look closely at what is inside the area marked in blue in this picture (a diagram, chart or picture from a student\'s lecture slide or notes). Say what it shows and how the parts connect, and list each label, part and arrow worth pointing at with where it sits: its box as fractions of the whole picture (x, y = top left corner, w, h = size; 0 to 1). Only what is really there.' },
+      { role: 'user', content: [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: 'What is in the marked area, and where are its parts?' }] }
     ],
-    undefined,
+    LOOK_SHAPE,
     { ...p, novaBrain: 'sonnet', novaEffort: 'low' },
     'look'
   ).catch(() => '')
-  return String((await Promise.race([ask, new Promise<string>((r) => setTimeout(() => r(''), 15_000))])) ?? '').trim().slice(0, 1200)
+  const t0 = Date.now()
+  const raw = String((await Promise.race([ask, new Promise<string>((r) => setTimeout(() => r(''), 15_000))])) ?? '')
+  logTiming(`close look at a circled picture: ${((Date.now() - t0) / 1000).toFixed(1)} s${raw ? '' : ' (no answer)'}`)
+  try {
+    const j = JSON.parse(raw) as Look
+    return { opening: String(j.opening ?? '').slice(0, 220), summary: String(j.summary ?? '').slice(0, 1200), parts: (j.parts ?? []).filter((q) => [q.x, q.y, q.w, q.h].every((v) => Number.isFinite(v) && v >= 0 && v <= 1)).slice(0, 8) }
+  } catch {
+    return raw.trim() ? { summary: raw.trim().slice(0, 1200), parts: [] } : null
+  }
 }
 
-async function screenContext(): Promise<{ text: string; image: string | null }> {
+async function screenContext(): Promise<{ text: string; image: string | null; looked?: boolean; opening?: string }> {
   if (circled) {
     const c = await circled.catch(() => null)
     circled = null
     if (c && Date.now() - c.at < 90_000) {
-      const look = c.image && (c.text ?? '').length < 150 ? await lookClosely(c.image) : ''
+      const look = await c.look.catch(() => null)
+      // The circled picture is this request's screenshot: rings go on its parts by its pixels, no take_screenshot.
+      const iw = c.size?.width ?? 0
+      const ih = c.size?.height ?? 0
+      if (look && iw && ih) useCircleShot([c.area.x, c.area.y, c.area.width, c.area.height], iw, ih)
+      const parts = look && iw && ih ? look.parts.map((q) => `${q.name}: x ${Math.round(q.x * iw)}, y ${Math.round(q.y * ih)}, w ${Math.round(q.w * iw)}, h ${Math.round(q.h * ih)}`).join('; ') : ''
       return {
-        text: `${look ? `What's inside what they circled, looked at closely: ${look}\nExplain THIS (their diagram or picture) part by part: ring or label its real parts on their screen as you go, then 1 or 2 fact cards, and a flow or another diagram where it helps. ` : ''}They marked part of their screen while asking (the picture is attached; it's ringed on screen now)${c.marks ? `. In their words: "${c.marks}"` : ''}${c.text ? `. Words the app reports there: «${c.text}»` : ''}. "This" / "that" means what they circled. Go by the picture: explain the content they circled (their lecture slide, notes, diagram, question), never the app around it (its menus, ribbon, toolbars, warning bars or buttons), unless they circled only a button or ask about the app itself.`,
-        image: c.image
+        text: `${look ? `What's inside what they circled, looked at closely: ${look.summary}${parts ? `\nThe circled picture (${iw}×${ih} px) is your screenshot for this request; its parts, in its pixels (use them as at: {x, y, w, h} for every ring, underline, label and arrow on it (an arrow: at and to both as positions); never at: {text}; no take_screenshot needed): ${parts}.` : ''}\nSay your first sentence about it straight away, then ONE draw call with everything: rings or labels on its parts (positions above) as you explain them part by part, 1 or 2 fact cards, a flow, and another diagram where it helps. ` : ''}They marked part of their screen while asking (the picture is attached; it's ringed on screen now)${c.marks ? `. In their words: "${c.marks}"` : ''}${c.text ? `. Words the app reports there: «${c.text}»` : ''}. "This" / "that" means what they circled. Go by the picture: explain the content they circled (their lecture slide, notes, diagram, question), never the app around it (its menus, ribbon, toolbars, warning bars or buttons), unless they circled only a button or ask about the app itself.`,
+        // (Looked at closely already: Nova has the description and where each part is, so the picture isn't sent again;
+        // that made the reply start about 7 s later.)
+        image: look ? null : c.image,
+        looked: !!look,
+        opening: look?.opening || undefined
       }
     }
   }
@@ -561,11 +596,32 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     ),
     tool(
       'show_board',
-      'The study board: the slide they\'re on and the slides it connects to (from the lesson you read with read_lesson), side by side and big enough to read, with rings on the exact words and arrows from one slide to another. Their own slide never moves. Use it whenever a slide builds on an earlier one or leads to a later one ("how does this connect?", "where did this come from?", or the lesson map shows a link). Put a ring on every slide (the words that link them, exactly as written there), and links from a ring on one slide to a ring on another, so an arrow runs between them.',
+      'The study board: the slide they\'re on and the slides it connects to (from the lesson you read with read_lesson), side by side and big enough to read, with rings on the exact words and arrows from one slide to another. Their own slide never moves. Use it whenever a slide builds on an earlier one or leads to a later one ("how does this connect?", "where did this come from?", or the lesson map shows a link). Put a ring on every slide (the words that link them, exactly as written there), and links from a ring on one slide to a ring on another, so an arrow runs between them. A ring can be a circle round the words (style ring, the default), an underline (a key term in a sentence) or a highlight (a line to remember). To point at part of a slide\'s picture (a diagram part with no words): see_photo that slide\'s picture (its address from read_lesson) and give area as fractions of the picture instead of text. notes: up to 4 small cards under the slides, each with an arrow from a ring, for what that spot means (one or two short sentences).',
       {
         title: z.string().max(60).optional(),
-        slides: z.array(z.object({ page: z.number().int().min(1), label: z.string().max(40).optional().describe('e.g. "Now: slide 6", "Where β1 came from"'), rings: z.array(z.object({ id: z.string().max(12), text: z.string().max(120).describe('words exactly as written on that slide'), label: z.string().max(40).optional() })).max(5).optional() })).min(1).max(3),
-        links: z.array(z.object({ from: z.string(), to: z.string(), label: z.string().max(40).optional(), flow: z.boolean().optional() })).max(6).optional()
+        slides: z
+          .array(
+            z.object({
+              page: z.number().int().min(1),
+              label: z.string().max(40).optional().describe('e.g. "Now: slide 6", "Where β1 came from"'),
+              rings: z
+                .array(
+                  z.object({
+                    id: z.string().max(12),
+                    text: z.string().max(120).optional().describe('words exactly as written on that slide'),
+                    area: z.array(z.number().min(0).max(1)).length(4).optional().describe('[x, y, w, h] fractions of the slide picture, for a part of a diagram (instead of text)'),
+                    style: z.enum(['ring', 'underline', 'highlight']).optional(),
+                    label: z.string().max(40).optional()
+                  })
+                )
+                .max(5)
+                .optional()
+            })
+          )
+          .min(1)
+          .max(3),
+        links: z.array(z.object({ from: z.string(), to: z.string(), label: z.string().max(40).optional(), flow: z.boolean().optional() })).max(6).optional(),
+        notes: z.array(z.object({ ring: z.string().max(12).optional().describe('the ring it explains (an arrow runs from it)'), title: z.string().max(50), text: z.string().max(220) })).max(4).optional()
       },
       async (a) => text(await showBoard(a as Parameters<typeof showBoard>[0]))
     ),
@@ -1118,7 +1174,7 @@ export function novaTurn(wc: WebContents, said: string, liveState: string): Prom
 async function doTurn(wc: WebContents, said: string, liveState: string): Promise<NovaTurnResult> {
   roamiesTurnStart()
   // What's highlighted or circled, and Claude's sign-in check, at the same time (not one after the other).
-  const [screen] = await Promise.all([screenContext().catch(() => ({ text: '', image: null })), claudeChecked()])
+  const [screen] = await Promise.all([screenContext().catch((): { text: string; image: string | null; looked?: boolean; opening?: string } => ({ text: '', image: null })), claudeChecked()])
   if (process.env.STUDYHALL_OFFSCREEN === '1' && screen.text) console.info('screen context>', screen.text.slice(0, 600))
   const news = [roamiesNotes(), said.startsWith('(') ? '' : agentsBlock(said)].filter(Boolean).join('\n')
   if (news) screen.text = [screen.text, news].filter(Boolean).join('\n')
@@ -1142,7 +1198,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   }
   const c = convo
   const started = Date.now()
-  const want = tutorOn() ? effort : effortFor(said, effort, !!screen.text)
+  const want = tutorOn() ? effort : (screen.looked ? effort : effortFor(said, effort, !!screen.text))
   teaching = tutorOn() || !!screen.text || DEEP_ASK.test(said)
   explainStart(said, /Window in front: ([^\n]*)/.exec(liveState)?.[1] ?? '', teaching)
   if (teaching) lastExplained = Date.now()
@@ -1263,6 +1319,13 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     }
   }
   c.turnRef.current = turn
+  // A circled diagram looked at closely: its opening sentence is said straight away (Nova's own reply takes a few
+  // seconds to start while it writes the drawing), and Nova carries on from it.
+  if (screen.opening && !wc.isDestroyed()) {
+    wc.send('nova:speak', { text: `${screen.opening} ` })
+    explainSaid(`${screen.opening} `)
+    times.first ??= Date.now() - started
+  }
   stageStart(agentish)
   c.turns++
   c.at = Date.now()
@@ -1271,7 +1334,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     message: {
       role: 'user',
       content: [
-        { type: 'text', text: `${recapFor(c)}${liveFor(c, liveState)}${screen.text ? `\n${screen.text}` : ''}\n\n${said}${agentish ? '\n(They asked for an agent: call send_agent.)' : ''}${boardHint(said)}${howToHint(said)}${visualHint(said)}` },
+        { type: 'text', text: `${recapFor(c)}${liveFor(c, liveState)}${screen.text ? `\n${screen.text}` : ''}\n\n${said}${agentish ? '\n(They asked for an agent: call send_agent.)' : ''}${boardHint(said)}${howToHint(said)}${visualHint(said)}${screen.opening ? `\n(You have already said out loud: "${screen.opening}" Don't repeat it: carry on from there.)` : ''}` },
         ...(screen.image ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: screen.image.replace(/^data:image\/\w+;base64,/, '') } }] : [])
       ]
     },
@@ -1310,6 +1373,11 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
           if (hold) split.push(dropTag(hold))
           hold = ''
           split.end()
+          // The next message's words start a new sentence: a space, so the written answer doesn't run "sec.Slide".
+          if (written && !/\s$/.test(written)) {
+            written += ' '
+            if (turn.research === 'writing') orbPanel('append', ' ')
+          }
         }
       } else if (m.type === 'assistant') {
         trailSettle() // a model turn ended: the step trail ticks off what it did

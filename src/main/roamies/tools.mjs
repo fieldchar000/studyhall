@@ -686,7 +686,8 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
         ui({ kind: 'agent', e: { type: 'draw', id, seg: k, beats: out, edits: k ? [] : edits, last: k === segs.length - 1, win, busy: k ? [] : busy, ...(opts.fade ? { fade: opts.fade } : {}), ...(args.deep ? { deep: true } : {}) } });
         // The first beat must show; later ones queue behind it on the overlay without holding this up.
         if (!k) {
-          const started = await inkWait(`${id}:start:0`, 15_000, ctx?.signal);
+          // (Studyhall: 45 s, not 15: a second drawing in one answer waits its turn behind the first one's narration.)
+          const started = await inkWait(`${id}:start:0`, 45_000, ctx?.signal);
           if (started === 'stopped') return stopped();
           if (started === 'timeout') throw new Error("The drawing didn't show (the overlay isn't responding).");
         }
@@ -1094,5 +1095,8 @@ A drawing stays until the user clears it or the window changes; your next drawin
     const b = r?.window?.bounds;
     return Array.isArray(b) && b.length === 4 && b.every(Number.isFinite) ? b : null;
   }
-  return { tools, hands, whereNow, frontNow, frontBounds, ink: inkEvents, nextTurn: () => ++turn };
+  // Studyhall: a picture it already took (what they circled) stands in for this request's screenshot, so draw can place
+  // rings by its pixels without a take_screenshot round trip.
+  const useShot = (bounds, iw, ih) => { lastShot = { ...shotMap(bounds, iw, ih, pointScale()), bounds, win: null, turn }; };
+  return { tools, hands, whereNow, frontNow, frontBounds, ink: inkEvents, nextTurn: () => ++turn, useShot };
 }

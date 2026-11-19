@@ -410,7 +410,21 @@ export function findOnPage(lessonId: string, page: number, words: string): [numb
     const score = t.includes(want) ? 100 - t.length / 100 : w.filter((x) => t.includes(x)).length / w.length
     if (!best || score > best.score) best = { b, score }
   }
-  return best && best.score >= 0.6 ? [best.b[0], best.b[1], best.b[2], best.b[3]] : null
+  if (!best || best.score < 0.6) return null
+  const [x, y, bw, bh, s] = best.b
+  // The words are part of a single line: just them (by where they fall along it), not the whole line. Lines are
+  // told from paragraphs by shape: about 0.4 of the height per character across for one line, half that for two.
+  const t = norm(s)
+  const at = t.indexOf(want)
+  // (Boxes are fractions of the page: its height over width, from PowerPoint; 16:9 otherwise.)
+  const ratio = (l as Lesson & { ratio?: number }).ratio ?? 0.5625
+  if (at >= 0 && want.length < t.length * 0.8 && bh > 0 && bw / (bh * ratio) > t.length * 0.3) {
+    const nx = x + (bw * at) / t.length
+    const nw = (bw * want.length) / t.length
+    const pad = bw * 0.01
+    return [Math.max(x, nx - pad), y, Math.min(nw + pad * 2, x + bw - Math.max(x, nx - pad)), bh]
+  }
+  return [x, y, bw, bh]
 }
 /** The id of the lesson read most recently (for the study board). */
 export const lastLessonId = (): string | null => lastLesson()?.id ?? null

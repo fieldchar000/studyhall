@@ -21,6 +21,9 @@ import { stageDone } from './novaStage'
 import { lessonFetch } from './lessonReader'
 import { illustration } from './illustrations'
 import { findOnPage, lastLessonId, picture as lessonPicture } from './lessonReader'
+
+// A slide on the study board: rings on words (text) or on part of its picture (area: fractions), and how each looks.
+type BoardSlide = { page: number; label?: string; rings?: { id: string; text?: string; area?: number[]; style?: 'ring' | 'underline' | 'highlight'; label?: string }[] }
 import { claudeAgentRoute, claudeBlocked, claudeModelId, claudeReady } from './claude'
 import { buddyHooks, startFocus, stopFocus } from './buddy'
 import { screen } from 'electron'
@@ -293,12 +296,12 @@ export function roamies(): Promise<Any> {
         const id = lastLessonId()
         if (!id) throw new Error('read the deck or PDF with read_lesson first')
         const slides = await Promise.all(
-          ((m.slides ?? []) as { page: number; label?: string; rings?: { id: string; text: string; label?: string }[] }[]).map(async (s) => {
+          ((m.slides ?? []) as BoardSlide[]).map(async (s) => {
             const buf = await lessonPicture(id, s.page)
-            return { ...s, src: buf ? `data:image/jpeg;base64,${buf.toString('base64')}` : null, rings: (s.rings ?? []).map((r) => ({ ...r, rect: findOnPage(id, s.page, r.text) })) }
+            return { ...s, src: buf ? `data:image/jpeg;base64,${buf.toString('base64')}` : null, rings: (s.rings ?? []).map((r) => ({ ...r, rect: r.area ?? (r.text ? findOnPage(id, s.page, r.text) : null) })) }
           })
         )
-        const missed = slides.flatMap((s) => s.rings.filter((r) => !r.rect).map((r) => `"${r.text}" on page ${s.page}`))
+        const missed = slides.flatMap((s) => s.rings.filter((r) => !r.rect).map((r) => `"${r.text ?? r.id}" on page ${s.page}`))
         if (missed.length) notes.push(`Couldn't find ${missed.join(', ')} (use words exactly as they are on the slide).`)
         return { slides }
       },
@@ -591,23 +594,27 @@ function busyCells(img: Electron.NativeImage): number[][] {
 }
 
 // ---------- The study board as a tool of its own ----------
-type BoardSlide = { page: number; label?: string; rings?: { id: string; text: string; label?: string }[] }
 /** Shows the study board now: the slides side by side, rings on the words, arrows between them. What it couldn't find. */
-export async function showBoard(a: { title?: string; slides: BoardSlide[]; links?: { from: string; to: string; label?: string; flow?: boolean }[] }): Promise<string> {
+export async function showBoard(a: { title?: string; slides: BoardSlide[]; links?: { from: string; to: string; label?: string; flow?: boolean }[]; notes?: { ring?: string; title: string; text: string }[] }): Promise<string> {
   const id = lastLessonId()
   if (!id) return 'Read the deck or PDF with read_lesson first.'
   const slides = await Promise.all(
     a.slides.slice(0, 3).map(async (s) => {
       const buf = await lessonPicture(id, s.page)
-      return { ...s, src: buf ? `data:image/jpeg;base64,${buf.toString('base64')}` : null, rings: (s.rings ?? []).map((r) => ({ ...r, rect: findOnPage(id, s.page, r.text) })) }
+      return { ...s, src: buf ? `data:image/jpeg;base64,${buf.toString('base64')}` : null, rings: (s.rings ?? []).map((r) => ({ ...r, rect: r.area ?? (r.text ? findOnPage(id, s.page, r.text) : null) })) }
     })
   )
-  if (OFFSCREEN) console.info('board>', JSON.stringify({ slides: slides.map((s) => ({ page: s.page, rings: s.rings.map((r) => [r.id, r.text, !!r.rect]) })), links: a.links }))
+  if (OFFSCREEN) console.info('board>', JSON.stringify({ slides: slides.map((s) => ({ page: s.page, rings: s.rings.map((r) => [r.id, r.text ?? r.area, r.style ?? 'ring', !!r.rect]) })), links: a.links, notes: a.notes }))
   const part = `b${Date.now().toString(36)}`
-  inkPlay({ id: `board-${part}`, seg: 0, beats: [{ n: 1, say: '', caption: '', voiced: false, marks: [{ kind: 'board', part, title: a.title, slides, links: a.links ?? [] }] }], last: true, win: null, busy: [] })
-  const missed = slides.flatMap((s) => s.rings.filter((r) => !r.rect).map((r) => `"${r.text}" (slide ${s.page})`))
+  inkPlay({ id: `board-${part}`, seg: 0, beats: [{ n: 1, say: '', caption: '', voiced: false, marks: [{ kind: 'board', part, title: a.title, slides, links: a.links ?? [], notes: a.notes ?? [] }] }], last: true, win: null, busy: [] })
+  const missed = slides.flatMap((s) => s.rings.filter((r) => !r.rect).map((r) => `"${r.text ?? r.id}" (slide ${s.page}${r.text ? '' : ': give text or area'})`))
   const ringIds = new Set(slides.flatMap((s) => s.rings.filter((r) => r.rect).map((r) => r.id)))
   const drawn = (a.links ?? []).filter((q) => ringIds.has(q.from) && ringIds.has(q.to)).length
   if (slides.length > 1 && !drawn) missed.push(`no arrow (give each slide a ring and link a ring on one to a ring on another by id)`)
   return `The study board is up: slides ${slides.map((s) => s.page).join(' and ')} side by side${missed.length ? `. Couldn't find ${missed.join(', ')} on the slide (use the words exactly as written there)` : ', rings and arrows drawn'}. Now say the link out loud in a sentence or two (and add a small card with draw if it helps).`
+}
+
+/** What they circled is this request's screenshot (see tools.mjs useShot): bounds on screen, the picture's size. */
+export function useCircleShot(bounds: [number, number, number, number], iw: number, ih: number): void {
+  rt?.useShot?.(bounds, iw, ih)
 }

@@ -68,8 +68,13 @@ const Mark = z.object({
   // links join rings by id.
   slides: z.array(z.object({
     page: z.number().int().min(1), label: z.string().max(40).optional(),
-    rings: z.array(z.object({ id: z.string().min(1).max(12), text: z.string().min(1).max(120), label: z.string().max(40).optional() })).max(6).optional(),
+    rings: z.array(z.object({
+      id: z.string().min(1).max(12), text: z.string().max(120).optional(), label: z.string().max(40).optional(),
+      area: z.array(z.number().min(0).max(1)).length(4).optional(), style: z.enum(['ring', 'underline', 'highlight']).optional(),
+    })).max(6).optional(),
   })).max(3).optional(),
+  // Studyhall: small note cards under the board's slides, each with an arrow from a ring.
+  notes: z.array(z.object({ ring: z.string().max(12).optional(), title: z.string().max(50), text: z.string().max(220) })).max(4).optional(),
   columns: z.array(z.string().max(30)).max(LIMITS.columns).optional(),
   rows: z.array(z.array(z.string().max(80)).max(LIMITS.columns)).max(LIMITS.rows).optional(),
   bars: z.array(z.object({ label: z.string().min(1).max(30), value: num, tone: z.enum(TONES).optional() })).max(LIMITS.bars).optional(),
@@ -152,6 +157,8 @@ export function checkDraw(args) {
         need(m.slides?.length, 'slides ([{page, rings: [{id, text: words on that slide}]}], 1 to 3 pages of the lesson you read)');
         const ids = new Set((m.slides ?? []).flatMap((s) => (s.rings ?? []).map((r) => r.id)));
         for (const q of m.links ?? []) if (!ids.has(q.from) || !ids.has(q.to)) out.push(`${where}: link ${q.from} → ${q.to} joins a ring that isn't there (rings: ${[...ids].join(', ')}).`);
+        for (const s of m.slides ?? []) for (const r of s.rings ?? []) if (!r.text && !r.area) out.push(`${where}: ring ${r.id} needs text (words on the slide) or area ([x, y, w, h] fractions of the slide's picture).`);
+        for (const q of m.notes ?? []) if (q.ring && !ids.has(q.ring)) out.push(`${where}: note "${q.title}" points at ring ${q.ring}, which isn't there.`);
       }
       if (m.kind === 'scene') {
         need(m.pieces?.length, 'pieces ([{id, icon (an id from find_illustrations), x, y on a 0–100 grid, size, label}])');
