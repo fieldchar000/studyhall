@@ -31,6 +31,12 @@ https://github.com/KenKaiii/Roamies
   `agent-cards.js` (the step trail) and `pen.js` (your Ctrl+Alt pen trail), copied from Roamies 0.1.41 and recoloured;
   `src/main/novaStage.ts` ports Roamies' tool-to-performance map and step trail, and `src/renderer/src/lib/jarvis/nova.ts`
   its host (host.js). `src/main/penTrail.ts` rewrites its Windows pen helper's loop detection (voice-win ink.rs).
+  Studyhall changes: `pen.js` can undo the last mark (right-click), and `ink.js` shows pictures of your own slides
+  as they are (no dither) and stops a drawing still being narrated when you ask something new (`halt`).
+- Reading what you marked: `src/main/roamies/marks.mjs` (describing pen marks on a screenshot), copied from Roamies
+  0.1.41 and recoloured to Studyhall's blue.
+- `src/main/roamies/tools.mjs` also takes a picture fetcher (`photoFetch`), so slide pictures from Nova's lesson reader
+  show on its photo cards.
 - `native/roamies-hands`: Roamies' Windows hands helper (Rust: UI Automation, Windows OCR, screenshots, clicking and
   typing), copied unchanged and built on GitHub Actions.
 - Nova's brain follows Roamies' design. It makes one fast Claude call with Nova's own tools and

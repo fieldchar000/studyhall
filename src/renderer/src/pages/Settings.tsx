@@ -345,6 +345,10 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
         "While talking: draw on the screen to show what you mean (right-click undoes a mark).",
       ],
       [
+        "Hold Ctrl + Alt + Shift",
+        "Talk to Nova and let it hear what your PC is playing (a video, a lecture recording, a song): ask “what did he just say?” or “explain that”.",
+      ],
+      [
         "Tap Ctrl + Shift",
         "Type to Nova: a small box opens beside your mouse.",
       ],

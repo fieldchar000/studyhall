@@ -927,7 +927,7 @@ export interface VoiceStatus {
   state: VoiceState
 }
 export type VoiceCommand =
-  | { type: 'listen'; ptt?: boolean }
+  | { type: 'listen'; ptt?: boolean; hear?: boolean }
   | { type: 'config'; wake: boolean; sensitivity: number; ears?: boolean; name?: NovaName }
   | { type: 'stop' }
   | { type: 'wake' } // the new ears heard "Hey <name>"
@@ -1004,6 +1004,7 @@ export interface Prefs {
   novaRecord?: boolean // tutor mode records each lesson (screen and Nova's voice) into Documents\Nova Lessons (default on)
   novaPages?: boolean // Nova may turn the pages of the slide deck or PDF you have open, and scroll a page to what it's showing you (default on)
   novaAgents?: 'auto' | 'haiku' | 'sonnet' // which model background agents use (auto: Sonnet to make things, Haiku otherwise)
+  novaDuck?: boolean // other apps' sound goes quieter while you hold the talk key (default on)
   novaHideIdle?: boolean // the globe disappears when it's not needed and comes back when you talk to it (default off)
   novaVoice?: string // Kokoro voice (default af_heart)
   novaSpeed?: number // how fast Nova talks, 0.8–1.3 (default 1.05)
