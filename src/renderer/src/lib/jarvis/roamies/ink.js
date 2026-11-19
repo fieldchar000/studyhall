@@ -589,6 +589,18 @@
     const fits = (x) => x >= S[0] + 8 && x + w <= S[2] - 8 && (overWin || x >= winRect[0] + winRect[2] || x + w <= winRect[0]);
     const xs = [];
     if (side) { const x = S[2] - Math.max(w, side.width - 32) / 2 - w / 2 - 16; for (let y = top; y + h <= bot; y += 12) { const r = [x, y, w, h]; if (!taken.some((q) => overlap(r, q) > 0)) return r; } if (!strict) return [x, top, w, h]; }
+    // Studyhall: a window that fills the screen (a slide, a PDF): the emptiest spot on it, going by where its
+    // screenshot is busy (text, lines, pictures), instead of over its left edge.
+    if (overWin && busyRects.length && !side) {
+      let best = null, bestCost = Infinity;
+      for (let y = top; y + h <= bot; y += 16) for (let x = S[0] + 8; x + w <= S[2] - 8; x += 16) {
+        const r = [x, y, w, h];
+        if (taken.some((q) => overlap(r, q) > 0)) continue;
+        const cost = busyRects.reduce((a, q) => a + overlap(r, q), 0) / (w * h) + (x - S[0] + y - top) * 0.00002;
+        if (cost < bestCost) { bestCost = cost; best = r; }
+      }
+      if (best && bestCost < 0.3) return best;
+    }
     if (roomL || overWin) xs.push(S[0] + 16);
     for (const b of up.map(markBox).sort((a, q) => a[0] - q[0])) { const x = b[0] + b[2] + 8; if (fits(x)) xs.push(x); }
     if (roomR) xs.push(winRect[0] + winRect[2] + 20);
@@ -1985,6 +1997,7 @@
     if (e.deep) for (const b of e.beats ?? []) for (const m of b.marks) if (m.part) deepParts.add(m.part);
     if (e.win) winRect = locRect(e.win);
     if (e.busy?.length) busyRects = e.busy.map(locRect);
+    else if (!e.seg) busyRects = []; // (Studyhall: a new drawing doesn't go by an old screen)
     for (const ed of e.edits ?? []) { if (gen !== G.gen) return; if (ed.do !== 'clear') { await take(); G.held = true; } await edit(ed); }
     const needsPen = (e.beats ?? []).some((b) => b.marks.some((m) => !PEN_FREE.has(m.kind)));
     if (needsPen) { await take(); G.held = true; }

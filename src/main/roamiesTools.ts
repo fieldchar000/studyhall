@@ -280,6 +280,7 @@ export function roamies(): Promise<Any> {
       skipAllow: () => false,
       // Pictures of the lesson you have open (https://lesson.studyhall.app/…) come from Studyhall itself.
       photoFetch: lessonFetch,
+      shotBusy: async (file: string) => busyCells(nativeImage.createFromPath(file)),
       // Automated tests: the screenshot is of a test window (placed, for drawing, as if at the top left of the main
       // screen), never your real screen.
       ...(OFFSCREEN
@@ -503,4 +504,45 @@ export async function roamiesSdkTools(tool: Tool, skip: Set<string>, onSlow: (na
         }
       })
     )
+}
+
+/** Where a screenshot is busy (text, lines, pictures), as [x, y, w, h] in its pixels: small cells whose brightness
+ *  varies, merged into runs along each row. Cards are placed on the rest (ink.js), so they don't cover the slide. */
+function busyCells(img: Electron.NativeImage): number[][] {
+  const { width: W, height: H } = img.getSize()
+  if (!W || !H) return []
+  const px = img.toBitmap() // BGRA
+  const cell = Math.max(12, Math.round(W / 110))
+  const out: number[][] = []
+  for (let cy = 0; cy + cell <= H; cy += cell) {
+    let run = -1
+    for (let cx = 0; cx <= W; cx += cell) {
+      let busy = false
+      if (cx + cell <= W) {
+        let n = 0
+        let sum = 0
+        let sq = 0
+        let lo = 255
+        let hi = 0
+        for (let y = cy; y < cy + cell; y += 2)
+          for (let x = cx; x < cx + cell; x += 2) {
+            const i = (y * W + x) * 4
+            const l = 0.114 * px[i] + 0.587 * px[i + 1] + 0.299 * px[i + 2]
+            sum += l
+            sq += l * l
+            n++
+            if (l < lo) lo = l
+            if (l > hi) hi = l
+          }
+        const mean = sum / n
+        busy = Math.sqrt(Math.max(0, sq / n - mean * mean)) > 12 || hi - lo > 70
+      }
+      if (busy && run < 0) run = cx
+      if (!busy && run >= 0) {
+        out.push([run, cy, cx - run, cell])
+        run = -1
+      }
+    }
+  }
+  return out
 }

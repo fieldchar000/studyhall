@@ -1,4 +1,4 @@
-// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/tools.mjs). Studyhall changes: an optional photoFetch (Studyhall answers its lesson pictures), and an optional hostShot (the host takes the screenshot, as on Linux), used by automated test copies so they never capture your real screen.
+// Copied from Roamies 0.1.41 by Ken Kai, AGPL-3.0-only: https://github.com/KenKaiii/Roamies (tauri/sidecar/tools.mjs). Studyhall changes: an optional photoFetch (Studyhall answers its lesson pictures), an optional shotBusy (where a screenshot is busy, so cards go on its empty parts), and an optional hostShot (the host takes the screenshot, as on Linux), used by automated test copies so they never capture your real screen.
 // The agent's tools: screen capture, reading and working other apps (the "hands" helper), files, commands,
 // web pages and memory. Every file, command, URL and open goes through safety.mjs first.
 import { execFile, spawn } from 'node:child_process';
@@ -231,12 +231,22 @@ export function sideSearchFor(route) {
 // Every request and redirect hop of web_fetch goes through safety.mjs, by name and by the addresses it resolves to.
 export const guardFetch = async (url) => { const v = await checkFetch(url); return v.level === BLOCK ? `Blocked for safety: ${v.reason}` : null; };
 
-export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null }) {
+export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null, shotBusy = null }) {
   // Relative paths (and run_command) start in workdir: the home folder for the chat, its own folder for an agent.
   const at = (p) => { const s = String(p ?? ''); return /^~(?=$|\/|\\)/.test(s) || path.isAbsolute(s) || /^[a-z]:[\\/]/i.test(s) ? s : path.join(workdir, s); };
   const where = workdir === HOME ? "the user's home folder" : `its working folder (${workdir})`;
   let axNudged = 0;
   let lastShot = null; // how the latest screenshot's pixels map to screen points (see pointing.mjs)
+  // Studyhall: where the screenshot is busy (text, lines, pictures), as screen rectangles, so cards go on its empty
+  // parts: a slide or page that fills the screen leaves no room beside it.
+  async function noteBusy(file, area, iw, ih) {
+    if (!shotBusy || !lastShot || lastShot.unmapped || !area || !iw || !ih) return;
+    try {
+      const cells = await shotBusy(file);
+      const sx = area[2] / iw, sy = area[3] / ih;
+      lastShot.busy = cells.slice(0, 900).map(([x, y, w, h]) => [area[0] + x * sx, area[1] + y * sy, w * sx, h * sy]);
+    } catch { /* cards just go where they would have */ }
+  }
   let lastRead = null; // { win, controls } from the latest read_window, to catch ids that went stale
   // Bumped for every new request: what was seen before it may be another page, tab or app by now.
   let turn = 0;
@@ -329,6 +339,7 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
     const scale = pointScale();
     lastShot = !size || !bounds ? null : shotFits(area, ...size) ? { ...shotMap(area, ...size, scale), bounds, win: res.window?.id ?? null, turn } : { unmapped: true, turn };
     const what = res.window ? `the ${res.window.app} window${res.window.title ? ` "${res.window.title}"` : ''}` : 'the whole screen';
+    if (size) await noteBusy(file, area, ...size);
     const dims = lastShot?.unmapped ? ` (it doesn't line up with the window on screen, so don't point or click by its pixels; use visible words)` : size ? shotUnits(...size, scale) : '';
     return { content: [{ type: 'text', text: `Screenshot of ${what}${dims}.` }, await imageBlock(file, 'image/jpeg')] };
   }
@@ -345,6 +356,7 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
       if (!res?.ok) throw new Error(res?.error || 'Screen capture failed.');
       const [iw, ih] = res.pixels, b = res.bounds, scale = pointScale();
       lastShot = { ...shotMap(b, iw, ih, scale), bounds: b, win: null, turn };
+      await noteBusy(file, b, iw, ih);
       return { content: [{ type: 'text', text: `Screenshot of ${res.title ?? 'the window'}${shotUnits(iw, ih, scale, 'draw')}.` }, await imageBlock(file, 'image/jpeg')] };
     }
     const shot = viaHands ? await handsShot(file, t).catch((e) => { if (process.platform === 'win32' && t === 'screen') return null; throw e; }) : null;
@@ -372,6 +384,7 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
       const [pw, ph, iw, ih, sc] = r.stdout.trim().split(/\s+/).map(Number);
       const scale = pointScale();
       lastShot = pw && iw && sc ? { ...shotMap([0, 0, pw / sc, ph / sc], iw, ih, scale), bounds: [0, 0, pw / sc, ph / sc], win: null, turn } : null;
+      if (lastShot) await noteBusy(file, [0, 0, pw / sc, ph / sc], iw, ih);
       const data = (await fs.readFile(file)).toString('base64');
       fs.unlink(file).catch(() => {});
       return { content: [{ type: 'text', text: `Screenshot of the main display${iw ? shotUnits(iw, ih, scale, 'draw') : ''}.` }, { type: 'image', mediaType: 'image/jpeg', data }] };
@@ -630,7 +643,7 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
     // Where there's room for cards: the screen minus the front window; and what's on it, so names avoid covering words.
     const hasCards = beats.some((b) => b.marks.some((m) => CARDS.includes(m.kind)));
     const win = hasCards && HANDS ? (await hands('locate', 'front').catch(() => null))?.window?.bounds ?? null : null;
-    const busy = lastRead?.turn === turn ? lastRead.controls.filter((c) => !c.offscreen && c.bounds).slice(0, 300).map((c) => c.bounds) : [];
+    const busy = lastRead?.turn === turn ? lastRead.controls.filter((c) => !c.offscreen && c.bounds).slice(0, 300).map((c) => c.bounds) : lastShot?.turn === turn && lastShot.busy ? lastShot.busy : [];
     ink.active++;
     // Lookups are shared until a click or hover (then the screen may have changed, and words are retried a moment).
     let look = null;
