@@ -9,8 +9,8 @@ export type PenEvent = { ev: 'start'; x: number; y: number } | { ev: 'pt'; x: nu
 export type Rect = { x: number; y: number; width: number; height: number }
 
 const CLOSE_PX = 18 // back within this of an earlier point: the loop is closed
-const MIN_LOOP_PX = 110 // a loop must be at least this long (a wobble isn't a circle)
-const MIN_SIDE = 14 // and at least this big each way
+const MIN_LOOP_PX = 160 // a loop must be at least this long (a wobble, or the mouse settling as you start, isn't a circle)
+const MIN_SIDE = 26 // and at least this big each way
 const REST_MS = 700 // a line that stops this long without closing is dropped (it fades)
 const MOVE_PX = 2 // smaller moves are jitter
 

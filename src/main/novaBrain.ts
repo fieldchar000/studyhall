@@ -187,8 +187,16 @@ export function noteCircle(rect: Electron.Rectangle): void {
     const pad = 14
     const area = { x: rect.x - pad, y: rect.y - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 }
     const [image, seen] = await Promise.all([captureArea(area), see({ screenshot: false }).catch(() => null)])
-    const inside = (c: SeenControl): boolean => c.rect.x < area.x + area.width && c.rect.x + c.rect.width > area.x && c.rect.y < area.y + area.height && c.rect.y + c.rect.height > area.y
-    const text = [...new Set((seen?.controls ?? []).filter(inside).map((c) => c.name.trim()).filter(Boolean))].join(' · ').slice(0, 3000)
+    // The words Windows reports there come from the app's own controls (its buttons, tabs and bars), not from what's drawn
+    // on a slide or in a picture. So for a big circle (a slide, a diagram, a page) none are sent: the picture says what's
+    // there. For a small one (a word, a button) only what's really inside it (its centre within the circle) goes along.
+    const big = area.width * area.height > 260 * 160
+    const inside = (c: SeenControl): boolean => {
+      const cx = c.rect.x + c.rect.width / 2
+      const cy = c.rect.y + c.rect.height / 2
+      return cx >= area.x && cx <= area.x + area.width && cy >= area.y && cy <= area.y + area.height && c.rect.width <= area.width * 1.2
+    }
+    const text = big ? '' : [...new Set((seen?.controls ?? []).filter(inside).map((c) => c.name.trim()).filter(Boolean))].join(' · ').slice(0, 1500)
     return { rect, image, text, at: Date.now() }
   })()
 }
@@ -198,7 +206,10 @@ async function screenContext(): Promise<{ text: string; image: string | null }> 
     const c = await circled.catch(() => null)
     circled = null
     if (c && Date.now() - c.at < 90_000)
-      return { text: `They circled part of their screen while asking (the picture is attached; it's ringed on screen now)${c.text ? `. Text in it: «${c.text}»` : ''}. "This" / "that" means what they circled.`, image: c.image }
+      return {
+        text: `They circled part of their screen while asking (the picture is attached; it's ringed on screen now)${c.text ? `. Words the app reports there: «${c.text}»` : ''}. "This" / "that" means what they circled. Go by the picture: explain the content they circled (their lecture slide, notes, diagram, question), never the app around it (its menus, ribbon, toolbars, warning bars or buttons), unless they circled only a button or ask about the app itself.`,
+        image: c.image
+      }
   }
   const sel = await selectionNow().catch(() => null)
   if (sel) {
