@@ -274,6 +274,12 @@ const api: Api = {
     open: () => ipcRenderer.invoke('polite:open'),
     sync: () => ipcRenderer.invoke('polite:sync'),
     signOut: () => ipcRenderer.invoke('polite:signOut'),
+    page: () => ipcRenderer.invoke('polite:page'),
+    show: (rect) => ipcRenderer.invoke('polite:show', rect),
+    hide: () => ipcRenderer.invoke('polite:hide'),
+    go: (url) => ipcRenderer.invoke('polite:go', url),
+    back: () => ipcRenderer.invoke('polite:back'),
+    action: (a) => ipcRenderer.invoke('polite:action', a),
     onChanged: (cb) => {
       const l = (_e: unknown, s: PoliteStatus): void => cb(s)
       ipcRenderer.on('polite:changed', l)

@@ -6,6 +6,7 @@ import { timeAgo, useCloud } from '@/lib/cloud'
 import type { Icon as PhosphorIcon, IconWeight } from '@phosphor-icons/react'
 import {
   Archive,
+  GraduationCap,
   ArrowClockwise,
   ArrowCounterClockwise,
   ArrowSquareOut,
@@ -132,6 +133,7 @@ const ICONS: Record<string, PhosphorIcon> = {
   pen: PenNib,
   upload: UploadSimple,
   inbox: Tray,
+  school: GraduationCap,
   game: GameController,
   globe: Globe,
   flame: Flame,

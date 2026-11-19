@@ -49,6 +49,7 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   return aiChat(messages, schema, maxTokens)
 }
 import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
+import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, showPoliteView, type PoliteRect } from './politePage'
 import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
 import { setTutor, listLessons, openLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
 import { voiceAsk, voiceRecord } from './voice'
@@ -480,6 +481,16 @@ if (!app.requestSingleInstanceLock()) {
         handle('polite:open', () => openPoliteMall())
         handle('polite:sync', () => syncSchool())
         handle('polite:signOut', () => signOutSchool())
+        // The PoliteMall page (politePage.ts): Brightspace shown inside it, and what Studyhall read beside it.
+        handle('polite:page', () => politePageData())
+        handle('polite:show', (e, rect: PoliteRect) => {
+          const w = BrowserWindow.fromWebContents(e.sender)
+          if (w && rect && [rect.x, rect.y, rect.width, rect.height].every((v) => Number.isFinite(Number(v)))) showPoliteView(w, rect)
+        })
+        handle('polite:hide', () => hidePoliteView())
+        handle('polite:go', (_e, url: string) => politeGo(String(url)))
+        handle('polite:back', () => politeBack())
+        handle('polite:action', (_e, a: { kind: string; courseId: number; topicId?: number; name?: string; due?: string }) => politeAction(a))
         politeHooks.changed = () => mainWindow?.webContents.send('polite:changed', schoolStatus())
         handle('nova:openLesson', (_e, path: string) => openLesson(String(path)))
         handle('nova:lessonsFolder', () => showLessonsFolder())

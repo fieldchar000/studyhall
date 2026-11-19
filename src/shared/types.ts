@@ -1005,6 +1005,8 @@ export interface Prefs {
   novaPages?: boolean // Nova may turn the pages of the slide deck or PDF you have open, and scroll a page to what it's showing you (default on)
   novaAgents?: 'auto' | 'haiku' | 'sonnet' // which model background agents use (auto: Sonnet to make things, Haiku otherwise)
   novaDuck?: boolean // other apps' sound goes quieter while you hold the talk key (default on)
+  politeTasks?: boolean // PoliteMall quizzes and assignments become Studyhall tasks (default on)
+  politeNotify?: boolean // a notification for new PoliteMall announcements, files and grades (default on)
   novaHideIdle?: boolean // the globe disappears when it's not needed and comes back when you talk to it (default off)
   novaVoice?: string // Kokoro voice (default af_heart)
   novaSpeed?: number // how fast Nova talks, 0.8–1.3 (default 1.05)
@@ -1233,6 +1235,15 @@ export interface Api {
     sync(): Promise<PoliteStatus>
     signOut(): Promise<void>
     onChanged(cb: (s: PoliteStatus) => void): () => void
+    /** The PoliteMall page: what Studyhall read (due, new, courses, grades). */
+    page(): Promise<unknown>
+    /** Brightspace inside the page, over this area (CSS px of the window). */
+    show(rect: { x: number; y: number; width: number; height: number }): Promise<void>
+    hide(): Promise<void>
+    go(url: string): Promise<void>
+    back(): Promise<void>
+    /** A button on the page (open, teach, summary, flashcards, save, study, course): a message to show, or ''. */
+    action(a: { kind: string; courseId: number; topicId?: number; name?: string; due?: string }): Promise<string>
   }
   /** The main window reads PDFs for Nova's lesson reader. */
   lesson: {

@@ -22,6 +22,7 @@ import { MindmapEditorPage, MindmapsPage } from './pages/Mindmaps'
 import { DeckPage, FlashcardsPage } from './pages/Flashcards'
 import { GradesPage } from './pages/Grades'
 import { InboxPage } from './pages/Inbox'
+import { PoliteMallPage } from './pages/PoliteMall'
 import { VideoPage, VideosPage } from './pages/Videos'
 import { StatsPage } from './pages/Stats'
 import { GamePage } from './pages/Game'
@@ -93,6 +94,7 @@ export function App(): React.JSX.Element {
         {route.name === 'flashcards' && <FlashcardsPage />}
         {route.name === 'deck' && <DeckPage key={route.id} id={route.id} review={route.review} />}
         {route.name === 'grades' && <GradesPage />}
+        {route.name === 'politemall' && <PoliteMallPage />}
         {route.name === 'inbox' && <InboxPage />}
         {route.name === 'videos' && <VideosPage />}
         {route.name === 'video' && <VideoPage key={route.id} id={route.id} />}

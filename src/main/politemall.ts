@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import type { PoliteStatus } from '@shared/types'
 
 export const LMS = 'https://nplms.polite.edu.sg'
-const PART = 'persist:politemall'
+export const PART = 'persist:politemall'
 const OFFSCREEN = process.env.STUDYHALL_OFFSCREEN === '1'
 const HOUR = 3_600_000
 
@@ -54,7 +54,11 @@ export type SchoolCourse = {
 export type SchoolData = { at: string; courses: SchoolCourse[] }
 export type SchoolStatus = PoliteStatus
 
-export const politeHooks = { changed: (): void => {} }
+export const politeHooks = {
+  changed: (): void => {},
+  /** After each successful read: the data before and after (politePage.ts works out what's new). */
+  synced: (_before: SchoolData | null, _after: SchoolData): void => {}
+}
 
 const file = (): string => join(app.getPath('userData'), 'politemall.json')
 let data: SchoolData | null = null
@@ -88,7 +92,7 @@ function setStatus(s: Partial<SchoolStatus>): void {
  *  app), but get no camera, microphone, location or notifications, and no webviews. */
 export const isPoliteContents = (s: Session): boolean => s === session.fromPartition(PART)
 let locked = false
-function lockDown(): void {
+export function lockDown(): void {
   if (locked) return
   locked = true
   const s = session.fromPartition(PART)
@@ -452,8 +456,14 @@ async function doSync(): Promise<SchoolStatus> {
           .slice(0, 30)
       courses.push(c)
     }
+    const before = data
     data = { at: new Date().toISOString(), courses }
     writeFileSync(file(), JSON.stringify(data))
+    try {
+      politeHooks.synced(before, data)
+    } catch (e) {
+      console.warn('PoliteMall: after reading', e)
+    }
     setStatus({
       state: 'signed-in',
       at: data.at,
@@ -469,12 +479,12 @@ async function doSync(): Promise<SchoolStatus> {
   return status
 }
 
-/** Checks PoliteMall every few hours while Studyhall is open (only once you've signed in). */
+/** Checks PoliteMall every 8 hours while Studyhall is open (only once you've signed in). */
 export function startSchool(): void {
   if (OFFSCREEN) return
   const tick = (): void => {
     const d = schoolData()
-    if (d && Date.now() - Date.parse(d.at) > 3 * HOUR) void syncSchool()
+    if (d && Date.now() - Date.parse(d.at) > 8 * HOUR) void syncSchool()
   }
   setTimeout(tick, 60_000)
   setInterval(tick, 30 * 60_000)
@@ -509,7 +519,7 @@ export function findCourse(q: string): SchoolCourse | null {
     null
   )
 }
-function flat(ms: SchoolModule[], path: string[] = []): { m: SchoolModule; path: string[] }[] {
+export function flat(ms: SchoolModule[], path: string[] = []): { m: SchoolModule; path: string[] }[] {
   return ms.flatMap((m) => [{ m, path: [...path, m.title] }, ...flat(m.modules, [...path, m.title])])
 }
 /** Modules matching "week 5", "5", "W5", or words of a title. */
@@ -619,6 +629,15 @@ export async function schoolFile(course: string, topic: number, open = false): P
     openPoliteMall(page)
     return `Opened "${t.title}" in the PoliteMall window.`
   }
+  const got = await downloadTopic(c, t)
+  if ('error' in got) return got.error
+  return /^(pdf|pptx?|ppsx?)$/i.test(got.ext)
+    ? `Downloaded "${t.title}" to ${got.path}. Teach from it with read_lesson (source: that path).`
+    : `Downloaded "${t.title}" (${got.ext}) to ${got.path}; it isn't a deck or PDF, so read_lesson can't read it. Offer to open it in PoliteMall instead.`
+}
+
+/** A topic's file, downloaded to a temp folder: where it is and what kind, or why it couldn't be. */
+export async function downloadTopic(c: SchoolCourse, t: SchoolTopic): Promise<{ path: string; ext: string } | { error: string }> {
   const vers = await get('/d2l/api/versions/')
   const vl = (vers.ok ? (vers.json as { ProductCode: string; LatestVersion: string }[]) : []) ?? []
   const le = vl.find((x) => x.ProductCode === 'le')?.LatestVersion ?? '1.60'
@@ -626,7 +645,7 @@ export async function schoolFile(course: string, topic: number, open = false): P
   let r = await get(`/d2l/api/le/${le}/${c.id}/content/topics/${t.id}/file`, true)
   if (!r.ok && (r.status === 401 || r.status === 403) && (await resume(lpOf(vers)))) r = await get(`/d2l/api/le/${le}/${c.id}/content/topics/${t.id}/file`, true)
   if (!r.ok || !r.b64)
-    return r.status === 401 || r.status === 403 ? 'Their PoliteMall sign-in has run out: they can sign in again in Settings → PoliteMall.' : `Couldn't download it (Brightspace said ${r.status}).`
+    return { error: r.status === 401 || r.status === 403 ? 'Their PoliteMall sign-in has run out: they can sign in again in Settings → PoliteMall.' : `Couldn't download it (Brightspace said ${r.status}).` }
   const ext = /\.(\w{2,5})(?:\?|$)/.exec(t.url ?? '')?.[1] ?? (/pdf/i.test(r.type ?? '') ? 'pdf' : /presentation/i.test(r.type ?? '') ? 'pptx' : 'bin')
   const dir = join(tmpdir(), 'Studyhall PoliteMall', (c.code || String(c.id)).replace(/[\\/:*?"<>|]+/g, ' ').trim())
   mkdirSync(dir, { recursive: true })
@@ -638,9 +657,7 @@ export async function schoolFile(course: string, topic: number, open = false): P
   }${new RegExp(`\\.${ext}$`, 'i').test(t.title) ? '' : `.${ext}`}`
   const path = join(dir, name)
   writeFileSync(path, Buffer.from(r.b64, 'base64'))
-  return /^(pdf|pptx?|ppsx?)$/i.test(ext)
-    ? `Downloaded "${t.title}" to ${path}. Teach from it with read_lesson (source: that path).`
-    : `Downloaded "${t.title}" (${ext}) to ${path}; it isn't a deck or PDF, so read_lesson can't read it. Offer to open it in PoliteMall instead.`
+  return { path, ext }
 }
 
 /** For the morning brief: what's due soon from PoliteMall, and announcements from the last day. */
@@ -670,6 +687,12 @@ if (OFFSCREEN)
         courses: d.courses.length,
         error: null
       }
+    },
+    // (as if a check had just read `after`, with `before` the time before: what's new, tasks)
+    synced: (before: SchoolData | null, after: SchoolData) => {
+      data = after
+      politeHooks.synced(before, after)
+      politeHooks.changed()
     },
     text: schoolText,
     brief: schoolBrief

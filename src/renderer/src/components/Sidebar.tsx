@@ -37,6 +37,7 @@ const groups: { title?: string; items: NavItem[] }[] = [
       { label: 'Brain', icon: 'brain', route: { name: 'brain' }, match: ['brain'], modes: ALL },
       { label: 'Briefing', icon: 'news', route: { name: 'briefing' }, match: ['briefing'], modes: ['dev'] },
       { label: 'Home', icon: 'home', route: { name: 'home' }, match: ['home'], modes: ['study', 'work', 'life'] },
+      { label: 'PoliteMall', icon: 'school', route: { name: 'politemall' }, match: ['politemall'], modes: ['study'] },
       { label: 'Inbox', icon: 'inbox', route: { name: 'inbox' }, match: ['inbox'], modes: ALL },
       { label: 'Tasks', icon: 'tasks', route: { name: 'tasks' }, match: ['tasks'], modes: ALL },
       { label: 'Focus', icon: 'focus', route: { name: 'focus' }, match: ['focus'], modes: ALL },
