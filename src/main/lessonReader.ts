@@ -139,6 +139,36 @@ Start-Sleep -Milliseconds 350
 foreach ($k in ($env:SH_KEYS -split [char]1)) { if ($k -like 'sleep:*') { Start-Sleep -Milliseconds ([int]$k.Substring(6)) } else { $sh.SendKeys($k) } }
 'ok'
 `
+// A page of a PDF in a browser (Edge, Opera, Chrome): typed into the PDF viewer's own page-number box, found through
+// UI Automation, never the address bar (typing an address there turned it into "C:/Users…" and lost the page). Enter
+// is pressed only once that box really has the keyboard.
+const PDF_GOTO = `
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+$A = [System.Windows.Automation.AutomationElement]
+$T = [System.Windows.Automation.TreeScope]
+$tops = $A::RootElement.FindAll($T::Children, [System.Windows.Automation.Condition]::TrueCondition)
+$win = $null
+foreach ($w in $tops) { if ([string]$w.Current.Name -eq $env:SH_TITLE) { $win = $w; break } }
+if (-not $win -and $env:SH_NAME) { foreach ($w in $tops) { if (([string]$w.Current.Name).Contains($env:SH_NAME)) { $win = $w; break } } }
+if (-not $win) { 'nowin'; exit }
+$edit = New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)
+$box = $null
+# (a browser fills in its page's parts for UI Automation when first asked: a second look if the first finds nothing)
+for ($try = 0; $try -lt 2 -and -not $box; $try++) {
+  if ($try) { Start-Sleep -Milliseconds 700 }
+  foreach ($e in $win.FindAll($T::Descendants, $edit)) { $n = [string]$e.Current.Name; if ($n -match '(?i)\\bpage' -and $n -notmatch '(?i)address|search') { $box = $e; break } }
+}
+if (-not $box) { 'nobox'; exit }
+$sh = New-Object -ComObject WScript.Shell
+[void]$sh.AppActivate([string]$win.Current.Name)
+Start-Sleep -Milliseconds 300
+try { $box.SetFocus() } catch {}
+Start-Sleep -Milliseconds 150
+try { $box.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($env:SH_N) } catch { 'noset'; exit }
+Start-Sleep -Milliseconds 100
+$f = $A::FocusedElement
+if ($f -and [System.Windows.Automation.Automation]::Compare($f, $box)) { $sh.SendKeys('{ENTER}'); 'ok' } else { 'nofocus' }
+`
 /** Text typed with SendKeys: its special characters are written as {c}. */
 const literal = (s: string): string => s.replace(/[+^%~(){}[\]]/g, (c) => `{${c}}`)
 
@@ -486,11 +516,11 @@ export async function goToPage(o: { page?: number; find?: string; lessonId?: str
   if (l.kind === 'slides') {
     const r = await ps(PPT_GOTO, { SH_TITLE: l.window, SH_PATH: l.source, SH_N: String(n) })
     if (!r.endsWith('ok')) return 'PowerPoint wouldn’t go to that slide.'
-  } else if (l.url) {
-    const base = l.url.replace(/#.*$/, '')
-    const r = await ps(KEYS, { SH_TITLE: l.window, SH_KEYS: ['^l', 'sleep:200', literal(`${base}#page=${n}`), '{ENTER}'].join('\u0001') })
-    if (!r.endsWith('ok')) return 'Couldn’t bring the PDF’s window to the front.'
-    l.url = `${base}#page=${n}`
+  } else if (l.window) {
+    const r = await ps(PDF_GOTO, { SH_TITLE: l.window, SH_NAME: l.title.replace(/\.pdf$/i, '').slice(0, 80), SH_N: String(n) }, 20_000)
+    const ask = `Ask them to turn to page ${n} themselves (one short line), then take_screenshot once they have.`
+    if (r.endsWith('nofocus')) return `Page ${n} was typed into the PDF's page box, but it may not have gone there. Take a screenshot to check; if it's not on page ${n}, ${ask.charAt(0).toLowerCase()}${ask.slice(1)}`
+    if (!r.endsWith('ok')) return `Couldn't turn the page in their PDF window (${r.endsWith('nowin') ? 'the window wasn’t found' : 'its page box wasn’t found'}). ${ask}`
   } else return 'That PDF isn’t open in a window I can turn; show its page on a card instead.'
   l.current = n
   await new Promise((res) => setTimeout(res, 900)) // (the page draws)

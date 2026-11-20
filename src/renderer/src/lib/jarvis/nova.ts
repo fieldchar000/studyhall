@@ -345,6 +345,8 @@ async function boot(opts: {
       case 'hat':
         hat = !!e.on
         R.sfx?.play(hat ? 'expand' : 'poof')
+        // (the lesson's "Next ›" button, for moving on without saying so)
+        ;(R.ink as { tutorBar?: (on: boolean) => void } | undefined)?.tutorBar?.(hat)
         R.wake?.()
         break
       case 'done':

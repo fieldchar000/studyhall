@@ -99,6 +99,7 @@ export default function VoicePanel(): React.JSX.Element {
   const phaseRef = useRef<Phase>('idle')
   const woke = useRef(false) // this recording started from "Hey Bauer" (not a button)
   const followUp = useRef(false) // listening for an answer straight after Nova spoke
+  const actSeq = useRef(0) // each request's number: only the newest one finishes up (speaks, listens again)
   // Conversation mode (Ctrl+Alt+C): listen again after every reply; quiet spells offer a hint, a long quiet ends it.
   const conv = useRef(false)
   const quietSpells = useRef(0)
@@ -131,8 +132,11 @@ export default function VoicePanel(): React.JSX.Element {
         return
       }
       setPhase('thinking')
+      const mine = ++actSeq.current
       try {
         const r = await handleSpeech(t, 'voice', profile.mode)
+        // A newer request came in meanwhile (tutor mode's Next button): this one is over, quietly (no mic opening).
+        if (mine !== actSeq.current) return
         if (r.ignored) {
           youSaid('', true)
           setPhase('idle')
@@ -167,6 +171,7 @@ export default function VoicePanel(): React.JSX.Element {
           }
         }
       } catch (e) {
+        if (mine !== actSeq.current) return
         setMessage(e instanceof Error ? e.message : String(e))
         setPhase('error')
       }

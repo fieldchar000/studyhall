@@ -35,7 +35,7 @@ import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, t
 import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { claudeChat, draftWithConnectors } from './claude'
-import { voiceConfirm, voiceSay } from './voice'
+import { voiceConfirm, voiceHush, voiceSay } from './voice'
 import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot, pageTurnedByNova, boardOnScreen, slideHasRoom } from './roamiesTools'
 import { memoryOnEnd, noteExchange } from './novaMemory'
 import { get, getProfileId } from './db'
@@ -369,7 +369,7 @@ function startJob(brief: string, materials: string, title: string, wc: WebConten
 
 const ACTION_TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page'] as const
 
-type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean; visual?: string | null; drew?: string[]; nudged?: boolean; circled?: boolean; stopNudged?: boolean; lookAsked?: boolean }
+type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean; visual?: string | null; drew?: string[]; nudged?: boolean; circled?: boolean; stopNudged?: boolean; lookAsked?: boolean; skipped?: boolean }
 // Sites that came up in this hour's searches, pages read and what they said: Nova opens only those (or everyday sites),
 // so it can't open a guessed address (it opened krillion.com for "the Krillion game page").
 const seenHosts = new Map<string, number>()
@@ -713,6 +713,17 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   turnHooks.ask = (said) => {
     if (!wc.isDestroyed()) wc.send('nova:ask', said)
   }
+  // Tutor mode's "Next ›" button: Nova stops talking, the rest of this stop is skipped quietly (its drawing already
+  // stopped on screen), and the next stop is asked for (it starts as soon as this one has wound down).
+  let nextAt = 0
+  turnHooks.next = () => {
+    if (!tutorOn() || Date.now() - nextAt < 1500) return // (a double click is one Next)
+    nextAt = Date.now()
+    const tr = turnRef.current
+    if (tr) Object.assign(tr, { quiet: true, skipped: true, stopNudged: true })
+    voiceHush()
+    turnHooks.ask('(Tutor mode: they pressed the Next button. Go straight on to the next stop of the lesson: no recap of the last one.)')
+  }
   // A drawing's "hand it off" button: a background agent, as Roamies does.
   turnHooks.handoff = (task) => turnHooks.ask(`Send an agent to: ${task}`)
   turnHooks.ready = () => !wc.isDestroyed()
@@ -815,6 +826,8 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   for (const t of all) {
     const run = t.handler
     t.handler = (async (args: Record<string, unknown>, extra: unknown) => {
+      // They pressed Next: what's left of this stop doesn't happen (the next stop is already asked for).
+      if (turnRef.current?.skipped) return text('They pressed Next, so this stop is over: stop here and say nothing more. The next stop comes in the next request.')
       if (t.name === 'draw' && turnRef.current?.howTo) needsClick(args)
       // Tutor mode with the whole document read: looking at the screen only adds slow, costly steps (split screen and
       // a PDF that couldn't be got are when it's needed).
@@ -1524,7 +1537,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   // seconds to start while it writes the drawing), and Nova carries on from it.
   // Tutor mode, the lesson not read yet and they've asked for it: a line straight away while the slides are read
   // (Sonnet took up to 17 s to say anything while it read them).
-  const opening = screen.opening || (tutorOn() && !tutorRead && /\b(lesson|teach|slides?|deck|pdf|summary|full|start|begin|go)\b/i.test(said) ? pick(['Okay, reading through your slides now.', 'Sure, let me read through your slides first.', 'Okay, give me a second to read your slides.']) : '')
+  const opening = screen.opening || (tutorOn() && !tutorRead && !said.includes('pressed the Next button') && /\b(lesson|teach|slides?|deck|pdf|summary|full|start|begin|go)\b/i.test(said) ? pick(['Okay, reading through your slides now.', 'Sure, let me read through your slides first.', 'Okay, give me a second to read your slides.']) : '')
   if (opening && !screen.opening) screen.opening = opening
   if (screen.opening && !wc.isDestroyed()) {
     wc.send('nova:speak', { text: `${screen.opening} ` })

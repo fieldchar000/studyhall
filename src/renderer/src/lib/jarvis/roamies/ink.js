@@ -2561,10 +2561,10 @@
   const setHover = (h) => {
     const m = h?.m ?? null;
     if (hovered && hovered !== m) { hovered.hover = false; hovered.hoverClose = false; hovered.hoverFull = false; hovered.hoverSave = false; hovered.hoverPin = false; hovered.hoverGrip = false; hovered.hoverId = null; hovered.setHover?.(false); }
-    if (m) { m.hover = h.kind === 'button' || h.kind === 'link' || h.kind === 'clearall' || h.kind === 'next'; m.hoverClose = h.kind === 'close'; m.hoverFull = h.kind === 'full'; m.hoverSave = h.kind === 'save'; m.hoverPin = h.kind === 'pin'; m.hoverGrip = h.kind === 'resize'; m.hoverId = h.kind === 'tick' || h.kind === 'pick' ? h.id : null; m.setHover?.(h.kind === 'button'); }
+    if (m) { m.hover = h.kind === 'button' || h.kind === 'link' || h.kind === 'clearall' || h.kind === 'next' || h.kind === 'tutornext'; m.hoverClose = h.kind === 'close'; m.hoverFull = h.kind === 'full'; m.hoverSave = h.kind === 'save'; m.hoverPin = h.kind === 'pin'; m.hoverGrip = h.kind === 'resize'; m.hoverId = h.kind === 'tick' || h.kind === 'pick' ? h.id : null; m.setHover?.(h.kind === 'button'); }
     if (hovered !== m || m) touch(0.2);
     hovered = m;
-    document.documentElement.style.cursor = h && (h.kind === 'button' || h.kind === 'close' || h.kind === 'full' || h.kind === 'save' || h.kind === 'pin' || h.kind === 'link' || h.kind === 'clearall' || h.kind === 'next' || h.kind === 'tick' || h.kind === 'pick') ? 'pointer' : h?.kind === 'drag' ? 'grab' : h?.kind === 'resize' ? 'nwse-resize' : 'default';
+    document.documentElement.style.cursor = h && (h.kind === 'button' || h.kind === 'close' || h.kind === 'full' || h.kind === 'save' || h.kind === 'pin' || h.kind === 'link' || h.kind === 'clearall' || h.kind === 'next' || h.kind === 'tutornext' || h.kind === 'tick' || h.kind === 'pick') ? 'pointer' : h?.kind === 'drag' ? 'grab' : h?.kind === 'resize' ? 'nwse-resize' : 'default';
   };
   const ours = (e) => !!hitAt(e.clientX, e.clientY) || !!drag || !!sizing;
   addEventListener('pointerdown', (e) => {
@@ -2579,6 +2579,7 @@
     else if (h.kind === 'pick') { h.m.pick?.(h.id); touch(1); }
     else if (h.kind === 'clearall') clearEverything();
     else if (h.kind === 'next') { sfx('pip'); G.wait?.next?.(); }
+    else if (h.kind === 'tutornext') { h.m.down = now(); sfx('pip'); if (G.playing || G.q.length) stop(); touch(0.3); R.ink.send?.({ type: 'tutor_next' }); }
     else if (h.kind === 'full') toggleFull(h.m);
     else if (h.kind === 'save') saveCard(h.m, h.title);
     else if (h.kind === 'resize') { sizing = { m: h.m }; sfx('grab'); touch(); }
@@ -2649,6 +2650,24 @@
       const up = marks.find((q) => q.alive && q.card && q.kind === 'board' && q.part === p.part);
       if (up?.setPic) up.setPic(p.page, p.src);
       else boardPics.set(p.part, [...(boardPics.get(p.part) ?? []), p]); // (still opening: it takes them when it's up)
+    },
+    // Studyhall: tutor mode's "Next ›" button, bottom right (clear of the captions and of a window's status bar), for
+    // the whole lesson. A click stops what Nova is saying and drawing, and the lesson goes on to its next stop.
+    tutorBar(on) {
+      for (const m of marks) if (m.kind === 'tutornext' && m.alive) { m.alive = false; touch(); }
+      if (!on) return;
+      const w = 104, h = 36, font = `600 14px ${MONO}`;
+      const r = () => { const S = scr(); return [Math.round(S[2] - w - 24), Math.round(S[3] - h - 40), w, h]; };
+      add({ z: 8, kind: 'tutornext', local: true, pinned: true, box: () => grow(r(), 10), hover: false, down: 0,
+        draw(b, l, t) {
+          const [x, y] = r(), d = now() - this.down < 0.15 ? 2 : 0;
+          b.save(); b.globalAlpha *= clamp((t - this.born) / 0.3, 0, 1);
+          chrome(b, x, y + d, w, h, { fill: this.hover ? 'rgba(20,48,110,0.9)' : 'rgba(6,16,40,0.82)', edge: this.hover ? HOT : ACC });
+          b.font = font; b.textBaseline = 'middle'; b.textAlign = 'center'; b.fillStyle = this.hover ? HOT : TEXT;
+          b.fillText('Next  ›', x + w / 2, y + h / 2 + 1 + d);
+          b.restore();
+        },
+        hits() { return [{ rect: r(), kind: 'tutornext' }]; } });
     },
     // Studyhall: where what's marked on the screen is now (for noticing the page change under it), in layer pixels.
     screenMarks(id) {

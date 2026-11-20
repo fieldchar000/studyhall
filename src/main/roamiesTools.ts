@@ -52,7 +52,9 @@ export const turnHooks = {
   /** The steps checklist (plan_steps). */
   plan: (_args: Any): void => {},
   /** Can Nova take a request now (its conversation is set up)? */
-  ready: (): boolean => false
+  ready: (): boolean => false,
+  /** Tutor mode's "Next ›" button: this stop ends here and the lesson goes on. */
+  next: (): void => {}
 }
 
 // Notes for the next request (a quiz answered on a drawn card, the drawing cleared), told to Nova once.
@@ -204,6 +206,7 @@ inkHooks.event = (msg) => {
     board = null
     notes.push('The study board had been closed, so those rings weren\'t drawn. Show the board again with show_board (all of it) if it still helps.')
   }
+  else if (t === 'tutor_next') turnHooks.next()
   else if (t === 'ink_pinned') rt.ink.pinned(msg.part, !!msg.on)
   else if (t === 'ink_cleared') {
     rt.ink.cleared()
