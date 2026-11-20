@@ -36,7 +36,7 @@ import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { claudeChat, draftWithConnectors } from './claude'
 import { voiceConfirm, voiceSay } from './voice'
-import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot, pageTurnedByNova, boardOnScreen } from './roamiesTools'
+import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot, pageTurnedByNova, boardOnScreen, slideHasRoom } from './roamiesTools'
 import { memoryOnEnd, noteExchange } from './novaMemory'
 import { get, getProfileId } from './db'
 import { briefText, startFocus, stopFocus } from './buddy'
@@ -369,7 +369,7 @@ function startJob(brief: string, materials: string, title: string, wc: WebConten
 
 const ACTION_TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page'] as const
 
-type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean; visual?: string | null; drew?: string[]; nudged?: boolean; circled?: boolean; stopNudged?: boolean }
+type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean; visual?: string | null; drew?: string[]; nudged?: boolean; circled?: boolean; stopNudged?: boolean; lookAsked?: boolean }
 // Sites that came up in this hour's searches, pages read and what they said: Nova opens only those (or everyday sites),
 // so it can't open a guessed address (it opened krillion.com for "the Krillion game page").
 const seenHosts = new Map<string, number>()
@@ -818,7 +818,16 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       if (t.name === 'draw' && turnRef.current?.howTo) needsClick(args)
       // Tutor mode with the whole document read: looking at the screen only adds slow, costly steps (split screen and
       // a PDF that couldn't be got are when it's needed).
-      if (tutorOn() && tutorRead && getPrefs().novaTutorLayout !== 'split' && ['read_window', 'take_screenshot', 'go_to_page'].includes(t.name)) return text('Not needed: you already have the whole document, every page, from read_lesson. Teach from it and show slides on the study board.')
+      const layout = getPrefs().novaTutorLayout
+      if (tutorOn() && tutorRead && layout === 'stage' && ['read_window', 'take_screenshot', 'go_to_page'].includes(t.name)) return text('Not needed: you already have the whole document, every page, from read_lesson. Teach from it and show slides on the study board.')
+      if (tutorOn() && tutorRead && t.name === 'read_window') return text('Not needed: you already have the whole document, every page, from read_lesson. Teach from it.')
+      // On their own slides, a stop's drawing comes after a look at the slide (once per stop): without it the rings had
+      // nowhere to go and the cards landed on the slide's text.
+      const trNow = turnRef.current
+      if (tutorOn() && layout !== 'stage' && t.name === 'draw' && trNow && !trNow.tools.includes('take_screenshot') && !trNow.lookAsked) {
+        trNow.lookAsked = true
+        return text('Not drawn yet: take_screenshot of their slide first, so your rings land on its words and the cards go in its empty space. Then draw (the same drawing).')
+      }
       // A web address that didn't come up in any search or page: a guess. Search first instead.
       const urls = t.name === 'open' ? [String(args.target ?? '')] : t.name === 'studyhall_actions' ? ((args.actions as { type?: string; url?: string }[] | undefined) ?? []).filter((q) => q?.type === 'open_website').map((q) => String(q.url ?? '')) : []
       const guessed = urls.map(guessedSite).find(Boolean)
@@ -862,6 +871,13 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         said = out?.content?.find((c) => c.type === 'text')?.text ?? ''
         const missing = t.name === 'draw' && !failed ? stillMissing(tr, args) : ''
         if (missing && out?.content) out.content.push({ type: 'text', text: missing })
+        // Tutor mode on their own slides: a slide that fills the screen leaves no room for the cards, so their window
+        // moves to the left (once a lesson; back when it ends) and Nova looks again.
+        if (t.name === 'take_screenshot' && !failed && tutorOn() && (getPrefs().novaTutorLayout ?? 'live') === 'live' && slideHasRoom() === false) {
+          const w = lastLesson()?.window
+          const moved = w ? await splitForLesson(w) : ''
+          if (moved && out?.content) out.content.push({ type: 'text', text: "\n\nTheir slide filled the screen with no room for cards, so Studyhall has just moved their slides window to the left of the screen (it goes back after the lesson). Say so in one short line, then take_screenshot again before you draw." })
+        }
         return out as never
       } finally {
         timed()
@@ -945,10 +961,10 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
                       const input = hookInput as { stop_hook_active?: boolean; last_assistant_message?: string }
                       const tr = turnRef.current
                       if (!tr || input.stop_hook_active || tr.stopNudged || tr.tools.includes('draw')) return {}
-                      const taught = tr.tools.includes('show_board') || tr.tools.includes('read_lesson') || String(input.last_assistant_message ?? '').length > 300
+                      const taught = ['show_board', 'read_lesson', 'go_to_page', 'take_screenshot'].some((n) => tr.tools.includes(n)) || String(input.last_assistant_message ?? '').length > 300
                       if (!taught) return {}
                       tr.stopNudged = true
-                      return { decision: 'block' as const, reason: "Before this stop ends, show it: draw its 2 cards now (a short fact card, and a flow of the steps or a picture), with one short line while it draws. Don't repeat what you've said." }
+                      return { decision: 'block' as const, reason: "Before this stop ends, show it: draw its 2 cards now (a short fact card, and a flow of the steps or a picture), with rings on the key words of their slide, and one short line while it draws. Don't repeat what you've said." }
                     }
                   ]
                 }

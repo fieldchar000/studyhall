@@ -231,7 +231,7 @@ export function sideSearchFor(route) {
 // Every request and redirect hop of web_fetch goes through safety.mjs, by name and by the addresses it resolves to.
 export const guardFetch = async (url) => { const v = await checkFetch(url); return v.level === BLOCK ? `Blocked for safety: ${v.reason}` : null; };
 
-export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null, shotBusy = null, iconFetch = null, boardFetch = null, aroundShot = null }) {
+export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null, shotBusy = null, iconFetch = null, boardFetch = null, aroundShot = null, onBusy = null }) {
   // Relative paths (and run_command) start in workdir: the home folder for the chat, its own folder for an agent.
   const at = (p) => { const s = String(p ?? ''); return /^~(?=$|\/|\\)/.test(s) || path.isAbsolute(s) || /^[a-z]:[\\/]/i.test(s) ? s : path.join(workdir, s); };
   const where = workdir === HOME ? "the user's home folder" : `its working folder (${workdir})`;
@@ -245,6 +245,7 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
       const cells = await shotBusy(file);
       const sx = area[2] / iw, sy = area[3] / ih;
       lastShot.busy = cells.slice(0, 900).map(([x, y, w, h]) => [area[0] + x * sx, area[1] + y * sy, w * sx, h * sy]);
+      onBusy?.(lastShot.busy, area); // (Studyhall: is there room on the screen for cards?)
     } catch { /* cards just go where they would have */ }
   }
   let lastRead = null; // { win, controls } from the latest read_window, to catch ids that went stale

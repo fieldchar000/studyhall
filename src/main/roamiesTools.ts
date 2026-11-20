@@ -264,6 +264,9 @@ export function roamies(): Promise<Any> {
     const { createTools } = await import('./roamies/tools.mjs')
     rt = createTools({
       aroundShot: hiddenFromCaptures,
+      onBusy: (busy: number[][], area: number[]) => {
+        room = hasRoom(busy, area)
+      },
       allowActions: () => (getPrefs().novaHands ?? 'off') !== 'off',
       ui: (m: Any) => {
         if (m.kind === 'hands') {
@@ -764,6 +767,31 @@ const mouseLike = (s: string): void => {
 /** Nova turned the page itself (go_to_page): what it marked on the old one goes. */
 export function pageTurnedByNova(): void {
   rt?.ink?.pageTurned?.('Nova turned the page')
+}
+
+// ---------- Room for cards beside their slide (tutor mode on their own slides) ----------
+let room: boolean | null = null
+/** Whether the latest screenshot left room for a column of cards (about 380 by 300) beside what's on screen: outside the
+ *  window it was of, or an empty part of it. null before any screenshot. */
+export const slideHasRoom = (): boolean | null => room
+function hasRoom(busy: number[][], area: number[]): boolean {
+  const [ax, ay, aw, ah] = area
+  const d = screen.getDisplayMatching({ x: Math.round(ax), y: Math.round(ay), width: Math.max(1, Math.round(aw)), height: Math.max(1, Math.round(ah)) }).workArea
+  const W = 380
+  const H = 300
+  if (d.x + d.width - (ax + aw) >= W + 20 || ax - d.x >= W + 20) return true
+  const over = (r: number[], q: number[]): number => Math.max(0, Math.min(r[0] + r[2], q[0] + q[2]) - Math.max(r[0], q[0])) * Math.max(0, Math.min(r[1] + r[3], q[1] + q[3]) - Math.max(r[1], q[1]))
+  for (let y = d.y + 8; y + H <= d.y + d.height - 64; y += 40)
+    for (let x = d.x + 8; x + W <= d.x + d.width - 8; x += 40) {
+      const r = [x, y, W, H]
+      let hit = 0
+      for (const q of busy) {
+        hit += over(r, q)
+        if (hit > W * H * 0.06) break
+      }
+      if (hit <= W * H * 0.06) return true
+    }
+  return false
 }
 
 /** What they circled is this request's screenshot (see tools.mjs useShot): bounds on screen, the picture's size. */

@@ -1008,7 +1008,7 @@ export interface Prefs {
   novaChatDepth?: 'auto' | 'quick' | 'deeper' // chats: Nova goes deeper (Sonnet) by itself for a heart-to-heart (auto), or always quick / always deeper
   novaAutoNotes?: boolean // every explanation Nova draws for is added to the day's "Nova notes" page (default off)
   novaTutorBrain?: 'haiku' | 'sonnet' // tutor mode's model: Sonnet (the default, the best teacher) or Haiku (much cheaper)
-  novaTutorLayout?: 'stage' | 'split' // tutor mode: their slide big on the study board with the cards beside it (stage, the default), or their own slides window moved to the left of the screen (split)
+  novaTutorLayout?: 'live' | 'split' | 'stage' // live: Nova teaches on their own open slides (turning pages, ringing them; the default; when a slide fills the screen, their window moves aside by itself). split: their window moved to the left from the start. stage: the study board. // tutor mode: their slide big on the study board with the cards beside it (stage, the default), or their own slides window moved to the left of the screen (split)
   novaCaptions?: boolean // while it draws, what it says shows as captions at the bottom of the screen (off: in its speech bubble, the default)
   novaTeachSpeedSet?: boolean // they moved the teaching speed slider themselves
   novaTeachSpeed?: number // the voice's speed when explaining or teaching (default 0.85, a little slower)

@@ -186,15 +186,16 @@ export async function showLessonsFolder(): Promise<void> {
   await shell.openPath(lessonsDir())
 }
 
-/** Where a stop's rings go: on the board's copy of the slide (lesson stage) or on their own slides window (split). */
+/** Where a stop's rings go: on their own open slides (live, split) or on the board's copy (study board). */
 function stopLayoutShort(): string {
-  return getPrefs().novaTutorLayout === 'split' ? 'on their own slides window, with draw after go_to_page and take_screenshot' : 'on the study board: show_board with the slide, rings and underlines'
+  return getPrefs().novaTutorLayout === 'stage' ? 'on the study board: show_board with the slide, rings and underlines' : 'on their own open slides: go_to_page to the stop\'s slide, take_screenshot, then draw'
 }
-/** How a stop that points at its slide is laid out (Nova's page: Lesson layout). */
+/** How a stop is shown (Nova's page: Lesson layout). */
 function stopLayout(): string {
-  return getPrefs().novaTutorLayout === 'split'
-    ? 'Split screen: their slides window sits on the left of the screen (Studyhall moved it when you read the lesson). To point at something on a slide, go_to_page, take_screenshot, then ring, underline or label it with draw; cards go on the right.'
-    : 'The lesson stage: to point at something on a slide, show_board with that slide first (shown big) and rings, underlines (key terms) or highlights on it, plus a slide it builds on when that link matters (small, beside it). Never draw on their screen while a board is up (it covers it): ring more with show_board add: true.'
+  const layout = getPrefs().novaTutorLayout
+  if (layout !== 'stage')
+    return `Teach on their own open slides, like a tutor sitting beside them: for each stop, go_to_page to its slide (their deck or PDF turns), take_screenshot, then one draw call that rings, underlines or labels what you explain on their slide and puts the stop's 2 cards beside it (card_size small, so the slide stays readable). ${layout === 'split' ? 'Their slides window sits on the left of the screen (Studyhall moved it when you read the lesson); the cards go on the right.' : 'If a slide fills the screen with no room for cards, Studyhall moves their window to the left by itself and tells you: then take_screenshot again before you draw.'} To bring back an earlier slide ("remember slide 4…"): a small photo card of it (see_photo its picture address from read_lesson, then a photo card with a label on the part), or go_to_page there, point, and come back. No study board in a lesson unless they ask for one.`
+  return 'The lesson stage: to point at something on a slide, show_board with that slide first (shown big) and rings, underlines (key terms) or highlights on it, plus a slide it builds on when that link matters (small, beside it). Never draw on their screen while a board is up (it covers it): ring more with show_board add: true.'
 }
 /** Tutor mode's brief: short (it's sent with every message), and what makes a good lesson. Like a real tutor: find out
  *  what they know, go light where it's an overview or they know it, and spend the time where it's new. */
