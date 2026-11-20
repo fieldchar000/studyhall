@@ -152,7 +152,10 @@ export default function VoicePanel(): React.JSX.Element {
         if (prefs.bauerTalk !== false && !r.quiet) say(r.reply)
         // Follow-up: Nova has finished talking, so it listens a few seconds for your answer, no key or "Hey Nova".
         const mode = prefs.novaFollowUp ?? 'asked'
-        if (conv.current || (r.followUp && (mode === 'always' || (mode === 'asked' && (r.asking || /\?["'”’)]*\s*$/.test(r.reply.trim())))))) {
+        // (Not after Studyhall's own requests, "(System…)" or "(Tutor mode…)": only after something they said, or when
+        // Nova really is waiting on them (a quiz answer); it kept reopening the mic after each of those.)
+        const fromStudyhall = t.trim().startsWith('(') && !r.asking
+        if (!fromStudyhall && (conv.current || (r.followUp && (mode === 'always' || (mode === 'asked' && (r.asking || /\?["'”’)]*\s*$/.test(r.reply.trim()))))))) {
           followUp.current = true
           woke.current = false
           setHeard(false)

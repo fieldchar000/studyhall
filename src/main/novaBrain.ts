@@ -29,7 +29,7 @@ import { splitForLesson } from './windowSplit'
 import { conversationOn, setConversation } from './conversation'
 import { explainDrew, explainEnd, explainSaid, explainStart, saveExplanation } from './explanations'
 import { illustrationsText } from './illustrations'
-import { setTutor, tutorHooks, tutorOn, tutorPrompt, tutorTitle } from './tutor'
+import { setTutor, tutorOn, tutorPrompt, tutorTitle } from './tutor'
 import { stageDone, stageStart, stageTool, stageToolEnd, trailEnd, trailPlan, trailSettle } from './novaStage'
 import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, type Seen, type SeenControl } from './eyes'
 import { doOnScreen } from './hands'
@@ -727,8 +727,11 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       'The whole slide deck or PDF they have open (PowerPoint, or a PDF in Edge, Opera GX or Chrome), or a .pptx/.pdf file or PDF web address you name: every slide or page\'s text (and a deck\'s speaker notes), as text, plus which slide they\'re on. Slides or pages with a diagram or picture list its address: look at it with see_photo (that url), then show it on a photo card with labels, or go_to_page and ring it on their screen. Cheap: read it once per lesson and use what you read. For a normal web page use read_window instead.',
       { source: z.string().optional().describe('leave out for what they have open; else a .pptx/.pdf path or a PDF address'), from: z.number().int().min(1).optional().describe('first slide/page to include (for long ones)'), to: z.number().int().min(1).optional(), topic: z.string().max(80).optional().describe('for "teach me X": the slides about X come first, in order'), again: z.boolean().optional().describe('read it all again even if you already did in this conversation (it changed, or you lost track)') },
       async ({ source, from, to, topic, again }) => {
-        const l = await readLesson(source ? String(source) : 'front')
-        if (typeof l === 'string') return text(l)
+        const got = await readLesson(source ? String(source) : 'front')
+        // Not in the deck's window right now (they clicked somewhere else): the deck read this hour is the one.
+        const earlier = typeof got === 'string' && !source ? lastLesson() : null
+        if (typeof got === 'string' && !earlier) return text(got)
+        const l = typeof got === 'string' ? earlier! : got
         if (tutorOn()) tutorTitle(l.title)
         // Tutor mode, split screen: their slides window moves to the left for the lesson (back when it ends).
         const split = tutorOn() && getPrefs().novaTutorLayout === 'split' && l.window ? await splitForLesson(l.window) : ''
@@ -1595,9 +1598,6 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   stageDone()
   if (agentish) agentsHatch(false)
   const reply = spoken.replace(MARKER, '').replace(/\s+/g, ' ').trim()
-  // Tutor mode: a stop taught out loud with nothing shown (it happened): it's asked straight away to show it.
-  if (tutorOn() && !said.startsWith('(System') && reply.length > 220 && !turn.tools.some((n) => n === 'draw' || n === 'show_board'))
-    setTimeout(() => tutorHooks.ask("(System, not them: you taught that stop without showing anything. Show it now: ring its key words and draw 2 cards. Don't repeat what you said; one short line while it draws is enough.)"), 300)
   noteExchange(said, reply, userName())
   rememberExchange(said, reply)
   return { text: reply, quiet: turn.quiet, tools: turn.tools }
