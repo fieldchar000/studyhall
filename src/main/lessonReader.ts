@@ -9,11 +9,11 @@
 // It only reads: nothing is edited or saved, and PowerPoint is never closed (your own decks stay as they are).
 // Turning pages needs "Turn pages and scroll" on (Nova's page).
 
-import { app, BrowserWindow, ipcMain, net } from 'electron'
+import { app, BrowserWindow, ipcMain, net, session } from 'electron'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { getPrefs } from './prefs'
@@ -178,11 +178,20 @@ async function readSlides(title: string, path = ''): Promise<Lesson | string> {
 async function pdfFrom(source: string): Promise<Uint8Array | string> {
   if (/^file:/i.test(source)) source = fileURLToPath(source)
   if (/^https?:/i.test(source)) {
-    const res = await net.fetch(source, { headers: { 'User-Agent': 'Mozilla/5.0 Studyhall' } }).catch(() => null)
+    const headers = { 'User-Agent': 'Mozilla/5.0 Studyhall' }
+    const isPdf = (r: Response | null): boolean => !!r?.ok && (/pdf/i.test(r.headers.get('content-type') ?? '') || (isPdfUrl(source) && !/html/i.test(r.headers.get('content-type') ?? '')))
+    let res = await net.fetch(source, { headers }).catch(() => null)
+    // Refused (it needs a login): your school portal's PDFs open with the sign-in Studyhall already has for PoliteMall.
+    if (!isPdf(res)) {
+      const again = await session.fromPartition('persist:politemall').fetch(source, { headers }).catch(() => null)
+      if (isPdf(again)) res = again
+    }
     if (!res?.ok) return `Couldn’t download that PDF${res ? ` (${res.status})` : ''}.`
     if (!/pdf/i.test(res.headers.get('content-type') ?? '') && !isPdfUrl(source)) return 'That address isn’t a PDF (it may need a login).'
     return new Uint8Array(await res.arrayBuffer())
   }
+  // (a browser shows a file on the PC as C:/Users/…, sometimes with %20 for spaces)
+  if (!existsSync(source) && /%[0-9a-f]{2}/i.test(source)) source = decodeURIComponent(source)
   if (!existsSync(source)) return `There’s no file at ${source}.`
   return new Uint8Array(await readFile(source))
 }
@@ -233,10 +242,70 @@ export function warmLesson(): void {
 }
 async function readFront(fr: NonNullable<Awaited<ReturnType<typeof front>>>): Promise<Lesson | string> {
   if (/powerpnt/i.test(fr.exe) || /powerpoint/i.test(fr.app)) return remember(await readSlides(fr.title))
-  if (fr.url && (isPdfUrl(fr.url) || /^file:/i.test(fr.url))) return remember(await readPdf(fr.url, fr))
-  if (/\.pdf\b/i.test(fr.title) && fr.url) return remember(await readPdf(fr.url, fr))
+  // A PDF in a browser: from its address (a file on the PC, or a link: with the school sign-in if it needs one), else
+  // the same file in their folders by its name, else the one read from this window earlier.
+  const browser = /msedge|chrome|opera|brave|vivaldi|firefox/i.test(`${fr.exe} ${fr.app}`)
+  const pdfish = (!!fr.url && (isPdfUrl(fr.url) || /^file:/i.test(fr.url))) || /\.pdf\b/i.test(fr.title)
+  if (pdfish || (browser && !fr.url)) {
+    let why = fr.url ? '' : "the browser's address couldn't be read"
+    if (fr.url && (/^(https?|file):/i.test(fr.url) || /^[a-z]:[\\/]/i.test(fr.url))) {
+      const l = await readPdf(fr.url, fr)
+      if (typeof l !== 'string') return remember(l)
+      why = l
+    }
+    const local = await findLocalPdf(pdfNames(fr))
+    if (local) {
+      const l = await readPdf(local, fr)
+      if (typeof l !== 'string') return remember(l)
+    }
+    const prev = lastLesson()
+    if (prev && prev.window === fr.title) return prev
+    if (pdfish || /\bpdf\b/i.test(fr.title))
+      return `Couldn't get the PDF file itself (${why.replace(/\.$/, '') || 'it needs a login'}), and there's no copy with that name in their Downloads, Desktop, Documents or OneDrive. Before going on, tell them: you can read it from their screen instead, page by page, which is slower and uses more of their plan, or they can save it to Downloads and you'll read the whole thing at once. Ask which. If they say go ahead: read_window for each page's text, take_screenshot for its diagrams, go_to_page to turn the page.`
+  }
   if (fr.url) return `That's a web page (${fr.app}), not a PDF or slide deck: read it with read_window instead (it gives the whole page).`
   return `${fr.app} isn't a slide deck or a PDF I can read. Open the deck in PowerPoint, or the PDF in Edge, Opera GX or Chrome.`
+}
+/** The PDF's file name as the browser shows it: the end of its address, and the tab's title. */
+function pdfNames(fr: { url?: string; title: string }): string[] {
+  const out: string[] = []
+  if (fr.url) {
+    let b = fr.url.replace(/[?#].*$/, '').split(/[\\/]/).pop() ?? ''
+    try {
+      b = decodeURIComponent(b)
+    } catch {
+      /* not encoded */
+    }
+    if (/\.pdf$/i.test(b)) out.push(b)
+  }
+  const t = fr.title
+    .replace(/\s+(?:-|—|–)\s+(?:Personal|Work|Profile \d+|Microsoft.? Edge|Google Chrome|Opera|Brave|Vivaldi|Mozilla Firefox)\b.*$/i, '')
+    .replace(/\s+and \d+ more pages?$/i, '')
+    .trim()
+  if (t) out.push(/\.pdf$/i.test(t) ? t : `${t}.pdf`)
+  return [...new Set(out)]
+}
+/** A PDF with one of those names in Downloads, Desktop, Documents or OneDrive (or one folder down): the newest. Also
+ *  "Name (1).pdf", the way Windows names a second download. */
+async function findLocalPdf(names: string[]): Promise<string | null> {
+  const bare = (n: string): string => n.toLowerCase().replace(/\s*\(\d+\)(?=\.pdf$)/, '').trim()
+  const want = new Set(names.map(bare).filter((n) => n.length > 4))
+  if (!want.size) return null
+  const roots = [...new Set([app.getPath('downloads'), app.getPath('desktop'), app.getPath('documents'), process.env.OneDrive].filter((x): x is string => !!x))]
+  let best: { p: string; at: number } | null = null
+  for (const root of roots) {
+    const top = await readdir(root, { withFileTypes: true }).catch(() => [])
+    const dirs = [root, ...top.filter((d) => d.isDirectory() && !d.name.startsWith('.')).slice(0, 60).map((d) => join(root, d.name))]
+    for (const dir of dirs) {
+      const files = dir === root ? top.filter((d) => d.isFile()).map((d) => d.name) : await readdir(dir).catch(() => [] as string[])
+      for (const f of files) {
+        if (!/\.pdf$/i.test(f) || !want.has(bare(f))) continue
+        const st = await stat(join(dir, f)).catch(() => null)
+        if (st?.isFile() && (!best || st.mtimeMs > best.at)) best = { p: join(dir, f), at: st.mtimeMs }
+      }
+    }
+  }
+  return best?.p ?? null
 }
 /** The deck or PDF read most recently (in the last two hours), for "quiz me on this". */
 let lastRead: { l: Lesson; at: number } | null = null

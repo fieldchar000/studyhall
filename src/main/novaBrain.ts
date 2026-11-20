@@ -727,11 +727,8 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       'The whole slide deck or PDF they have open (PowerPoint, or a PDF in Edge, Opera GX or Chrome), or a .pptx/.pdf file or PDF web address you name: every slide or page\'s text (and a deck\'s speaker notes), as text, plus which slide they\'re on. Slides or pages with a diagram or picture list its address: look at it with see_photo (that url), then show it on a photo card with labels, or go_to_page and ring it on their screen. Cheap: read it once per lesson and use what you read. For a normal web page use read_window instead.',
       { source: z.string().optional().describe('leave out for what they have open; else a .pptx/.pdf path or a PDF address'), from: z.number().int().min(1).optional().describe('first slide/page to include (for long ones)'), to: z.number().int().min(1).optional(), topic: z.string().max(80).optional().describe('for "teach me X": the slides about X come first, in order'), again: z.boolean().optional().describe('read it all again even if you already did in this conversation (it changed, or you lost track)') },
       async ({ source, from, to, topic, again }) => {
-        const got = await readLesson(source ? String(source) : 'front')
-        // Not in the deck's window right now (they clicked somewhere else): the deck read this hour is the one.
-        const earlier = typeof got === 'string' && !source ? lastLesson() : null
-        if (typeof got === 'string' && !earlier) return text(got)
-        const l = typeof got === 'string' ? earlier! : got
+        const l = await readLesson(source ? String(source) : 'front')
+        if (typeof l === 'string') return text(l)
         if (tutorOn()) tutorTitle(l.title)
         if (tutorOn()) tutorRead = true
         // Tutor mode, split screen: their slides window moves to the left for the lesson (back when it ends).
@@ -812,13 +809,16 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   ]
   // (The lesson stage teaches from the whole document it read and shows the slides on the board: no screenshots, page
   // turning or window reading, which only led to extra steps. Split screen rings their own window, so it keeps them.)
-  const TUTOR_KEEP = new Set(['draw', 'see_photo', 'find_figure', 'find_illustrations', 'show_board', 'read_lesson', 'tutor_done', 'school', 'school_file', ...(getPrefs().novaTutorLayout === 'split' ? ['go_to_page', 'take_screenshot', 'read_window'] : [])])
+  const TUTOR_KEEP = new Set(['draw', 'see_photo', 'find_figure', 'find_illustrations', 'show_board', 'read_lesson', 'go_to_page', 'take_screenshot', 'read_window', 'tutor_done', 'school', 'school_file'])
   const all = [...tools, ...lessonTools, ...figureTools, ...schoolTools, ...tutorTools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
   // Every tool shows what it's doing beside the globe while it runs (Roamies' activity lines).
   for (const t of all) {
     const run = t.handler
     t.handler = (async (args: Record<string, unknown>, extra: unknown) => {
       if (t.name === 'draw' && turnRef.current?.howTo) needsClick(args)
+      // Tutor mode with the whole document read: looking at the screen only adds slow, costly steps (split screen and
+      // a PDF that couldn't be got are when it's needed).
+      if (tutorOn() && tutorRead && getPrefs().novaTutorLayout !== 'split' && ['read_window', 'take_screenshot', 'go_to_page'].includes(t.name)) return text('Not needed: you already have the whole document, every page, from read_lesson. Teach from it and show slides on the study board.')
       // A web address that didn't come up in any search or page: a guess. Search first instead.
       const urls = t.name === 'open' ? [String(args.target ?? '')] : t.name === 'studyhall_actions' ? ((args.actions as { type?: string; url?: string }[] | undefined) ?? []).filter((q) => q?.type === 'open_website').map((q) => String(q.url ?? '')) : []
       const guessed = urls.map(guessedSite).find(Boolean)
