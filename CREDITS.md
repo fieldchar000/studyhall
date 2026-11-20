@@ -37,6 +37,12 @@ https://github.com/KenKaiii/Roamies
   0.1.41 and recoloured to Studyhall's blue.
 - `src/main/roamies/tools.mjs` also takes a picture fetcher (`photoFetch`), so slide pictures from Nova's lesson reader
   show on its photo cards.
+- Studyhall changes since v0.69: `tools.mjs` takes `aroundShot` (Nova's overlay is hidden for the moment of its own
+  screenshots while a tutor lesson is recorded) and offers `pageTurned`/`screenCount` (marks on the screen fade when the
+  page under them changes). `ink.js` draws cards above screen marks and slides a card off a mark that lands under it,
+  lays the study board out with your slide big and the linked ones small (click to swap), adds to a board that's up,
+  shows what it says in Nova's bubble unless captions are on, and reports where its screen marks are. `agentrun.mjs`
+  passes its unused callbacks so the build keeps Nova's own calls to them.
 - `native/roamies-hands`: Roamies' Windows hands helper (Rust: UI Automation, Windows OCR, screenshots, clicking and
   typing), copied unchanged and built on GitHub Actions.
 - Nova's brain follows Roamies' design. It makes one fast Claude call with Nova's own tools and

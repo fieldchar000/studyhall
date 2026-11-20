@@ -231,7 +231,7 @@ export function sideSearchFor(route) {
 // Every request and redirect hop of web_fetch goes through safety.mjs, by name and by the addresses it resolves to.
 export const guardFetch = async (url) => { const v = await checkFetch(url); return v.level === BLOCK ? `Blocked for safety: ${v.reason}` : null; };
 
-export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null, shotBusy = null, iconFetch = null, boardFetch = null }) {
+export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null, shotBusy = null, iconFetch = null, boardFetch = null, aroundShot = null }) {
   // Relative paths (and run_command) start in workdir: the home folder for the chat, its own folder for an agent.
   const at = (p) => { const s = String(p ?? ''); return /^~(?=$|\/|\\)/.test(s) || path.isAbsolute(s) || /^[a-z]:[\\/]/i.test(s) ? s : path.join(workdir, s); };
   const where = workdir === HOME ? "the user's home folder" : `its working folder (${workdir})`;
@@ -345,7 +345,9 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
   }
   // target: "screen", "front" (the window you're working in), an app name ("browser", "Safari", "Figma"),
   // or "window:<id>" from list_windows. Apps that are open but hidden or minimised are brought forward.
-  async function screenshot({ target = 'screen' } = {}, ctx) {
+  // Studyhall: aroundShot hides the host's own overlay for the moment it takes (when it's being recorded).
+  async function screenshot(a, ctx) { return aroundShot ? aroundShot(() => screenshotNow(a, ctx)) : screenshotNow(a, ctx); }
+  async function screenshotNow({ target = 'screen' } = {}, ctx) {
     const file = path.join(os.tmpdir(), `sidekick-${Date.now()}.jpg`);
     // Windows without the helper (or when it fails on the whole screen): PowerShell's screenshot below.
     const viaHands = process.platform === 'darwin' || (process.platform === 'win32' && HANDS);
@@ -724,6 +726,10 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
     quizDone: (part, picks) => quizNote(quizzes.get(String(part)), picks),
     // A request ended: if it drew nothing, the marks from before it are done with.
     endRequest: () => { if (ink.turn !== turn && parts.screenCount) clearScreenInk(); },
+    // Studyhall: the page under the drawing turned (Nova turned it, or the host saw what's under the marks change):
+    // the marks on the screen go, the cards stay, and the model hears it.
+    screenCount: () => parts.screenCount,
+    pageTurned: (why = 'page') => { if (!parts.screenCount || ink.active || ink.waits.size) return false; clearScreenInk(); onInkGone(why); return true; },
     // Stop. Cancelling a request that drew: all of its drawing goes, diagrams and cards too, and the overlay stops
     // playing it. Otherwise (only the voice was still going) the screen marks go and the cards stay.
     stop: (cancelled = false) => {

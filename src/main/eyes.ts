@@ -114,11 +114,11 @@ export async function see(opts: { hwnd?: number; offscreen?: boolean; screenshot
     opts = { ...opts, hwnd: Number(h.length >= 8 ? h.readBigUInt64LE(0) : h.readUInt32LE(0)), offscreen: true }
   }
   const req ={ cmd: 'snapshot', exclude: [process.pid], hwnd: opts.hwnd ?? 0, offscreen: !!opts.offscreen }
-  let r = await eyes(req)
+  let r = await eyesHooks.hide(() => eyes(req))
   // Chromium apps (browsers, Studyhall, Discord…) switch their accessibility on when first asked.
   if (r.ok && (r.elements as unknown[]).length < 15) {
     await new Promise((res) => setTimeout(res, 1200))
-    r = await eyes(req)
+    r = await eyesHooks.hide(() => eyes(req))
   }
   if (!r.ok) throw new Error(String(r.error ?? 'Couldn’t look at that window'))
   const w = r.window as { title: string; app: string; pid: number; rect: number[] }
@@ -160,7 +160,12 @@ export async function selectionNow(): Promise<{ text: string; rect: Electron.Rec
   return { text: text.slice(0, 4000), rect: Array.isArray(r!.rect) ? toDip(r!.rect as number[]) : null }
 }
 
+/** Nova's overlay is hidden for the moment a capture takes (set by index.ts: see bauer.ts hiddenFromCaptures). */
+export const eyesHooks = { hide: <T>(fn: () => Promise<T>): Promise<T> => fn() }
 async function captureRect(rect: Electron.Rectangle): Promise<{ image: string; scale: number } | null> {
+  return eyesHooks.hide(() => captureRectNow(rect))
+}
+async function captureRectNow(rect: Electron.Rectangle): Promise<{ image: string; scale: number } | null> {
   const display = screen.getDisplayMatching(rect)
   const sf = display.scaleFactor
   const { width, height } = display.bounds

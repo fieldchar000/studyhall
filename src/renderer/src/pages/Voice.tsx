@@ -69,6 +69,7 @@ async function startRecording(sourceId: string): Promise<void> {
     recorder = r
   } catch (e) {
     console.warn('Tutor mode: couldn’t record the lesson', e)
+    api.voice.recFailed(e instanceof Error ? e.message : String(e))
   }
 }
 function stopRecording(): void {

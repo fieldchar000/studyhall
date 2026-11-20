@@ -194,6 +194,7 @@ const api: Api = {
   voice: {
     recChunk: (chunk) => ipcRenderer.send('tutor:recChunk', chunk),
     recDone: () => ipcRenderer.send('tutor:recDone'),
+    recFailed: (why) => ipcRenderer.send('tutor:recFailed', why),
     status: () => ipcRenderer.invoke('voice:status'),
     download: () => ipcRenderer.invoke('voice:download'),
     brief: () => ipcRenderer.invoke('voice:brief'),

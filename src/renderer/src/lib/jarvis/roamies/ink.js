@@ -143,7 +143,34 @@
   function touch(sec = 0.7) { until = Math.max(until, now() + sec); if (!raf) raf = requestAnimationFrame(render); }
   function add(m) {
     Object.assign(m, { p: m.p ?? 0, alpha: 1, dx: 0, dy: 0, born: now(), alive: true, z: m.z ?? 3, color: m.color ?? ACC });
-    marks.push(m); touch(); return m;
+    marks.push(m); touch();
+    // Studyhall: a ring, underline or label landing where a card is: the card moves out of its way.
+    if (m.screen && m.marked) queueMicrotask(nudgeCards);
+    return m;
+  }
+  // Studyhall: cards keep off what's marked on the screen. One that's over a mark (the mark came after it) slides to
+  // the nearest free spot; with nowhere free it stays, drawn above the mark so it's still readable. Not a card they
+  // pinned or moved themselves, nor a deep-explain card (it's meant to fill the screen).
+  let nudging = false;
+  function nudgeCards() {
+    if (nudging) return;
+    nudging = true;
+    try {
+      const rs = marks.filter((q) => q.alive && q.screen && q.marked && !q.leaving).map((q) => grow([q.marked[0] + q.dx, q.marked[1] + q.dy, q.marked[2], q.marked[3]], 6));
+      if (!rs.length) return;
+      for (const c of marks.filter((q) => q.alive && q.card && !q.local && !q.leaving && !q.pinned && !q.deep && !q.moved && !q.sliding)) {
+        const bx = markBox(c);
+        if (!rs.some((r) => overlap(r, bx) > 0)) continue;
+        c.leaving = true; // (so it doesn't count as in its own way)
+        const k = c.k ?? 1, to = place(Math.round(c.w * k), Math.round(c.h * k), c.part, true);
+        c.leaving = false;
+        if (!to) continue;
+        const dx0 = c.dx, dy0 = c.dy, dx1 = to[0] - c.ox, dy1 = to[1] - c.oy;
+        if (Math.abs(dx1 - dx0) + Math.abs(dy1 - dy0) < 4) continue;
+        c.sliding = true;
+        tween(reduced() ? 0.01 : 0.35, (u) => { const e = 1 - (1 - u) * (1 - u); c.dx = dx0 + (dx1 - dx0) * e; c.dy = dy0 + (dy1 - dy0) * e; }).then(() => { c.sliding = false; touch(); });
+      }
+    } finally { nudging = false; }
   }
   // A rect in a mark's own coordinates → on screen: moved by (dx, dy), and for a card zoomed by k from its top left
   // (ox, oy), when it has been resized or made full screen.
@@ -161,8 +188,11 @@
   // in a second pass after it: a circle or arrow never covers a label.
   function paint(C, t) {
     if (C[2] <= 0 || C[3] <= 0) return;
-    const order = [...marks].sort((a, b) => a.z - b.z).filter((m) => overlap(grow(markBox(m), 28), C) > 0), cut = order.findIndex((m) => m.z >= 6);
-    const passes = cut < 0 ? [order] : [order.slice(0, cut), order.slice(cut)];
+    // (Studyhall: cards, z 5, get a pass of their own, so a card covers a ring or underline under it instead of the
+    // ring's glow showing through it.)
+    const order = [...marks].sort((a, b) => a.z - b.z).filter((m) => overlap(grow(markBox(m), 28), C) > 0), cuts = [0];
+    for (const z of [5, 6]) { const i = order.findIndex((m) => m.z >= z); if (i > cuts[cuts.length - 1]) cuts.push(i); }
+    const passes = cuts.map((a, k) => order.slice(a, cuts[k + 1] ?? order.length));
     passes.forEach((group, i) => {
       for (const c of i ? [Lc] : [V, Lc]) { c.setTransform(DPR, 0, 0, DPR, 0, 0); c.clearRect(C[0], C[1], C[2], C[3]); }
       for (const c of [V, Lc]) { c.save(); c.beginPath(); c.rect(C[0], C[1], C[2], C[3]); c.clip(); }
@@ -658,7 +688,7 @@
       [x, y] = roomFor(Math.round(w * k), Math.round(h * k), m.part);
     }
     const bar = o.bar === false ? 0 : 26;
-    const c = add({ z: 2, part: m.part, card: true, kind: m.kind, cw: 0, ch: 0, p: 0, done: 0, w, h, ox: x, oy: y, k, deep, sy: 0, scrollMax: Math.max(0, full - h), color: tone(m.tone), live: o.live, box: () => [x - 4, y - 4, w + 8, h + 14],
+    const c = add({ z: 5, part: m.part, card: true, kind: m.kind, cw: 0, ch: 0, p: 0, done: 0, w, h, ox: x, oy: y, k, deep, sy: 0, scrollMax: Math.max(0, full - h), color: tone(m.tone), live: o.live, box: () => [x - 4, y - 4, w + 8, h + 14],
       draw(b, l, t) {
         if (this.cw < 4) return;
         chrome(b, x, y, this.cw, this.ch, { edge: o.edge ? colorOf(this, this.color) : ACC });
@@ -1054,6 +1084,12 @@
   // Two or three slides of the lesson side by side, big enough to read, with rings on the words that matter and arrows
   // from one slide to another (where an idea comes from, where it leads), drawn one by one; other cards go below it.
   async function drawBoard(m) {
+    // Studyhall: more for the board that's up (rings Nova would otherwise draw on their slide under it, notes, arrows).
+    if (m.add) {
+      const up = marks.find((q) => q.alive && q.card && q.kind === 'board' && !q.leaving && q.part === m.part);
+      if (up?.addTo) up.addTo(m); else R.ink.send?.({ type: 'board_gone', part: m.part });
+      return;
+    }
     const S = scr(), slides = await Promise.all((m.slides ?? []).map((s) => new Promise((res) => {
       if (!s.src) return res({ ...s, img: null });
       const i = new Image(), tm = setTimeout(() => res({ ...s, img: null }), 5000);
@@ -1062,70 +1098,104 @@
       i.src = s.src;
     })));
     if (!slides.length) return;
-    const n = slides.length, pad = 18, gap = 34, top = 30;
+    // The slide they're on, big on the left (readable, and where its rings go); the slides it links to, smaller and
+    // stacked on its right. A click on a small one swaps it into the big spot.
+    const n = slides.length, pad = 18, gap = 34, top = 30, step = 40;
     const a = slides[0].img ? slides[0].img.naturalWidth / slides[0].img.naturalHeight : 16 / 9;
-    const maxW = Math.min(S[2] - S[0] - 40, 1600), maxH = Math.max(200, Math.min(maxCardH() - 26, (S[3] - S[1]) * 0.66) - top - pad - 20);
-    let sw = (maxW - pad * 2 - gap * (n - 1)) / n, sh = sw / a;
-    if (sh > maxH) { sh = maxH; sw = sh * a; }
-    const at = (i) => pad + i * (sw + gap);
-    const rings = slides.flatMap((s, i) => (s.rings ?? []).filter((r) => r.rect).map((r) => ({ ...r, i, x: at(i) + r.rect[0] * sw - 6, y: top + r.rect[1] * sh - 5, w: r.rect[2] * sw + 12, h: r.rect[3] * sh + 10 })));
-    const byId = new Map(rings.map((r) => [r.id, r])), links = (m.links ?? []).filter((q) => byId.has(q.from) && byId.has(q.to));
-    // Notes: small fact cards on the board, below the slides, each with an arrow up to the spot it explains.
-    const rowW0 = pad * 2 + sw * n + gap * (n - 1);
-    // Ring labels: just above each ring, or below it, or a line further up, whichever is clear of the labels and rings
-    // already placed (two rings on neighbouring lines otherwise stack their labels on each other).
-    const placed = rings.map((r) => [r.x, r.y, r.w, r.h]), hitsAny = (q) => placed.some((p) => q[0] < p[0] + p[2] && p[0] < q[0] + q[2] && q[1] < p[1] + p[3] && p[1] < q[1] + q[3]);
-    for (const r of rings) {
-      if (!r.label) continue;
-      const lw = textW(r.label, SMALL) + 6, lx = Math.max(at(r.i) + 2, Math.min(r.x + 2, at(r.i) + sw - lw - 2));
-      const tries = [r.y - 16, r.y + r.h + 2, r.y - 30, r.y + r.h + 16, r.y - 44].filter((ty) => ty >= top - 14 && ty + 14 <= top + sh + 14);
-      const ty = tries.find((q) => !hitsAny([lx, q, lw, 14])) ?? tries[0] ?? r.y - 16;
-      r.lx = lx; r.ly = ty + 11;
-      placed.push([lx, ty, lw, 14]);
+    // (a column of cards still fits beside it: the fact card and flow that go with it stay up)
+    const maxW = Math.min(S[2] - S[0] - 40 - 380, 1700), maxH = Math.max(240, Math.min(maxCardH() - 26, (S[3] - S[1]) * 0.72) - top - pad - 20);
+    let bigW = n === 1 ? maxW - pad * 2 : (maxW - pad * 2 - gap) * 0.64, bigH = bigW / a;
+    if (bigH > maxH) { bigH = maxH; bigW = bigH * a; }
+    let sideH = n > 1 ? (bigH - (n - 2) * step) / (n - 1) : 0, sideW = sideH * a;
+    if (n > 1 && sideW > maxW - pad * 2 - gap - bigW) { sideW = maxW - pad * 2 - gap - bigW; sideH = sideW / a; }
+    let order = slides.map((_, i) => i);
+    const geo = (i) => { const k = order.indexOf(i); return k === 0 ? [pad, top, bigW, bigH] : [pad + bigW + gap, top + (k - 1) * (sideH + step), sideW, sideH]; };
+    const rings = [], byId = new Map(), links = [], noteRows = [];
+    const rbox = (r) => { const g = geo(r.i), e = g[2] / bigW; return [g[0] + r.rect[0] * g[2] - 6 * e, g[1] + r.rect[1] * g[3] - 5 * e, r.rect[2] * g[2] + 12 * e, r.rect[3] * g[3] + 10 * e]; };
+    const rowW = pad * 2 + bigW + (n > 1 ? gap + sideW : 0);
+    // Notes: small cards under the slides, each with an arrow up to the spot it explains, left to right in the order
+    // of those spots so their arrows don't cross. (Room for them is kept only when the board opens with some.)
+    const hasNotes = (m.notes ?? []).length > 0, ngap = 16, NH = 104, ntop = top + bigH + 46;
+    const W = Math.round(rowW), h = Math.round(26 + top + bigH + pad + 18 + (hasNotes ? 46 + NH : 0));
+    let ageNow = 0, liveUntil = 0;
+    const born = now();
+    // Ring labels: just above each ring, or below it, or a line further up, whichever is clear of the labels and
+    // rings already placed; worked out again when the slides swap places or more rings come.
+    function placeLabels() {
+      const placed = rings.map(rbox), hitsAny = (q) => placed.some((p) => q[0] < p[0] + p[2] && p[0] < q[0] + q[2] && q[1] < p[1] + p[3] && p[1] < q[1] + q[3]);
+      for (const r of rings) {
+        if (!r.label) continue;
+        const g = geo(r.i), bx = rbox(r), lw = textW(r.label, SMALL) + 6, lx = Math.max(g[0] + 2, Math.min(bx[0] + 2, g[0] + g[2] - lw - 2));
+        const tries = [bx[1] - 16, bx[1] + bx[3] + 2, bx[1] - 30, bx[1] + bx[3] + 16, bx[1] - 44].filter((ty) => ty >= g[1] - 14 && ty + 14 <= g[1] + g[3] + 14);
+        const ty = tries.find((q) => !hitsAny([lx, q, lw, 14])) ?? tries[0] ?? bx[1] - 16;
+        r.lx = lx; r.ly = ty + 11;
+        placed.push([lx, ty, lw, 14]);
+      }
     }
-    // Notes go left to right in the order of the spots they point at, so their arrows don't cross.
-    const notes = (m.notes ?? []).slice(0, 4).map((q, k) => ({ q, k, at: byId.get(q.ring)?.x ?? 1e6 + k })).sort((a, b) => a.at - b.at).map((o) => o.q), nn = notes.length, ngap = 16, nw = nn ? (rowW0 - pad * 2 - ngap * (nn - 1)) / nn : 0;
-    const noteRows = notes.map((q) => ({ ...q, title: String(q.title ?? '').slice(0, 50), rows: wrapRows(String(q.text ?? ''), nw - 20, SMALL).slice(0, 5) }));
-    const nh = nn ? Math.max(...noteRows.map((q) => 30 + q.rows.length * 14 + 10)) : 0, ntop = top + sh + 46;
-    const W = Math.round(rowW0), h = Math.round(26 + top + sh + pad + 18 + (nn ? 46 + nh : 0));
-    const moving = links.some((q) => q.flow);
-    // (Its rings and arrows appear one by one: it keeps being drawn until they're all there.)
-    const born = now(), buildUp = n * 0.25 + 0.3 + rings.length * 0.45 + links.length * 0.5 + nn * 0.5 + 1.5;
+    function layoutNotes() {
+      const nn = noteRows.length, nw = nn ? (rowW - pad * 2 - ngap * (nn - 1)) / nn : 0;
+      const at = (q) => { const r = byId.get(q.ring); if (!r) return 1e6; const b = rbox(r); return b[0] + b[1] * 0.01; };
+      noteRows.sort((p, q) => at(p) - at(q));
+      noteRows.forEach((q, k) => { q.x = pad + k * (nw + ngap); q.w = nw; q.rows = wrapRows(q.text, nw - 20, SMALL).slice(0, 5); });
+    }
+    function addAll(src, at) {
+      let k = 0, j = 0;
+      for (const s of src.slides ?? []) {
+        const i = slides.findIndex((q) => q.page === s.page);
+        if (i < 0) continue;
+        for (const r of s.rings ?? []) if (r.rect) { const o = { ...r, i, start: at + k++ * 0.45 }; rings.push(o); byId.set(o.id, o); }
+      }
+      for (const q of src.links ?? []) if (byId.has(q.from) && byId.has(q.to)) links.push({ ...q, start: at + k * 0.45 + j++ * 0.5 });
+      let nn = 0;
+      // (a note already there, by its title, isn't added again)
+      if (hasNotes) for (const q of src.notes ?? []) if (noteRows.length < 4 && !noteRows.some((p) => p.title.toLowerCase() === String(q.title ?? '').slice(0, 50).toLowerCase())) noteRows.push({ ring: q.ring, title: String(q.title ?? '').slice(0, 50), text: String(q.text ?? ''), start: at + k * 0.45 + j * 0.5 + nn++ * 0.5 });
+      placeLabels(); layoutNotes();
+      return at + k * 0.45 + j * 0.5 + nn * 0.5;
+    }
+    const buildUp = addAll(m, n * 0.25 + 0.3) + 1.5;
+    let hits = [];
     // One board at a time: a new one replaces the last (unless that one's pinned).
     for (const id of new Set(marks.filter((q) => q.alive && q.card && q.kind === 'board' && !q.pinned && !q.leaving && q.part !== m.part).map((q) => q.part))) { R.ink.send?.({ type: 'ink_closed', part: id }); fadeOut(partMarks(id), 0.3); }
-    await card(m, W, h, function (b, l, t, x, y, age) {
+    const c = await card(m, W, h, function (b, l, t, x, y, age) {
+      ageNow = age;
+      hits = [];
       slides.forEach((s, i) => {
-        const u = reduced() ? 1 : clamp((age - i * 0.25) / 0.4, 0, 1);
+        const u = reduced() ? 1 : clamp((age - order.indexOf(i) * 0.25) / 0.4, 0, 1);
         if (u <= 0) return;
-        const sx = x + at(i), sy = y + top;
-        typed(b, s.label || `${i === 0 ? 'Now: ' : ''}slide ${s.page}`, sx, sy - 9, SMALL, i === 0 ? TEXT : DIM, u);
+        const [gx, gy, gw, gh] = geo(i), sx = x + gx, sy = y + gy, big = order.indexOf(i) === 0;
+        typed(b, s.label || `${i === 0 ? 'Now: ' : ''}slide ${s.page}`, sx, sy - 9, SMALL, big ? TEXT : DIM, u);
         b.save(); b.globalAlpha *= u;
-        if (s.img) { b.imageSmoothingEnabled = true; b.drawImage(s.img, sx, sy, sw, sh); } else { b.fillStyle = 'rgba(20,60,143,0.25)'; b.fillRect(sx, sy, sw, sh); }
-        b.strokeStyle = 'rgba(122,170,255,0.5)'; b.lineWidth = 1; b.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
+        if (s.img) { b.imageSmoothingEnabled = true; b.drawImage(s.img, sx, sy, gw, gh); } else { b.fillStyle = 'rgba(20,60,143,0.25)'; b.fillRect(sx, sy, gw, gh); }
+        const hot = !big && this.hoverId === `s${i}`;
+        b.strokeStyle = hot ? HOT : 'rgba(122,170,255,0.5)'; b.lineWidth = hot ? 2 : 1; b.strokeRect(sx + 0.5, sy + 0.5, gw - 1, gh - 1);
         b.restore();
+        if (!big) hits.push({ rect: [sx, sy, gw, gh], kind: 'pick', id: `s${i}` });
       });
-      const t0 = n * 0.25 + 0.3;
-      rings.forEach((r, k) => {
-        const u = reduced() ? 1 : clamp((age - t0 - k * 0.45) / 0.45, 0, 1);
-        if (u <= 0) return;
+      for (const r of rings) {
+        const u = reduced() ? 1 : clamp((age - r.start) / 0.45, 0, 1);
+        if (u <= 0) continue;
+        const [bx, by, bw, bh] = rbox(r), rx = x + bx, ry = y + by, rad = Math.min(14, bh / 2);
         b.save(); b.strokeStyle = ACC; b.lineWidth = 3; b.globalAlpha *= 0.9;
-        const rx = x + r.x, ry = y + r.y, rad = Math.min(14, r.h / 2);
-        // Studyhall: three looks: a ring round it, an underline under it, or a highlight over it.
-        if (r.style === 'underline') { b.beginPath(); b.moveTo(rx + 4, ry + r.h - 3); b.lineTo(rx + 4 + (r.w - 8) * u, ry + r.h - 3); b.stroke(); }
-        else if (r.style === 'highlight') { b.fillStyle = 'rgba(168,200,255,0.32)'; b.fillRect(rx + 2, ry + 2, (r.w - 4) * u, r.h - 4); }
-        else { b.beginPath(); b.roundRect ? b.roundRect(rx, ry, r.w * u, r.h, rad) : b.rect(rx, ry, r.w * u, r.h); b.stroke(); }
+        // Three looks: a ring round it, an underline under it, or a highlight over it.
+        if (r.style === 'underline') { b.beginPath(); b.moveTo(rx + 4, ry + bh - 3); b.lineTo(rx + 4 + (bw - 8) * u, ry + bh - 3); b.stroke(); }
+        else if (r.style === 'highlight') { b.fillStyle = 'rgba(168,200,255,0.32)'; b.fillRect(rx + 2, ry + 2, (bw - 4) * u, bh - 4); }
+        else { b.beginPath(); b.roundRect ? b.roundRect(rx, ry, bw * u, bh, rad) : b.rect(rx, ry, bw * u, bh); b.stroke(); }
         b.restore();
-        // Its label sits just above it (below when it's at the top of the slide), so it never runs into the next slide.
-        // (on a small dark tag, so it reads over the slide's own words)
-        if (r.label && u >= 1) { b.save(); b.fillStyle = 'rgba(12,28,70,0.88)'; b.beginPath(); b.roundRect ? b.roundRect(x + r.lx - 4, y + r.ly - 11, textW(r.label, SMALL) + 8, 15, 4) : b.rect(x + r.lx - 4, y + r.ly - 11, textW(r.label, SMALL) + 8, 15); b.fill(); b.restore(); }
-        if (r.label && u >= 1) typed(b, r.label, x + r.lx, y + r.ly, SMALL, HOT, (age - t0 - k * 0.45 - 0.4) / 0.3, { rim: 3 });
-      });
-      links.forEach((q, k) => {
-        const A = byId.get(q.from), B = byId.get(q.to);
-        const u = reduced() ? 1 : clamp((age - t0 - rings.length * 0.45 - k * 0.5) / 0.6, 0, 1);
-        if (u <= 0) return;
-        const ax = x + A.x + (B.i > A.i ? A.w : 0), ay = y + A.y + A.h / 2, bx = x + B.x + (B.i > A.i ? 0 : B.w), by = y + B.y + B.h / 2;
-        const cx = (ax + bx) / 2, cy = Math.min(ay, by) - 60;
+        // its label on a small dark tag, so it reads over the slide's own words
+        if (r.label && u >= 1) {
+          b.save(); b.fillStyle = 'rgba(12,28,70,0.88)'; b.beginPath(); b.roundRect ? b.roundRect(x + r.lx - 4, y + r.ly - 11, textW(r.label, SMALL) + 8, 15, 4) : b.rect(x + r.lx - 4, y + r.ly - 11, textW(r.label, SMALL) + 8, 15); b.fill(); b.restore();
+          typed(b, r.label, x + r.lx, y + r.ly, SMALL, HOT, (age - r.start - 0.4) / 0.3, { rim: 3 });
+        }
+      }
+      for (const q of links) {
+        const A = rbox(byId.get(q.from)), B = rbox(byId.get(q.to));
+        const u = reduced() ? 1 : clamp((age - q.start) / 0.6, 0, 1);
+        if (u <= 0) continue;
+        const ca = A[0] + A[2] / 2, cb = B[0] + B[2] / 2, apart = Math.abs(ca - cb) > Math.min(A[2], B[2]) / 2 + 20;
+        // side by side: from the facing edges, over the top; one above the other (the small slides): round the right
+        const ax = x + (apart ? (cb > ca ? A[0] + A[2] : A[0]) : A[0] + A[2]), ay = y + A[1] + A[3] / 2;
+        const bx = x + (apart ? (cb > ca ? B[0] : B[0] + B[2]) : B[0] + B[2]), by = y + B[1] + B[3] / 2;
+        const cx = apart ? (ax + bx) / 2 : Math.max(ax, bx) + 70, cy = apart ? Math.min(ay, by) - 60 : (ay + by) / 2;
         const pt = (s) => [(1 - s) * (1 - s) * ax + 2 * (1 - s) * s * cx + s * s * bx, (1 - s) * (1 - s) * ay + 2 * (1 - s) * s * cy + s * s * by];
         b.save(); b.strokeStyle = HOT; b.lineWidth = 2.5; b.beginPath();
         for (let s = 0; s <= u; s += 0.02) { const [px, py] = pt(s); s === 0 ? b.moveTo(px, py) : b.lineTo(px, py); }
@@ -1133,30 +1203,38 @@
         if (u >= 1) { const [px, py] = pt(0.97), ang = Math.atan2(by - py, bx - px); b.fillStyle = HOT; b.beginPath(); b.moveTo(bx, by); b.lineTo(bx - 11 * Math.cos(ang - 0.4), by - 11 * Math.sin(ang - 0.4)); b.lineTo(bx - 11 * Math.cos(ang + 0.4), by - 11 * Math.sin(ang + 0.4)); b.closePath(); b.fill(); }
         b.restore();
         if (u >= 1 && q.flow && !reduced()) { const d = (t * 0.5) % 1; const [px, py] = pt(d); l.fillStyle = HOT; l.fillRect(Math.round(px) - 3, Math.round(py) - 3, 6, 6); }
-        if (u >= 1 && q.label) { const [px, py] = pt(0.5), lw = textW(q.label, SMALL) + 8; b.save(); b.fillStyle = 'rgba(12,28,70,0.88)'; b.beginPath(); b.roundRect ? b.roundRect(px - lw / 2, py - 19, lw, 15, 4) : b.rect(px - lw / 2, py - 19, lw, 15); b.fill(); b.restore(); typed(b, q.label, px, py - 8, SMALL, TEXT, (age - t0 - rings.length * 0.45 - k * 0.5 - 0.5) / 0.3, { anchor: 'middle', rim: 4 }); }
-      });
-      // The notes below, each with an arrow up to the spot on the slide it explains.
-      const tn = t0 + rings.length * 0.45 + links.length * 0.5;
-      noteRows.forEach((q, k) => {
-        const u = reduced() ? 1 : clamp((age - tn - k * 0.5) / 0.45, 0, 1);
-        if (u <= 0) return;
-        const nx = x + pad + k * (nw + ngap), ny = y + ntop;
+        if (u >= 1 && q.label) { const [px, py] = pt(0.5), lw = textW(q.label, SMALL) + 8; b.save(); b.fillStyle = 'rgba(12,28,70,0.88)'; b.beginPath(); b.roundRect ? b.roundRect(px - lw / 2, py - 19, lw, 15, 4) : b.rect(px - lw / 2, py - 19, lw, 15); b.fill(); b.restore(); typed(b, q.label, px, py - 8, SMALL, TEXT, (age - q.start - 0.5) / 0.3, { anchor: 'middle', rim: 4 }); }
+      }
+      for (const q of noteRows) {
+        const u = reduced() ? 1 : clamp((age - q.start) / 0.45, 0, 1);
+        if (u <= 0) continue;
+        const nx = x + q.x, ny = y + ntop;
         b.save(); b.globalAlpha *= u;
         b.fillStyle = 'rgba(12,28,70,0.92)'; b.strokeStyle = 'rgba(122,170,255,0.6)'; b.lineWidth = 1.2;
-        b.beginPath(); b.roundRect ? b.roundRect(nx, ny, nw, nh, 8) : b.rect(nx, ny, nw, nh); b.fill(); b.stroke();
+        b.beginPath(); b.roundRect ? b.roundRect(nx, ny, q.w, NH, 8) : b.rect(nx, ny, q.w, NH); b.fill(); b.stroke();
         b.restore();
-        typed(b, q.title, nx + 10, ny + 18, `700 12px ${MONO}`, HOT, (age - tn - k * 0.5 - 0.2) / 0.3);
-        q.rows.forEach((row, j) => typed(b, row, nx + 10, ny + 34 + j * 14, SMALL, TEXT, (age - tn - k * 0.5 - 0.3) / 0.4));
+        typed(b, q.title, nx + 10, ny + 18, `700 12px ${MONO}`, HOT, (age - q.start - 0.2) / 0.3);
+        q.rows.forEach((row, j) => typed(b, row, nx + 10, ny + 34 + j * 14, SMALL, TEXT, (age - q.start - 0.3) / 0.4));
         const r = q.ring ? byId.get(q.ring) : null;
         if (r && u >= 1) {
-          const sx2 = x + r.x + r.w / 2, sy2 = y + r.y + r.h, ex = nx + nw / 2, ey = ny - 2;
+          const bx = rbox(r), sx2 = x + bx[0] + bx[2] / 2, sy2 = y + bx[1] + bx[3], ex = nx + q.w / 2, ey = ny - 2;
           b.save(); b.strokeStyle = ACC; b.lineWidth = 2; b.setLineDash([5, 5]);
           b.beginPath(); b.moveTo(sx2, sy2); b.bezierCurveTo(sx2, sy2 + 30, ex, ey - 30, ex, ey); b.stroke(); b.setLineDash([]);
           b.fillStyle = ACC; b.beginPath(); b.moveTo(ex, ey); b.lineTo(ex - 5, ey - 9); b.lineTo(ex + 5, ey - 9); b.closePath(); b.fill();
           b.restore();
         }
-      });
-    }, { title: m.title || 'study board', live: () => (moving && !reduced()) || now() - born < buildUp });
+      }
+    }, { title: m.title || 'study board', live: () => (links.some((q) => q.flow) && !reduced()) || now() - born < buildUp || now() < liveUntil });
+    if (!c) return;
+    c.more = () => hits.map((q) => ({ ...q, part: m.part }));
+    // A small slide clicked: it swaps into the big spot (its rings and arrows go with it).
+    c.pick = (id) => {
+      const i = Number(String(id).slice(1));
+      if (!Number.isInteger(i) || order[0] === i) return;
+      order = [i, ...order.filter((q) => q !== i)];
+      placeLabels(); layoutNotes(); sfx('pip'); liveUntil = now() + 0.6; touch(0.6);
+    };
+    c.addTo = (more) => { liveUntil = now() + addAll(more, ageNow + 0.1) - ageNow + 1; touch(1); };
     sfx('expand');
   }
 
@@ -2086,7 +2164,12 @@
   Object.assign(cap.style, { position: 'fixed', left: '50%', bottom: '18px', transform: 'translateX(-50%)', maxWidth: 'min(720px, 80vw)', padding: '8px 16px', font: `500 13px ${MONO}`, color: TEXT, background: GLASS, border: `1.5px solid ${ACC}`, boxShadow: `0 0 12px ${rgba(ACC, 0.45)}`, borderRadius: '2px', opacity: '0', transition: 'opacity .2s', pointerEvents: 'none', textAlign: 'center', zIndex: '5' });
   const mountCap = () => document.body.appendChild(cap);
   if (document.body) mountCap(); else document.addEventListener('DOMContentLoaded', mountCap);
-  const caption = { show(text) { cap.style.bottom = `${(R.safe?.bottom ?? 0) + 18}px`; cap.textContent = text; cap.style.opacity = text ? '1' : '0'; }, hide() { cap.style.opacity = '0'; } };
+  // Studyhall: captions only when they're switched on (each drawing says so); otherwise its lines go in Nova's speech
+  // bubble (R.capBubble, set by nova.ts), as when it's just talking.
+  const caption = {
+    show(text) { if (G.captions === false && R.capBubble) { cap.style.opacity = '0'; R.capBubble(text); return; } cap.style.bottom = `${(R.safe?.bottom ?? 0) + 18}px`; cap.textContent = text; cap.style.opacity = text ? '1' : '0'; },
+    hide() { cap.style.opacity = '0'; R.capBubble?.(''); },
+  };
 
   // ---------------------------------------------------------------- pacing: each line on the voice clock
   // Spoken lines: the marks are released across the line from when its audio starts (voice-out.js learns how many
@@ -2177,6 +2260,7 @@
     });
   }
   async function runSeg(e, gen) {
+    G.captions = e.captions !== false;
     R.ink.send?.({ type: 'draw_started', id: e.id, seg: e.seg });
     if (e.fade) for (const b of e.beats ?? []) for (const m of b.marks) if (m.part) drawnBy.set(m.part, e.id);
     if (e.deep) for (const b of e.beats ?? []) for (const m of b.marks) if (m.part) deepParts.add(m.part);
@@ -2458,7 +2542,7 @@
     // and not the reminders card or a drawing that goes by itself, which still move by the body.
     else if (h.kind === 'card' && h.m.keep) return;
     else if (h.kind === 'card' && !h.m.local && !drawnBy.has(h.part)) clearDrawing();
-    else if (h.kind === 'drag' || h.kind === 'card') { drag = { part: h.part, x: e.clientX, y: e.clientY, ms: partMarks(h.part), start: partMarks(h.part).map((m) => [m.dx, m.dy]) }; sfx('grab'); touch(); }
+    else if (h.kind === 'drag' || h.kind === 'card') { for (const m of partMarks(h.part)) m.moved = true; drag = { part: h.part, x: e.clientX, y: e.clientY, ms: partMarks(h.part), start: partMarks(h.part).map((m) => [m.dx, m.dy]) }; sfx('grab'); touch(); }
   }, true);
   addEventListener('pointermove', (e) => {
     if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.ms.forEach((m, i) => { m.dx = drag.start[i][0] + dx; m.dy = drag.start[i][1] + dy; }); touch(0.2); return; }
@@ -2512,6 +2596,11 @@
       const old = marks.filter((m) => m.alive && !m.pinned && !m.local && !m.leaving);
       for (const id of new Set(old.map((m) => m.part).filter(Boolean))) R.ink.send?.({ type: 'ink_closed', part: id });
       fadeOut(old, 0.4);
+    },
+    // Studyhall: where what's marked on the screen is now (for noticing the page change under it), in layer pixels.
+    screenMarks(id) {
+      const rects = marks.filter((m) => m.alive && m.screen && m.marked && !m.leaving && !m.local).map((m) => [m.marked[0] + m.dx, m.marked[1] + m.dy, m.marked[2], m.marked[3]].map(Math.round));
+      R.ink.send?.({ type: 'screen_marks', id, rects });
     },
     // Studyhall: a picture of each card on screen now (for saving an explanation as a note).
     snapshot(id) {

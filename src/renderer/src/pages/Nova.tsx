@@ -142,6 +142,16 @@ function RoomLeft({ name, usage, cap, noExtra }: { name: string; usage: ClaudeSt
 /** Tutor mode: start it, whether lessons are recorded, and the recorded lessons to watch again. */
 function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | undefined; save: (p: Partial<Prefs>) => void }): React.JSX.Element {
   const [lessons, setLessons] = useState<{ name: string; path: string; at: string; mb: number }[] | null>(null)
+  // The lesson being watched, in Studyhall's own player (it plays these recordings and can skip around in them).
+  const [watching, setWatching] = useState<{ name: string; path: string } | null>(null)
+  useEffect(() => {
+    if (!watching) return
+    const k = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setWatching(null)
+    }
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  }, [watching])
   useEffect(() => {
     const load = (): void =>
       void api.nova
@@ -167,6 +177,16 @@ function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | 
           or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> (again to stop)
         </span>
       </div>
+      <Row title="Lesson layout" hint="Lesson stage: each stop shows your slide big on Nova's study board, with its rings, and the cards beside it. Split screen: Studyhall moves your own slides window to the left of the screen for the lesson (and back afterwards), and the cards go on the right.">
+        <Seg
+          value={prefs?.novaTutorLayout === 'split' ? 'split' : 'stage'}
+          options={[
+            ['stage', 'Lesson stage'],
+            ['split', 'Split screen']
+          ]}
+          onChange={(v) => save({ novaTutorLayout: v })}
+        />
+      </Row>
       <Row title="Record lessons" hint="Each tutor lesson is saved as a video (your screen and its voice) in Documents\Nova Lessons, to watch again any time without using your Claude plan.">
         <input type="checkbox" checked={prefs?.novaRecord !== false} onChange={(e) => save({ novaRecord: e.target.checked })} aria-label="Record lessons" />
       </Row>
@@ -176,7 +196,7 @@ function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | 
           <li key={l.path} className="flex items-center gap-2 border-t border-line py-2 text-[13px] first:border-t-0">
             <span className="min-w-0 flex-1 truncate">{l.name}</span>
             <span className="text-xs text-muted">{l.mb} MB</span>
-            <button className="text-xs underline" onClick={() => void api.nova.openLesson(l.path)}>
+            <button className="text-xs underline" onClick={() => setWatching(l)}>
               Watch
             </button>
           </li>
@@ -186,6 +206,27 @@ function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | 
       <button className="mt-2 text-xs text-muted underline" onClick={() => void api.nova.lessonsFolder()}>
         Open the folder
       </button>
+      {watching && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6 backdrop-blur-sm" onClick={() => setWatching(null)} role="dialog" aria-label={watching.name}>
+          <div className="card flex max-h-full w-full max-w-5xl flex-col gap-2 rounded-2xl p-3" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 px-1">
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold">{watching.name}</span>
+              <button className="text-xs text-muted underline" onClick={() => void api.nova.openLesson(watching.path)}>
+                Open in my video player
+              </button>
+              <button className="text-xs underline" onClick={() => setWatching(null)}>
+                Close
+              </button>
+            </div>
+            <video
+              className="max-h-[75vh] w-full rounded-xl bg-black"
+              src={`material://lesson/${encodeURIComponent(watching.path.split(/[\\/]/).pop() ?? '')}`}
+              controls
+              autoPlay
+            />
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -971,6 +1012,9 @@ export function NovaPage(): React.JSX.Element {
                 hint="Every explanation Nova draws for goes onto that day's “Nova notes” page: your question, what it said and pictures of its cards. You can always say “save that” (or press the save icon on a card) to save one as its own note."
               >
                 <input type="checkbox" checked={prefs?.novaAutoNotes === true} onChange={(e) => save({ novaAutoNotes: e.target.checked })} aria-label="Save my explanations to Notes" />
+              </Row>
+              <Row title="Captions while it draws" hint="What Nova says while it draws shows as captions at the bottom of the screen, like subtitles. Off: in its speech bubble, as when it's just talking.">
+                <input type="checkbox" checked={prefs?.novaCaptions === true} onChange={(e) => save({ novaCaptions: e.target.checked })} aria-label="Captions while it draws" />
               </Row>
               <Row
                 title="Quieter while I talk"

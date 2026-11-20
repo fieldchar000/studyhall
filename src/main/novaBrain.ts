@@ -23,6 +23,7 @@ import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMark
 import { goToPage, lastLesson, lessonQuizText, lessonText, readLesson } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
 import { figureText } from './figures'
+import { splitForLesson } from './windowSplit'
 import { setConversation } from './conversation'
 import { explainDrew, explainEnd, explainSaid, explainStart, saveExplanation } from './explanations'
 import { illustrationsText } from './illustrations'
@@ -33,7 +34,7 @@ import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { claudeChat, draftWithConnectors } from './claude'
 import { voiceConfirm, voiceSay } from './voice'
-import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot } from './roamiesTools'
+import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot, pageTurnedByNova, boardOnScreen } from './roamiesTools'
 import { memoryOnEnd, noteExchange } from './novaMemory'
 import { get, getProfileId } from './db'
 import { briefText, startFocus, stopFocus } from './buddy'
@@ -80,7 +81,7 @@ How to help (use as few tool calls as the task needs; independent ones can go in
   • "Explain this", "what am I looking at", "this slide", "I'm confused by this", "what does this diagram mean" (something on their screen): take_screenshot of that window first, then one draw call that teaches it like a teacher at the board: 3 to 7 beats. Each beat marks the real part of the slide or page (ring or underline the words, an arrow along the diagram's arrow, a label beside a box), placed by where they are in the screenshot, AND most beats bring a compact card beside the slide (card_size: small, never over the slide) with what the slide doesn't show: the bigger picture, a diagram or labelled figure, a key fact, an everyday comparison, or how it links to other slides of the deck. Tie each card to the part of the slide it explains (tie: that part's words), so a line runs from the slide to the card; use connect with flow: true for something that travels or keeps happening. Aim for 2 to 4 cards on screen by the end, all in that ONE draw call. For example, beat 1: ring the title + a card with the big picture in two lines; beat 2: ring the first box + a small flow of what it does; beat 3: underline the key line + a note with an everyday comparison; beat 4: ring the last box + a card linking it to the rest of the deck. Before take_screenshot, say one short line ("Let's go through it.") so they hear you straight away. Each say line explains that part (what it means, why it's there, how it connects to the part before) and the last beat ties it together in one sentence they can remember. Never read the slide out word for word; explain it.
   • When their words end with "(While they held the keys, the PC was playing this, written down from its sound: …)", they held Ctrl+Alt+Shift so you'd hear what's playing (a video, a lecture recording, a song): answer about that ("what did he just say?", "explain that"). It's a rough automatic transcript of the PC's sound: go by the gist, and if it's music or unclear, say what you can make out. A YouTube video's title is usually in <live-state>.
   • Their school is on PoliteMall (Brightspace): for their courses, what's due, announcements, "what's in week 5", call school (read-only, read earlier from PoliteMall). "Pull up week 5": school with find, then school_file open: true. "Teach me week 5" / "summarise this week's slides": school with find, school_file to download the deck or PDF, then read_lesson it (source: the path) and teach it.
-  • When what they ask about is in a slide deck or PDF they have open (PowerPoint, a PDF in Edge, Opera GX or Chrome; the window in <live-state> tells you): call read_lesson once for that lesson (the whole thing as text, cheap; don't read it again for each question) and teach with all of it, not just what's on screen. Connect what they marked to what comes before and after it ("slide 9 set this up…"), going by the lesson map at the end (where each key term first comes up and comes back, and what each slide builds on); when a slide builds on an earlier one or leads to a later one (the map shows it), show it with show_board instead of leaving their slide: slides [{page: the one they're on, rings: [{id: "a", text: the words exactly as on that slide}]}, {page: the linked one, rings: [{id: "b", text: words on it}]}] and links [{from: "a", to: "b", label: "first came up here"}]; say the link out loud. On a board, underline a key term (style: underline), highlight a line to remember (style: highlight), point at part of a slide's diagram with area (see_photo its picture first), and add notes (small cards under the slides with an arrow from a ring) for what a spot means. A board shows 2 or 3 slides; their own slide never moves. Every explanation of one slide or page names at least one link from the map out loud ("this builds on slide 2's receptor types", "slide 7 is where this matters") and, when it helps, a small card for that link; for a topic ("teach me beta blockers"), give read_lesson the topic and teach its slides as one story, and when a later slide or page goes deeper (a detailed diagram, a worked example), say so and show it: see_photo its picture address, then a photo card of it with labels on the parts you're explaining, or go_to_page to it and ring it on their screen (take_screenshot first). Use the slides' own words and diagrams; add a picture from the web (a photo card with a Wikipedia query) or a drawn diagram when the slides don't have one.
+  • When what they ask about is in a slide deck or PDF they have open (PowerPoint, a PDF in Edge, Opera GX or Chrome; the window in <live-state> tells you): call read_lesson once for that lesson (the whole thing as text, cheap; don't read it again for each question) and teach with all of it, not just what's on screen. Connect what they marked to what comes before and after it ("slide 9 set this up…"), going by the lesson map at the end (where each key term first comes up and comes back, and what each slide builds on); when a slide builds on an earlier one or leads to a later one (the map shows it), show it with show_board instead of leaving their slide: slides [{page: the one they're on, rings: [{id: "a", text: the words exactly as on that slide}]}, {page: the linked one, rings: [{id: "b", text: words on it}]}] and links [{from: "a", to: "b", label: "first came up here"}]; say the link out loud. On a board, underline a key term (style: underline), highlight a line to remember (style: highlight), point at part of a slide's diagram with area (see_photo its picture first), and add notes (small cards under the slides with an arrow from a ring) for what a spot means. While the board is up it covers their slide: ring more on it with show_board add: true (rings on the board's copy of the slide), never with draw on their screen. A board shows 2 or 3 slides; their own slide never moves. Every explanation of one slide or page names at least one link from the map out loud ("this builds on slide 2's receptor types", "slide 7 is where this matters") and, when it helps, a small card for that link; for a topic ("teach me beta blockers"), give read_lesson the topic and teach its slides as one story, and when a later slide or page goes deeper (a detailed diagram, a worked example), say so and show it: see_photo its picture address, then a photo card of it with labels on the parts you're explaining, or go_to_page to it and ring it on their screen (take_screenshot first). Use the slides' own words and diagrams; add a picture from the web (a photo card with a Wikipedia query) or a drawn diagram when the slides don't have one.
   • From their own study files (they name their notes, a week, a module or a file): find_material, then read_material, then teach it the same live way (draw beats from what their notes say), or teach with material_id when they ask for a lesson with a quiz at the end.
   After a live lesson, stop: the drawing speaks its lines. Offer one next step in a few words only if it helps ("Want me to quiz you on it?").
 - Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file, find_material first, then read_material (to answer or teach from them) or quiz_me.
@@ -366,7 +367,13 @@ function startJob(brief: string, materials: string, title: string, wc: WebConten
 
 const ACTION_TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page'] as const
 
-type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean }
+type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean; visual?: string | null; drew?: string[]; nudged?: boolean; circled?: boolean }
+/** Marks on their screen (rings, underlines, arrows, labels at a place on it) in a draw call. */
+const SCREEN_KINDS = new Set(['point', 'target', 'hover', 'ring', 'frame', 'underline', 'strike', 'check', 'cross', 'connect', 'trace', 'num', 'label', 'write', 'spotlight', 'highlight', 'line', 'curve', 'arrow', 'circle', 'rect'])
+function screenMarksIn(args: Record<string, unknown>): boolean {
+  const beats = args.beats as { marks?: { kind?: string; at?: unknown; points?: unknown }[] }[] | undefined
+  return Array.isArray(beats) && beats.some((b) => b?.marks?.some((q) => SCREEN_KINDS.has(String(q?.kind)) && (q?.at || q?.points)))
+}
 /** A how-to's drawing that rings a control without waiting for the click (the walkthrough then stopped at step one):
  *  its last step waits for the click, so it carries on from there. */
 function needsClick(args: Record<string, unknown>): void {
@@ -599,6 +606,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       'The study board: the slide they\'re on and the slides it connects to (from the lesson you read with read_lesson), side by side and big enough to read, with rings on the exact words and arrows from one slide to another. Their own slide never moves. Use it whenever a slide builds on an earlier one or leads to a later one ("how does this connect?", "where did this come from?", or the lesson map shows a link). Put a ring on every slide (the words that link them, exactly as written there), and links from a ring on one slide to a ring on another, so an arrow runs between them. A ring can be a circle round the words (style ring, the default), an underline (a key term in a sentence) or a highlight (a line to remember). To point at part of a slide\'s picture (a diagram part with no words): see_photo that slide\'s picture (its address from read_lesson) and give area as fractions of the picture instead of text. notes: up to 4 small cards under the slides, each with an arrow from a ring, for what that spot means (one or two short sentences).',
       {
         title: z.string().max(60).optional(),
+        add: z.boolean().optional().describe('true: add these rings (and links, notes) to the board that is up now, instead of opening a new one'),
         slides: z
           .array(
             z.object({
@@ -691,19 +699,24 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         const l = await readLesson(source ? String(source) : 'front')
         if (typeof l === 'string') return text(l)
         if (tutorOn()) tutorTitle(l.title)
+        // Tutor mode, split screen: their slides window moves to the left for the lesson (back when it ends).
+        const split = tutorOn() && getPrefs().novaTutorLayout === 'split' && l.window ? await splitForLesson(l.window) : ''
         // Already read in this conversation (the last hour): its text and lesson map are above; don't pay for them twice.
         const seen = readHere.get(l.id)
         if (!again && !from && !to && !topic && seen && Date.now() - seen < 3_600_000)
           return text(`You already read "${l.title}" (${l.count} ${l.kind === 'slides' ? 'slides' : 'pages'}) in this conversation: use that text and its lesson map, above.${l.current ? ` They're on ${l.kind === 'slides' ? 'slide' : 'page'} ${l.current} now.` : ''} (again: true reads it all once more.)`)
         readHere.set(l.id, Date.now())
-        return text(lessonText(l, from ?? 1, to ?? l.count, 16_000, topic ? String(topic) : undefined))
+        return text(`${split ? `${split}\n\n` : ''}${lessonText(l, from ?? 1, to ?? l.count, 16_000, topic ? String(topic) : undefined)}`)
       }
     ),
     tool(
       'go_to_page',
       'Turn the deck or PDF they have open to a slide or page (page), or scroll a web page to some words on it (find). Then take_screenshot and point at what you mean on it. Only when showing them something there helps (a later slide that explains what they asked about).',
       { page: z.number().int().min(1).optional(), find: z.string().max(80).optional().describe('words on the web page to scroll to') },
-      async ({ page, find }) => text(await goToPage({ page: page ?? undefined, find: find ? String(find) : undefined }))
+      async ({ page, find }) => {
+        pageTurnedByNova()
+        return text(await goToPage({ page: page ?? undefined, find: find ? String(find) : undefined }))
+      }
     )
   ]
   // PoliteMall (politemall.ts): their courses, read earlier from Brightspace (read-only).
@@ -712,13 +725,13 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       'find_figure',
       'Real labelled diagrams of something with parts (the heart, a nephron, a synapse, a neuron, a cell, the skin, a joint) from Wikimedia Commons: textbook-style figures, free to show. Then see_photo the clearest one and show it on a photo card with pins and labels on the parts you explain. Use it for anatomy and structures instead of a Wikipedia photo.',
       { topic: z.string().min(2).max(100).describe('what to find a figure of, in plain English, e.g. "human heart", "nephron", "chemical synapse"') },
-      async ({ topic }) => text(await figureText(String(topic)))
+      async ({ topic }) => text(await lookup('fig', String(topic), () => figureText(String(topic))))
     ),
     tool(
       'find_illustrations',
       'Drawings from the illustration kit (Bioicons: cells, receptors, channels, neurons, organs, blood cells, drugs, pills, lab things) to build a scene card: a picture of how something works with real-looking parts. Give a few short searches at once ("beta receptor", "heart", "pill", "adrenaline"); each answer lists drawing ids to use as pieces.',
       { searches: z.array(z.string().min(2).max(40)).min(1).max(6) },
-      async ({ searches }) => text(await illustrationsText(searches.map(String)))
+      async ({ searches }) => text(await lookup('ill', searches.map(String).join(' | '), () => illustrationsText(searches.map(String))))
     )
   ]
   const schoolTools = [
@@ -766,6 +779,11 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     const run = t.handler
     t.handler = (async (args: Record<string, unknown>, extra: unknown) => {
       if (t.name === 'draw' && turnRef.current?.howTo) needsClick(args)
+      // Tutor mode: cards at their normal size, beside the slide (deep cards covered the screen, one at a time).
+      if (t.name === 'draw' && tutorOn()) delete args.deep
+      // A study board covers their slide: rings for it go on the board's copy (show_board add), not under the board.
+      const onBoard = t.name === 'draw' ? boardOnScreen() : null
+      if (onBoard && screenMarksIn(args)) return text(`Not drawn: the study board is covering their slide, so marks on their screen would be hidden under it. Put them on the board instead: show_board with add: true and slides [{page: ${onBoard[0]}, rings: [{id, text: the words exactly as on that slide, style: ring | underline | highlight, label}]}] (or area for part of its picture). Cards (fact cards, flows, diagrams) can still be drawn with draw.`)
       const id = stageTool(t.name, args)
       if (t.name === 'draw') explainDrew()
       const t0 = Date.now()
@@ -792,6 +810,8 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         const out = (await run(args as never, extra)) as { isError?: boolean; content?: { type: string; text?: string }[] }
         failed = !!out?.isError
         said = out?.content?.find((c) => c.type === 'text')?.text ?? ''
+        const missing = t.name === 'draw' && !failed ? stillMissing(tr, args) : ''
+        if (missing && out?.content) out.content.push({ type: 'text', text: missing })
         return out as never
       } finally {
         timed()
@@ -946,15 +966,58 @@ const NUMBERS = /\b(how (?:much|many)|rate|percentage|statistics?|growth|populat
 const QUESTION = /\b(what|why|how|does|do|is|are|can|when|where|which|who)\b/i
 const TRIVIAL = /^\s*(really|cool|nice|ok(?:ay)?|yes|yeah|no|nope|thanks|thank you|wait|huh|wow|lol|and then|so|right|got it|i see)\b[\s\S]{0,25}$/i
 let lastExplained = 0 // when the last explanation was (for telling a new question from a reaction)
-function visualHint(said: string): string {
+/** What an explanation shows besides its fact cards and flow (null: not an explanation). Starts looking up the figure
+ *  or the scene's drawings now (free), so drawing it costs no wait when Nova asks for them. */
+function visualNeed(said: string): { extra: string; followUp: boolean; ready: string } | null {
   const explaining = DEEP_ASK.test(said) && !isHowTo(said) && !TRIVIAL.test(said)
   const words = said.trim().split(/\s+/).length
   const followUp = !explaining && Date.now() - lastExplained < 10 * 60_000 && QUESTION.test(said) && words >= 5 && !TRIVIAL.test(said)
-  if (!explaining && !followUp) return ''
-  const extra = PARTS.test(said) ? 'a real labelled figure (find_figure) or a model you build' : MOLECULAR.test(said) ? 'a scene (find_illustrations)' : HISTORY.test(said) ? 'a timeline' : COMPARE.test(said) ? 'a table' : NUMBERS.test(said) ? 'bars or a graph' : 'the visual that fits best (a figure, a scene, a model, a timeline, a table or a chart)'
-  return followUp
-    ? `\n(This is a new question, not a reaction: answer it with its own cards: a fact card, and a flow or ${extra} where it helps.)`
-    : `\n(Show it as: 1 or 2 fact cards + a flow + ${extra}.)`
+  if (!explaining && !followUp) return null
+  const part = PARTS.exec(said)?.[0]?.toLowerCase()
+  const mol = MOLECULAR.exec(said)?.[0]?.toLowerCase()
+  let ready = ''
+  if (part) {
+    void lookup('fig', part, () => figureText(part)).catch(() => '')
+    ready = ` Figures of "${part}" are already looked up: find_figure("${part}") answers at once.`
+  } else if (mol) void lookup('ill', mol, () => illustrationsText([mol])).catch(() => '')
+  const extra = part ? 'a real labelled figure (find_figure) or a model you build' : mol ? 'a scene (find_illustrations)' : HISTORY.test(said) ? 'a timeline' : COMPARE.test(said) ? 'a table' : NUMBERS.test(said) ? 'bars or a graph' : 'the visual that fits best (a figure, a scene, a model, a timeline, a table or a chart)'
+  return { extra, followUp, ready }
+}
+function visualHint(need: ReturnType<typeof visualNeed>): string {
+  if (!need) return ''
+  return need.followUp
+    ? `\n(This is a new question, not a reaction: answer it with its own cards: a fact card, and a flow or ${need.extra} where it helps.${need.ready})`
+    : `\n(Show it as: 1 or 2 fact cards + a flow + ${need.extra}.${need.ready})`
+}
+// Figures and scene drawings looked up for this question, kept 10 minutes: Nova's own find_figure or
+// find_illustrations for the same thing (or one containing it) gets the answer at once.
+const lookups = new Map<string, { at: number; p: Promise<string> }>()
+function lookup(kind: string, key: string, run: () => Promise<string>): Promise<string> {
+  const k = key.toLowerCase().trim()
+  const now = Date.now()
+  for (const [id, v] of lookups) if (now - v.at > 10 * 60_000) lookups.delete(id)
+  const near = [...lookups.entries()].find(([id]) => id.startsWith(`${kind}:`) && (id.slice(kind.length + 1) === k || (kind === 'fig' && k.split(/\s+/).includes(id.slice(kind.length + 1)))))
+  if (near) return near[1].p
+  const p = run().catch((e) => {
+    lookups.delete(`${kind}:${k}`)
+    throw e
+  })
+  lookups.set(`${kind}:${k}`, { at: now, p })
+  return p
+}
+// The card kinds that count as an explanation's topic visual (beside its fact cards and flow).
+const TOPIC_VISUALS = new Set(['photo', 'scene', 'model', 'molecule', 'timeline', 'table', 'bars', 'graph', 'map', 'geometry', 'math', 'board', 'mindmap'])
+const RING_KINDS = new Set(['ring', 'label', 'target', 'arrow', 'point', 'circle', 'frame', 'underline', 'highlight'])
+/** After a drawing in an explanation: still no topic visual? Say so once in the draw's result, so Nova adds it next
+ *  (it otherwise often stopped at a fact card and a flow). */
+function stillMissing(tr: Turn | null | undefined, args: Record<string, unknown>): string {
+  if (!tr?.visual || tr.nudged) return ''
+  const kinds = ((args.beats as { marks?: { kind?: string }[] }[] | undefined) ?? []).flatMap((b) => (b?.marks ?? []).map((q) => String(q?.kind)))
+  tr.drew = [...(tr.drew ?? []), ...kinds]
+  if (tr.drew.some((k) => TOPIC_VISUALS.has(k) || (tr.circled && RING_KINDS.has(k)))) return ''
+  if (tr.drew.some((k) => k === 'quiz' || k === 'medal')) return '' // (a quiz is its own thing)
+  tr.nudged = true
+  return `\n\nStill missing from this explanation: ${tr.visual}. Draw it now, in one more draw call (keep talking while it draws).`
 }
 
 /** A slide question with a deck read (or named): a note to show links between slides on the study board (the quick
@@ -1220,8 +1283,12 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   let wroteCall = false // the model wrote a tool call as text instead of calling it
   let retried = false
   let beatDone = false
+  // (tutor mode: every stop gets its visual too; a stop is often just "next")
+  const need = tutorOn() ? { extra: "the visual that fits this stop best (their slide's own diagram on a photo card with labels, a figure from find_figure, a scene, a model, a timeline, a table or a chart)", followUp: false, ready: "" } : visualNeed(said)
   const turn: Turn = {
     howTo: isHowTo(said),
+    visual: need?.extra ?? null,
+    circled: !!screen.looked,
     started,
     times: times.tools,
     quiet: false,
@@ -1334,7 +1401,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     message: {
       role: 'user',
       content: [
-        { type: 'text', text: `${recapFor(c)}${liveFor(c, liveState)}${screen.text ? `\n${screen.text}` : ''}\n\n${said}${agentish ? '\n(They asked for an agent: call send_agent.)' : ''}${boardHint(said)}${howToHint(said)}${visualHint(said)}${screen.opening ? `\n(You have already said out loud: "${screen.opening}" Don't repeat it: carry on from there.)` : ''}` },
+        { type: 'text', text: `${recapFor(c)}${liveFor(c, liveState)}${screen.text ? `\n${screen.text}` : ''}\n\n${said}${agentish ? '\n(They asked for an agent: call send_agent.)' : ''}${boardHint(said)}${howToHint(said)}${visualHint(need)}${screen.opening ? `\n(You have already said out loud: "${screen.opening}" Don't repeat it: carry on from there.)` : ''}` },
         ...(screen.image ? [{ type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: screen.image.replace(/^data:image\/\w+;base64,/, '') } }] : [])
       ]
     },

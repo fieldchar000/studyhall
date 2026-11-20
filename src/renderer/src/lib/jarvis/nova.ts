@@ -28,6 +28,7 @@ type InkOp = {
   clear?: Record<string, unknown>
   /** pictures of the cards on screen, asked for under this id (saving an explanation as a note) */
   snapshot?: string
+  marksAsk?: string
   reminders?: Record<string, unknown>
   stale?: boolean
   click?: { x: number; y: number }
@@ -247,6 +248,16 @@ async function boot(opts: {
 
   // ---------- the host: what Nova does → what the character does (Roamies' host.js) ----------
   let speech: Any = null
+  // A drawing's lines when captions are off (ink.js): in Nova's speech bubble, one line at a time; '' ends it.
+  let capSpeech: Any = null
+  R.capBubble = (text: string): void => {
+    if (!agent) return
+    capSpeech?.end()
+    capSpeech = null
+    if (!text) return
+    capSpeech = agent.say('', { stream: true })
+    capSpeech.append(text)
+  }
   let thought: Any = null
   let listen: Any = null
   let heard: Any = null
@@ -504,13 +515,15 @@ async function boot(opts: {
       else if (op.play) {
         endTalk()
         // The first drawing of a new answer: the last answer's cards make way.
+        const addsToBoard = !!(op.play as { beats?: { marks?: { add?: boolean }[] }[] }).beats?.[0]?.marks?.[0]?.add
         if (freshAnswer) {
           freshAnswer = false
-          R.ink?.clearOld?.()
+          if (!addsToBoard) R.ink?.clearOld?.()
         }
         R.ink?.play(op.play)
       } else if (op.clear) R.ink?.clear(op.clear)
       else if (op.snapshot) R.ink?.snapshot?.(op.snapshot)
+      else if (op.marksAsk) R.ink?.screenMarks?.(op.marksAsk)
       else if (op.reminders) R.ink?.reminders(op.reminders)
       else if (op.stale) R.ink?.stale()
       else if (op.click) R.ink?.click(op.click.x, op.click.y)

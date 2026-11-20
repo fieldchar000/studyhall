@@ -1007,6 +1007,8 @@ export interface Prefs {
   novaAgents?: 'auto' | 'haiku' | 'sonnet' // which model background agents use (auto: Sonnet to make things, Haiku otherwise)
   novaChatDepth?: 'auto' | 'quick' | 'deeper' // chats: Nova goes deeper (Sonnet) by itself for a heart-to-heart (auto), or always quick / always deeper
   novaAutoNotes?: boolean // every explanation Nova draws for is added to the day's "Nova notes" page (default off)
+  novaTutorLayout?: 'stage' | 'split' // tutor mode: their slide big on the study board with the cards beside it (stage, the default), or their own slides window moved to the left of the screen (split)
+  novaCaptions?: boolean // while it draws, what it says shows as captions at the bottom of the screen (off: in its speech bubble, the default)
   novaTeachSpeed?: number // the voice's speed when explaining or teaching (default 0.92, a little slower)
   novaDuck?: boolean // other apps' sound goes quieter while you hold the talk key (default on)
   politeTasks?: boolean // PoliteMall quizzes and assignments become Studyhall tasks (default on)
@@ -1159,6 +1161,7 @@ export interface Api {
     /** Tutor mode's recording: a piece of the video, and the end of it. */
     recChunk(chunk: Uint8Array): void
     recDone(): void
+    recFailed(why: string): void
     status(): Promise<VoiceStatus>
     /** One-time download of the offline speech models. */
     download(): Promise<VoiceStatus>

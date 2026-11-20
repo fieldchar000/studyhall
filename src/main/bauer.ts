@@ -16,6 +16,26 @@ import { getSetting, setSetting } from './db'
 let loadUrl: (hash: string) => string = (h) => h
 let webPrefs: Electron.WebPreferences = {}
 let orbWin: BrowserWindow | null = null
+// A tutor lesson being recorded: Nova's drawings show in the recording (they're the lesson), but still never in Nova's
+// own screenshots, which hide it for the moment they take.
+let inRecordings = false
+let hiding = 0
+export function novaInRecordings(on: boolean): void {
+  inRecordings = on
+  if (orbWin && !orbWin.isDestroyed() && !hiding) orbWin.setContentProtection(!on)
+}
+export async function hiddenFromCaptures<T>(fn: () => Promise<T>): Promise<T> {
+  if (!inRecordings || !orbWin || orbWin.isDestroyed()) return fn()
+  if (!hiding++) {
+    orbWin.setContentProtection(true)
+    await new Promise((r) => setTimeout(r, 80)) // (the screen's compositor takes a frame to apply it)
+  }
+  try {
+    return await fn()
+  } finally {
+    if (!--hiding && orbWin && !orbWin.isDestroyed()) orbWin.setContentProtection(!inRecordings)
+  }
+}
 let cardsWin: BrowserWindow | null = null
 let circleWin: BrowserWindow | null = null
 let pointWin: BrowserWindow | null = null
@@ -151,7 +171,8 @@ export function inkPlay(seg: unknown, near?: { x: number; y: number } | null): v
   if (suspended || !orbWin || orbWin.isDestroyed()) return
   if (near && !OFFSCREEN) layerOn(screen.getDisplayNearestPoint(near))
   if (!orbWin.isVisible()) orbWin.showInactive()
-  orbWin.webContents.send('bauer:ink', { play: seg })
+  // (captions at the bottom only when they're switched on; else its lines show in Nova's speech bubble)
+  orbWin.webContents.send('bauer:ink', { play: { ...(seg as Record<string, unknown>), captions: getPrefs().novaCaptions === true } })
 }
 /** Roamies' reminders card (today / later), on the globe's layer. */
 export function inkReminders(msg: Record<string, unknown>): void {
@@ -203,6 +224,15 @@ export function inkSnapshot(id: string): void {
 }
 export function inkClear(e: Record<string, unknown> = {}): void {
   orbWin?.webContents.send('bauer:ink', { clear: e })
+}
+/** Ask the overlay where what it marked on the screen is (rings, underlines, labels): it answers with a
+ *  'screen_marks' event (see roamiesTools.ts). Also where its layer is on screen (DIP). */
+export function inkAskMarks(id: string): void {
+  orbWin?.webContents.send('bauer:ink', { marksAsk: id })
+}
+export function inkLayer(): Electron.Rectangle | null {
+  if (!orbWin || orbWin.isDestroyed()) return null
+  return OFFSCREEN ? screen.getPrimaryDisplay().workArea : orbWin.getBounds()
 }
 /** A screen point in the layer's own coordinates. */
 function local(p: Spot): Spot {
@@ -487,7 +517,7 @@ const overlayWindow = (bounds: Electron.Rectangle, hash: string, focusable = fal
     setIgnore(ignore, o)
   }
   w.setAlwaysOnTop(true, 'screen-saver')
-  w.setContentProtection(true) // Nova never shows up in screenshots or recordings (or in its own circle-to-ask)
+  w.setContentProtection(!inRecordings) // Nova never shows up in screenshots or recordings (or in its own circle-to-ask), except a tutor lesson's recording
   w.on('close', (e) => {
     if (quitting) return
     e.preventDefault()

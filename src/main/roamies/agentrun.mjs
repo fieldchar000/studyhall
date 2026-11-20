@@ -64,12 +64,18 @@ export function trimRun(msgs, budgetChars) {
   return msgs.map((m, i) => (m.role === 'tool' && i > 1 && i < keep ? { ...m, content: m.content.map((r) => ({ ...r, content: short(r.content) })) } : m));
 }
 
+// Studyhall: what a background agent has no screen for. Not written as () => {}: tools.mjs is shared with Nova's own
+// build, and Rollup (4.64), seeing only this call of createTools (Nova's comes through a lazy import), took these to do
+// nothing everywhere and left every call to them out, so Nova's overlay was never told to clear its drawing, links
+// never opened, and lists never showed. Reaching for a global keeps them real calls.
+const nothing = (...args) => void globalThis.__roamiesNothing?.(...args);
+
 async function run({ agent: a, model: md, content }) {
   allow = a.allow !== false;
   route = md.route === 'claude-code' ? 'claude-code' : 'api';
   let result = null;
   const { tools: all } = createTools({
-    allowActions: () => allow, ui: () => {}, openUrl: () => {}, onCommitments: () => {}, showList: () => {}, fmtWhen: (ms) => new Date(ms).toLocaleString(),
+    allowActions: () => allow, ui: nothing, openUrl: nothing, onCommitments: nothing, showList: nothing, fmtWhen: (ms) => new Date(ms).toLocaleString(),
     commitmentsText: () => '', userName: a.userName || 'The user', workdir: a.dir, own: a.dir, pointScale: () => pointScale(md.model ?? ''),
     ask: (opts, signal) => request({ t: 'ask', question: String(opts?.placeholder ?? '').slice(0, 300) }, signal).then((yes) => (yes ? 'yes' : null)),
     // web_search's side search runs on the same Anthropic sign-in as this agent; other providers use the keyless engines.

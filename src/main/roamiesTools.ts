@@ -7,7 +7,7 @@
 // This file is Studyhall's side: it gives tools.mjs what Roamies' app gives it (its hands helper, the overlay, a
 // yes/no question, the promises store), and turns each tool into one of Nova's (Agent SDK) tools.
 
-import { app, BrowserWindow, clipboard, nativeImage, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, clipboard, desktopCapturer, nativeImage, shell, type WebContents } from 'electron'
 import { fork } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -15,7 +15,7 @@ import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { getPrefs } from './prefs'
 import { get, getProfileId, getSetting, setSetting } from './db'
-import { agentsUi, orbPanel, inkClear, inkSnapshot, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
+import { agentsUi, hiddenFromCaptures, inkAskMarks, inkLayer, orbPanel, inkClear, inkSnapshot, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
 import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
 import { stageDone } from './novaStage'
 import { lessonFetch } from './lessonReader'
@@ -192,9 +192,19 @@ inkHooks.event = (msg) => {
   const t = String(msg.type ?? '')
   if (t === 'draw_started') rt.ink.started(msg.id, msg.seg)
   else if (t === 'draw_wait_done') rt.ink.waitDone(msg.id, msg.beat, msg.result)
-  else if (t === 'ink_closed') rt.ink.closed(msg.part)
+  else if (t === 'ink_closed') {
+    rt.ink.closed(msg.part)
+    if (board?.part === msg.part) board = null
+  } else if (t === 'board_gone') {
+    board = null
+    notes.push('The study board had been closed, so those rings weren\'t drawn. Show the board again with show_board (all of it) if it still helps.')
+  }
   else if (t === 'ink_pinned') rt.ink.pinned(msg.part, !!msg.on)
-  else if (t === 'ink_cleared') rt.ink.cleared()
+  else if (t === 'ink_cleared') {
+    rt.ink.cleared()
+    board = null
+  }
+  else if (t === 'screen_marks') marksWaiters.get(String(msg.id))?.((msg.rects as number[][]) ?? [])
   else if (t === 'quiz_done') {
     const n = rt.ink.quizDone(msg.part, msg.picks)
     if (n) notes.push(n)
@@ -248,6 +258,7 @@ export function roamies(): Promise<Any> {
     }
     const { createTools } = await import('./roamies/tools.mjs')
     rt = createTools({
+      aroundShot: hiddenFromCaptures,
       allowActions: () => (getPrefs().novaHands ?? 'off') !== 'off',
       ui: (m: Any) => {
         if (m.kind === 'hands') {
@@ -594,10 +605,26 @@ function busyCells(img: Electron.NativeImage): number[][] {
 }
 
 // ---------- The study board as a tool of its own ----------
+// The board that's up: it covers their slide, so rings for that slide go on the board's copy of it (add).
+let board: { part: string; pages: number[]; notes: boolean } | null = null
+/** The pages on the study board that's up now (null when there's none). */
+export const boardOnScreen = (): number[] | null => board?.pages ?? null
 /** Shows the study board now: the slides side by side, rings on the words, arrows between them. What it couldn't find. */
-export async function showBoard(a: { title?: string; slides: BoardSlide[]; links?: { from: string; to: string; label?: string; flow?: boolean }[]; notes?: { ring?: string; title: string; text: string }[] }): Promise<string> {
+export async function showBoard(a: { title?: string; add?: boolean; slides: BoardSlide[]; links?: { from: string; to: string; label?: string; flow?: boolean }[]; notes?: { ring?: string; title: string; text: string }[] }): Promise<string> {
   const id = lastLessonId()
   if (!id) return 'Read the deck or PDF with read_lesson first.'
+  // More rings (and arrows, notes) on the board that's up, without opening a new one.
+  if (a.add) {
+    if (!board) return 'There is no study board up now. Show one with show_board (without add).'
+    const off = a.slides.filter((s) => !board!.pages.includes(s.page)).map((s) => s.page)
+    const slides = a.slides
+      .filter((s) => board!.pages.includes(s.page))
+      .map((s) => ({ page: s.page, rings: (s.rings ?? []).map((r) => ({ ...r, rect: r.area ?? (r.text ? findOnPage(id, s.page, r.text) : null) })) }))
+    if (OFFSCREEN) console.info('board+>', JSON.stringify({ slides: slides.map((s) => ({ page: s.page, rings: s.rings.map((r) => [r.id, r.text ?? r.area, r.style ?? 'ring', !!r.rect]) })), links: a.links, notes: a.notes }))
+    inkPlay({ id: `board-${board.part}-${Date.now().toString(36)}`, seg: 0, beats: [{ n: 1, say: '', caption: '', voiced: false, marks: [{ kind: 'board', add: true, part: board.part, slides, links: a.links ?? [], notes: a.notes ?? [] }] }], last: true, win: null, busy: [] })
+    const missed = slides.flatMap((s) => s.rings.filter((r) => !r.rect).map((r) => `"${r.text ?? r.id}" (slide ${s.page})`))
+    return `Added to the study board${missed.length ? `, but couldn't find ${missed.join(', ')} (use the words exactly as written there)` : ''}${off.length ? `. Slide ${off.join(' and ')} isn't on the board (it shows ${board.pages.join(', ')}): show a new board for it` : ''}${a.notes?.length && !board.notes ? '. This board has no room for notes (it opened without any): say it, or draw a small card' : ''}.`
+  }
   const slides = await Promise.all(
     a.slides.slice(0, 3).map(async (s) => {
       const buf = await lessonPicture(id, s.page)
@@ -606,12 +633,123 @@ export async function showBoard(a: { title?: string; slides: BoardSlide[]; links
   )
   if (OFFSCREEN) console.info('board>', JSON.stringify({ slides: slides.map((s) => ({ page: s.page, rings: s.rings.map((r) => [r.id, r.text ?? r.area, r.style ?? 'ring', !!r.rect]) })), links: a.links, notes: a.notes }))
   const part = `b${Date.now().toString(36)}`
+  board = { part, pages: slides.map((s) => s.page), notes: (a.notes ?? []).length > 0 }
   inkPlay({ id: `board-${part}`, seg: 0, beats: [{ n: 1, say: '', caption: '', voiced: false, marks: [{ kind: 'board', part, title: a.title, slides, links: a.links ?? [], notes: a.notes ?? [] }] }], last: true, win: null, busy: [] })
   const missed = slides.flatMap((s) => s.rings.filter((r) => !r.rect).map((r) => `"${r.text ?? r.id}" (slide ${s.page}${r.text ? '' : ': give text or area'})`))
   const ringIds = new Set(slides.flatMap((s) => s.rings.filter((r) => r.rect).map((r) => r.id)))
   const drawn = (a.links ?? []).filter((q) => ringIds.has(q.from) && ringIds.has(q.to)).length
   if (slides.length > 1 && !drawn) missed.push(`no arrow (give each slide a ring and link a ring on one to a ring on another by id)`)
   return `The study board is up: slides ${slides.map((s) => s.page).join(' and ')} side by side${missed.length ? `. Couldn't find ${missed.join(', ')} on the slide (use the words exactly as written there)` : ', rings and arrows drawn'}. Now say the link out loud in a sentence or two (and add a small card with draw if it helps).`
+}
+
+// ---------- Rings that outlive their page ----------
+// A slide deck or PDF doesn't say when its page turns (PowerPoint's title stays the same; a PDF's address only changes
+// after the #), so the rings would stay on the next slide. Every 1.5 s while something's marked on the screen, a small
+// picture of the screen is taken (Nova's own drawings aren't in it) and what's under each mark is compared with how it
+// looked: when most of them changed (a new slide, a scroll), the marks fade. Local and free; nothing leaves the PC.
+const marksWaiters = new Map<string, (rects: number[][]) => void>()
+function screenMarks(): Promise<number[][]> {
+  const id = Math.random().toString(36).slice(2)
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      marksWaiters.delete(id)
+      resolve([])
+    }, 600)
+    marksWaiters.set(id, (r) => {
+      clearTimeout(t)
+      marksWaiters.delete(id)
+      resolve(r)
+    })
+    inkAskMarks(id)
+  })
+}
+/** A half-size picture of the screen the layer is on, and how many of its pixels per DIP. Tests: their own window. */
+async function screenThumb(layer: Electron.Rectangle): Promise<{ img: Electron.NativeImage; k: number; origin: { x: number; y: number } } | null> {
+  if (OFFSCREEN) {
+    const tw = BrowserWindow.getAllWindows().find((w) => w.getTitle().startsWith('Nova test'))
+    const img = tw ? await tw.webContents.capturePage().catch(() => null) : null
+    if (!img || img.isEmpty()) return null
+    const small = img.resize({ width: Math.max(1, Math.round(img.getSize().width / 2)) })
+    return { img: small, k: small.getSize().width / tw!.getContentBounds().width, origin: layer }
+  }
+  const d = screen.getDisplayMatching(layer)
+  const w = Math.round(d.bounds.width / 2)
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: w, height: Math.round(d.bounds.height / 2) } }).catch(() => [])
+  const src = sources.find((s) => s.display_id === String(d.id)) ?? sources[0]
+  if (!src || src.thumbnail.isEmpty()) return null
+  return { img: src.thumbnail, k: src.thumbnail.getSize().width / d.bounds.width, origin: d.bounds }
+}
+/** How each marked spot looks: the grey of 32×8 points across it (a little inside its edge, where a ring's own line
+ *  would be). Points, not averages: one line of text and another look the same on average (mostly white page). */
+function looks(t: { img: Electron.NativeImage; k: number; origin: { x: number; y: number } }, layer: Electron.Rectangle, rects: number[][]): number[][] {
+  const { width: iw, height: ih } = t.img.getSize()
+  const px = t.img.toBitmap() // BGRA
+  return rects.map(([x, y, w, h]) => {
+    const gx = (x + layer.x - t.origin.x + w * 0.08) * t.k
+    const gy = (y + layer.y - t.origin.y + h * 0.15) * t.k
+    const gw = w * 0.84 * t.k
+    const gh = h * 0.7 * t.k
+    const out: number[] = []
+    for (let cy = 0; cy < 8; cy++)
+      for (let cx = 0; cx < 32; cx++) {
+        const xx = Math.round(gx + (gw * (cx + 0.5)) / 32)
+        const yy = Math.round(gy + (gh * (cy + 0.5)) / 8)
+        if (xx < 0 || yy < 0 || xx >= iw || yy >= ih) {
+          out.push(-1)
+          continue
+        }
+        const i = (yy * iw + xx) * 4
+        out.push(px[i] * 0.11 + px[i + 1] * 0.59 + px[i + 2] * 0.3)
+      }
+    return out
+  })
+}
+let marksBase: { key: string; looks: number[][] | null; seen: number } | null = null
+let marksBusy = false
+setInterval(async () => {
+  if (marksBusy || !rt?.ink?.screenCount?.()) {
+    if (!marksBusy) marksBase = null
+    return
+  }
+  marksBusy = true
+  try {
+    const layer = inkLayer()
+    const rects = layer ? (await screenMarks()).filter((r) => r[2] > 4 && r[3] > 4) : []
+    if (!layer || !rects.length) return
+    const key = JSON.stringify(rects)
+    // New or moved marks: wait one round (they may still be drawing in), then remember how it looks under them.
+    if (marksBase?.key !== key) {
+      marksBase = { key, looks: null, seen: 0 }
+      return
+    }
+    const t = await screenThumb(layer)
+    if (!t) return
+    const now = looks(t, layer, rects)
+    if (!marksBase.looks) {
+      marksBase.looks = now
+      return
+    }
+    const changed = now.filter((g, i) => {
+      const was = marksBase!.looks![i]
+      // changed: more than 1 in 12 of its points look clearly different
+      const n = g.filter((v, j) => v >= 0 && was[j] >= 0 && Math.abs(v - was[j]) > 45).length
+      return n > g.length / 12
+    }).length
+    if (OFFSCREEN && changed) console.info(`marks> ${changed} of ${rects.length} spots look different`)
+    if (changed * 2 >= rects.length && changed > 0) {
+      marksBase = null
+      if (rt.ink.pageTurned?.('page')) mouseLike(`screen marks faded: ${changed} of ${rects.length} spots changed under them`)
+    }
+  } finally {
+    marksBusy = false
+  }
+}, 1500).unref?.()
+const mouseLike = (s: string): void => {
+  if (OFFSCREEN) console.info('marks>', s)
+}
+/** Nova turned the page itself (go_to_page): what it marked on the old one goes. */
+export function pageTurnedByNova(): void {
+  rt?.ink?.pageTurned?.('Nova turned the page')
 }
 
 /** What they circled is this request's screenshot (see tools.mjs useShot): bounds on screen, the picture's size. */

@@ -48,16 +48,16 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   } else if (why !== 'not connected' && prefs.novaOffline === false) throw new Error(`Nova is paused because ${why}.`)
   return aiChat(messages, schema, maxTokens)
 }
-import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, orbPress, orbPressHooks, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
+import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, hiddenFromCaptures, novaInRecordings, orbPress, orbPressHooks, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
 import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, showPoliteView, type PoliteRect } from './politePage'
 import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
 import { conversationLine, convHooks, setConversation, toggleConversation } from './conversation'
-import { setTutor, listLessons, openLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
+import { setTutor, lessonRecording, listLessons, openLesson, serveLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
 import { reportClicks, voiceAsk, voiceConversation, voiceRecord } from './voice'
 import { askBeside, reportPen, startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
 import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
-import { eyes, helpOnScreen, pointerHooks, see, stopEyes, stopWalkthrough } from './eyes'
+import { eyes, eyesHooks, helpOnScreen, pointerHooks, see, stopEyes, stopWalkthrough } from './eyes'
 import { forgetNovaFactById, listNovaFacts } from './novaMemory'
 import { addPromise, changePromise, listPromises, roamies, roamiesAbort, roamiesClick, roamiesEsc, testWindowShot } from './roamiesTools'
 import { factsBlock, frontWindow, noteCircle, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova, teachingNow } from './novaBrain'
@@ -86,6 +86,8 @@ const CSP = [
   "connect-src 'self'",
   // course-file previews + the two embedded players
   'frame-src material: https://open.spotify.com https://www.youtube-nocookie.com',
+  // recorded tutor lessons, played in Studyhall
+  "media-src 'self' material: blob:",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'"
@@ -376,7 +378,7 @@ if (!app.requestSingleInstanceLock()) {
     applyLoginItem(getPrefs().launchAtLogin)
 
     protocol.handle('app', serveApp)
-    protocol.handle('material', serveMaterial)
+    protocol.handle('material', (r) => (new URL(r.url).host === 'lesson' ? serveLesson(r) : serveMaterial(r)))
 
     // Deny camera/mic/location/etc. by default (video calls get their own window later).
     const allowed = new Set(['clipboard-sanitized-write', 'fullscreen'])
@@ -384,7 +386,8 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => {
       if (permission === 'media' && wc && isVoiceContents(wc)) {
         const types = (details as { mediaTypes?: string[] }).mediaTypes ?? []
-        return cb(types.length > 0 && types.every((t) => t === 'audio'))
+        // Sound only, except while a tutor lesson is being recorded (the screen, see tutor.ts).
+        return cb(types.length > 0 && types.every((t) => t === 'audio' || (t === 'video' && lessonRecording())))
       }
       cb(allowed.has(permission))
     })
@@ -654,7 +657,12 @@ if (!app.requestSingleInstanceLock()) {
     convHooks.ring = (on) => orbAgent({ type: 'live', on })
     tutorHooks.hat = (on) => orbAgent({ type: 'hat', on })
     tutorHooks.ask = (t) => voiceAsk(t)
-    tutorHooks.record = (on, sourceId) => voiceRecord(on, sourceId)
+    tutorHooks.record = (on, sourceId) => {
+      voiceRecord(on, sourceId)
+      novaInRecordings(on)
+    }
+    eyesHooks.hide = hiddenFromCaptures
+    tutorHooks.failed = (text) => notify('Tutor mode', text)
     teachHooks.ask = (messages, onText) => claudeChat(messages, undefined, getPrefs(), 'explain', onText)
     teachHooks.prefs = getPrefs
     teachHooks.live = liveCards
