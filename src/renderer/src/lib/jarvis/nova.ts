@@ -29,6 +29,7 @@ type InkOp = {
   /** pictures of the cards on screen, asked for under this id (saving an explanation as a note) */
   snapshot?: string
   marksAsk?: string
+  boardPic?: { part: string; page: number; src: string }
   reminders?: Record<string, unknown>
   stale?: boolean
   click?: { x: number; y: number }
@@ -378,6 +379,28 @@ async function boot(opts: {
   // back to its spot and stays there, instead of following your mouse for ever.
   let busyAt = performance.now()
   let returning: { x: number; y: number } | null = null
+  // A study board is up where the globe sits: it waits beside the board instead (ink.js asks), and goes back after.
+  let aside: { x: number; y: number; part: string } | null = null
+  R.awayFrom = (r: number[] | null, part: string): void => {
+    if (!r) {
+      if (aside?.part !== part) return
+      aside = null
+      if (home) returning = { x: home.x, y: home.y }
+      return
+    }
+    const W = innerWidth
+    const H = innerHeight
+    const free = (x: number, y: number): boolean => !(x > r[0] - 70 && x < r[0] + r[2] + 70 && y > r[1] - 70 && y < r[1] + r[3] + 70)
+    const spot = [
+      [r[0] + r[2] + 80, Math.min(H - 90, r[1] + r[3] - 40)],
+      [r[0] - 80, Math.min(H - 90, r[1] + r[3] - 40)],
+      [Math.min(W - 80, r[0] + r[2] - 40), r[1] + r[3] + 80],
+      [W - 80, H - 90]
+    ].find(([x, y]) => x > 50 && x < W - 50 && y > 50 && y < H - 50 && free(x, y)) ?? [W - 80, H - 90]
+    aside = { x: spot[0], y: spot[1], part }
+    trace(`study board up: globe waits beside it at ${Math.round(spot[0])},${Math.round(spot[1])} (globe at ${Math.round(c.mover.x)},${Math.round(c.mover.y)}; mode ${c.mover.mode})`)
+    returning = { x: spot[0], y: spot[1] }
+  }
   let wasFollowing = false
   setInterval(() => {
     const now = performance.now()
@@ -386,7 +409,15 @@ async function boot(opts: {
     wasFollowing = following
     if (responding || listen?.open || drawing() || now - voice.at < 1500 || c.mover.dragging) busyAt = now
     // On its way back: a little idle act can pause the glide part-way, so it's sent on again until it's there.
-    if (returning) {
+    if (aside && c.mover.dragging) aside = null // (they put it somewhere themselves: it stays there)
+    // (it goes once the drawing is done: settled at the spot beside the board, and kept there)
+    if (aside && !returning && !drawing() && !following && Math.hypot(c.mover.x - aside.x, c.mover.y - aside.y) > 40) {
+      trace(`globe steps aside to ${Math.round(aside.x)},${Math.round(aside.y)}`)
+      agent?.settle?.(aside.x, aside.y)
+      returning = { x: aside.x, y: aside.y }
+      R.wake?.()
+    }
+    if (returning && !drawing()) {
       const mv = c.mover
       if (following || mv.dragging || mv.flung) returning = null
       else if (Math.hypot(mv.x - returning.x, mv.y - returning.y) < 12) returning = null
@@ -396,15 +427,35 @@ async function boot(opts: {
       }
     }
     if (!following || now - busyAt < 5000) return
-    const spot = home ?? { x: c.mover.x, y: c.mover.y }
+    const spot = aside ?? home ?? { x: c.mover.x, y: c.mover.y }
     trace(`done and quiet: globe goes back to ${Math.round(spot.x)},${Math.round(spot.y)}${home ? ' (its spot)' : ' (stays here)'}`)
     agent?.settle?.(spot.x, spot.y)
     returning = home ? { x: spot.x, y: spot.y } : null
     R.wake?.()
   }, 500)
+  // While it follows your cursor (answering), the globe and its bubble trail right beside the pointer: passing over
+  // them mustn't swallow your clicks in the app you're using. They only catch clicks once the pointer has rested on them
+  // for a moment (you meant them); its cards and buttons work at once as always.
+  let overSince = 0
+  let overCheck: ReturnType<typeof setTimeout> | null = null
   const onMove = (e: MouseEvent): void => {
     mouse = [e.clientX, e.clientY]
-    setHot(!!R.ptr(e.clientX, e.clientY))
+    const over = !!R.ptr(e.clientX, e.clientY)
+    const onInk = !!R.inkHitKind?.(e.clientX, e.clientY)
+    if (over && !onInk && agent?.following?.() && !c.mover.dragging) {
+      if (!overSince) overSince = performance.now()
+      if (performance.now() - overSince < 600) {
+        setHot(false)
+        if (overCheck) clearTimeout(overCheck)
+        const [x, y] = mouse
+        overCheck = setTimeout(() => {
+          if (overSince && mouse && Math.hypot(mouse[0] - x, mouse[1] - y) < 8 && R.ptr(x, y)) setHot(true)
+        }, 620)
+      } else setHot(true)
+    } else {
+      if (!over) overSince = 0
+      setHot(over)
+    }
     R.ink?.ptr(e.clientX, e.clientY) // (a drawn step waiting for you to hover over something)
   }
   addEventListener('mousemove', onMove, { passive: true })
@@ -524,6 +575,7 @@ async function boot(opts: {
       } else if (op.clear) R.ink?.clear(op.clear)
       else if (op.snapshot) R.ink?.snapshot?.(op.snapshot)
       else if (op.marksAsk) R.ink?.screenMarks?.(op.marksAsk)
+      else if (op.boardPic) R.ink?.boardPic?.(op.boardPic)
       else if (op.reminders) R.ink?.reminders(op.reminders)
       else if (op.stale) R.ink?.stale()
       else if (op.click) R.ink?.click(op.click.x, op.click.y)

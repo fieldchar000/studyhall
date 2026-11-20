@@ -51,9 +51,14 @@ if ($env:SH_MODE -eq 'restore') {
 $was | ConvertTo-Json -Compress
 `
 
-function run(env: Record<string, string>): Promise<Record<string, unknown> | null> {
+function run(env: Record<string, string>, detached = false): Promise<Record<string, unknown> | null> {
   return new Promise((resolve) => {
-    const p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', SCRIPT], { env: { ...process.env, ...env }, windowsHide: true })
+    const p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', SCRIPT], { env: { ...process.env, ...env }, windowsHide: true, detached })
+    if (detached) {
+      p.unref()
+      resolve(null)
+      return
+    }
     let out = ''
     p.stdout.on('data', (d) => (out += String(d)))
     const t = setTimeout(() => p.kill(), 15_000)
@@ -83,10 +88,10 @@ export async function splitForLesson(title: string): Promise<string> {
   moved = { hwnd: Number(r.hwnd), x: Number(r.x), y: Number(r.y), w: Number(r.w), h: Number(r.h), zoomed: r.zoomed === true }
   return 'Their slides are on the left of the screen now (split screen): ring things on them with draw as usual, and cards go on the right.'
 }
-/** Tutor mode ended: the window goes back to where it was. */
-export async function restoreAfterLesson(): Promise<void> {
+/** Tutor mode ended (or Studyhall is quitting: then it finishes on its own): the window goes back to where it was. */
+export async function restoreAfterLesson(quitting = false): Promise<void> {
   const m = moved
   moved = null
   if (!m || OFFSCREEN) return
-  await run({ SH_HWND: String(m.hwnd), SH_MODE: 'restore', SH_X: String(m.x), SH_Y: String(m.y), SH_W: String(m.w), SH_H: String(m.h), SH_ZOOMED: m.zoomed ? 'True' : 'False' })
+  await run({ SH_HWND: String(m.hwnd), SH_MODE: 'restore', SH_X: String(m.x), SH_Y: String(m.y), SH_W: String(m.w), SH_H: String(m.h), SH_ZOOMED: m.zoomed ? 'True' : 'False' }, quitting)
 }

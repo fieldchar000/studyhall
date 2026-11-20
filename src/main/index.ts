@@ -48,11 +48,12 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   } else if (why !== 'not connected' && prefs.novaOffline === false) throw new Error(`Nova is paused because ${why}.`)
   return aiChat(messages, schema, maxTokens)
 }
-import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, hiddenFromCaptures, novaInRecordings, orbPress, orbPressHooks, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
+import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, emoteHooks, hiddenFromCaptures, novaInRecordings, orbPress, orbPressHooks, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
 import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, showPoliteView, type PoliteRect } from './politePage'
 import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
 import { conversationLine, convHooks, setConversation, toggleConversation } from './conversation'
-import { setTutor, lessonRecording, listLessons, openLesson, serveLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
+import { restoreAfterLesson } from './windowSplit'
+import { setTutor, tutorOn, lessonRecording, listLessons, openLesson, serveLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
 import { reportClicks, voiceAsk, voiceConversation, voiceRecord } from './voice'
 import { askBeside, reportPen, startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
 import { stopTeach, teach, teachHooks } from './teach'
@@ -556,7 +557,7 @@ if (!app.requestSingleInstanceLock()) {
         handle('mouth:speak', (_e, text, voice, speed) => {
           const p = getPrefs()
           // (explaining or teaching: the teaching speed, a little slower, unless a speed was asked for)
-          return speakMouth(String(text ?? ''), typeof voice === 'string' ? voice : (p.novaVoice ?? 'af_heart'), typeof speed === 'number' ? speed : teachingNow() ? (p.novaTeachSpeed ?? 0.92) : (p.novaSpeed ?? 1.05))
+          return speakMouth(String(text ?? ''), typeof voice === 'string' ? voice : (p.novaVoice ?? 'af_heart'), typeof speed === 'number' ? speed : teachingNow() ? (p.novaTeachSpeed ?? 0.85) : (p.novaSpeed ?? 1.05))
         })
         handle('claude:status', () => claudeStatus())
         handle('claude:install', () => installClaude())
@@ -663,6 +664,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     eyesHooks.hide = hiddenFromCaptures
     tutorHooks.failed = (text) => notify('Tutor mode', text)
+    emoteHooks.quiet = () => teachingNow() || tutorOn()
     teachHooks.ask = (messages, onText) => claudeChat(messages, undefined, getPrefs(), 'explain', onText)
     teachHooks.prefs = getPrefs
     teachHooks.live = liveCards
@@ -793,7 +795,8 @@ if (!app.requestSingleInstanceLock()) {
     startSchool()
   })
 
-  app.on('before-quit', () => (quitting = true))
+  app.on('before-quit', () => void restoreAfterLesson(true))
+app.on('before-quit', () => (quitting = true))
   app.on('window-all-closed', () => app.quit())
   app.on('will-quit', () => {
     setClaudeWarm(false) // close waiting Claude Code sessions

@@ -43,7 +43,7 @@ if (screenPart === '#cards') {
 if (!screenPart && !isVoice && !isCapture)
   window.api.lesson?.onPdf(async (req) => {
     const { lessonPdfPage, lessonPdfText } = await import('./lib/bauer/pdfLesson')
-    return req.op === 'text' ? lessonPdfText(req.data) : lessonPdfPage(req.data, req.n ?? 1, req.width ?? 1280)
+    return req.op === 'text' ? lessonPdfText(req.data) : lessonPdfPage(req.data, req.n ?? 1, req.width ?? 1280, req.key)
   })
 
 createRoot(document.getElementById('root')!).render(

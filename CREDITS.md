@@ -41,7 +41,7 @@ https://github.com/KenKaiii/Roamies
   screenshots while a tutor lesson is recorded) and offers `pageTurned`/`screenCount` (marks on the screen fade when the
   page under them changes). `ink.js` draws cards above screen marks and slides a card off a mark that lands under it,
   lays the study board out with your slide big and the linked ones small (click to swap), adds to a board that's up,
-  shows what it says in Nova's bubble unless captions are on, and reports where its screen marks are. `agentrun.mjs`
+  shows what it says in Nova's bubble unless captions are on, and reports where its screen marks are. Since v0.71 the board numbers its notes and letters its links (short arrows between slides, lit one at a time) instead of long arrows, fills in slide pictures as they come, and shows every photo as it is (not as LED dots); a card that doesn't fit beside a board opens smaller. `agentrun.mjs`
   passes its unused callbacks so the build keeps Nova's own calls to them.
 - `native/roamies-hands`: Roamies' Windows hands helper (Rust: UI Automation, Windows OCR, screenshots, clicking and
   typing), copied unchanged and built on GitHub Actions.

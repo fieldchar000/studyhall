@@ -25,7 +25,7 @@ const DEFAULTS: Prefs = {
   novaCap: 80,
   novaVoice: 'af_heart',
   novaSpeed: 1.05,
-  novaTeachSpeed: 0.92,
+  novaTeachSpeed: 0.85,
   novaOrbSize: 'default',
   novaDrift: true,
   novaFollowUp: 'asked',
@@ -46,7 +46,11 @@ const DEFAULTS: Prefs = {
 export const SHORTCUTS = ['CommandOrControl+Shift+Space', 'CommandOrControl+Alt+Space', 'Alt+Shift+N', '']
 
 export function getPrefs(): Prefs {
-  return { ...DEFAULTS, ...(getSetting<Partial<Prefs>>('prefs') ?? {}) }
+  const saved = { ...(getSetting<Partial<Prefs>>('prefs') ?? {}) }
+  // The teaching voice's old default (0.92, saved along with every other setting) becomes the new, slower one (0.85),
+  // unless they set it themselves.
+  if (saved.novaTeachSpeed === 0.92 && !saved.novaTeachSpeedSet) delete saved.novaTeachSpeed
+  return { ...DEFAULTS, ...saved }
 }
 
 let onShortcutChange: (accelerator: string) => void = () => {}
@@ -55,7 +59,7 @@ export function watchShortcut(fn: (accelerator: string) => void): void {
 }
 
 export function setPrefs(patch: Partial<Prefs>): Prefs {
-  const next = { ...getPrefs(), ...patch }
+  const next = { ...getPrefs(), ...patch, ...('novaTeachSpeed' in patch ? { novaTeachSpeedSet: true } : {}) }
   setSetting('prefs', next)
   if ('launchAtLogin' in patch) applyLoginItem(next.launchAtLogin)
   if ('quickCaptureShortcut' in patch) onShortcutChange(next.quickCaptureShortcut)

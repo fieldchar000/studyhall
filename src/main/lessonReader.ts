@@ -49,7 +49,7 @@ ipcMain.on('lesson:pdfDone', (_e, m: { id: number; result: string }) => {
   pdfWaiting.get(m.id)?.(String(m.result ?? ''))
   pdfWaiting.delete(m.id)
 })
-function pdfAsk(op: 'text' | 'page', payload: { data: Uint8Array; n?: number; width?: number }): Promise<string> {
+function pdfAsk(op: 'text' | 'page', payload: { data: Uint8Array; n?: number; width?: number; key?: string }): Promise<string> {
   const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed() && /index\.html$/.test(x.webContents.getURL()))
   if (!w) return Promise.resolve('error: Studyhall’s window isn’t open.')
   return new Promise((res) => {
@@ -336,7 +336,23 @@ export function lessonText(l: Lesson, from = 1, to = l.count, budget = 16_000, t
 }
 
 // ---------- Pictures of pages (Roamies' photo cards and see_photo fetch them from https://lesson.studyhall.app/…) ----------
-export async function picture(id: string, n: number): Promise<Buffer | null> {
+// Slide and page pictures are made one at a time (PowerPoint takes one request at a time, and a PDF draws its pages
+// in one place): asked for together, some never came back.
+let pictureQueue: Promise<unknown> = Promise.resolve()
+export function picture(id: string, n: number): Promise<Buffer | null> {
+  const file = join(cacheDir(), id, `${n}.jpg`)
+  if (existsSync(file)) return readFile(file)
+  const job = pictureQueue.then(async () => (await pictureNow(id, n)) ?? (await pictureNow(id, n))) // (one more try)
+  pictureQueue = job.catch(() => null)
+  return job.catch(() => null)
+}
+/** Whether a page's picture is made already (the study board shows it at once). */
+export const pictureReady = (id: string, n: number): boolean => existsSync(join(cacheDir(), id, `${n}.jpg`))
+/** Make the pictures of these pages now, in the background (after a deck is read: the board is instant then). */
+export function warmPictures(id: string, pages: number[]): void {
+  for (const n of pages) void picture(id, n)
+}
+async function pictureNow(id: string, n: number): Promise<Buffer | null> {
   const l = lessons.get(id)
   if (!l || n < 1 || n > l.count) return null
   const file = join(cacheDir(), id, `${n}.jpg`)
@@ -349,7 +365,7 @@ export async function picture(id: string, n: number): Promise<Buffer | null> {
   }
   const data = pdfBytes.get(id)
   if (!data) return null
-  const url = await pdfAsk('page', { data, n, width: 1280 })
+  const url = await pdfAsk('page', { data, n, width: 1280, key: id })
   const m = /^data:image\/jpeg;base64,(.+)$/s.exec(url)
   if (!m) return null
   const buf = Buffer.from(m[1], 'base64')

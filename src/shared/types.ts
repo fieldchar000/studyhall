@@ -1009,7 +1009,8 @@ export interface Prefs {
   novaAutoNotes?: boolean // every explanation Nova draws for is added to the day's "Nova notes" page (default off)
   novaTutorLayout?: 'stage' | 'split' // tutor mode: their slide big on the study board with the cards beside it (stage, the default), or their own slides window moved to the left of the screen (split)
   novaCaptions?: boolean // while it draws, what it says shows as captions at the bottom of the screen (off: in its speech bubble, the default)
-  novaTeachSpeed?: number // the voice's speed when explaining or teaching (default 0.92, a little slower)
+  novaTeachSpeedSet?: boolean // they moved the teaching speed slider themselves
+  novaTeachSpeed?: number // the voice's speed when explaining or teaching (default 0.85, a little slower)
   novaDuck?: boolean // other apps' sound goes quieter while you hold the talk key (default on)
   politeTasks?: boolean // PoliteMall quizzes and assignments become Studyhall tasks (default on)
   politeNotify?: boolean // a notification for new PoliteMall announcements, files and grades (default on)
@@ -1254,7 +1255,7 @@ export interface Api {
   }
   /** The main window reads PDFs for Nova's lesson reader. */
   lesson: {
-    onPdf(cb: (req: { op: 'text' | 'page'; data: Uint8Array; n?: number; width?: number }) => Promise<string>): () => void
+    onPdf(cb: (req: { op: 'text' | 'page'; data: Uint8Array; n?: number; width?: number; key?: string }) => Promise<string>): () => void
   }
   nova: {
     /** One request. Speech arrives meanwhile through onSpeak / onBeat; tools that live in this window through onTool. */

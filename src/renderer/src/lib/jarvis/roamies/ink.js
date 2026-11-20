@@ -685,7 +685,10 @@
     } else {
       const fit = Math.max(1, Math.min((S0[2] - S0[0] - 32) / (w + 8), (S0[3] - S0[1] - 100) / (h + 14)));
       k = Math.min(m.card_size === 'small' ? 0.8 : m.card_size === 'large' ? 1.5 : 1, fit);
-      [x, y] = roomFor(Math.round(w * k), Math.round(h * k), m.part);
+      const boardUp = m.kind !== 'board' && marks.some((q) => q.alive && q.card && q.kind === 'board' && !q.leaving);
+      let spot = null;
+      if (boardUp) for (const kk of [k, k * 0.8, k * 0.66]) { spot = place(Math.round(w * kk), Math.round(h * kk), m.part, true); if (spot) { k = kk; break; } }
+      [x, y] = spot ?? roomFor(Math.round(w * k), Math.round(h * k), m.part);
     }
     const bar = o.bar === false ? 0 : 26;
     const c = add({ z: 5, part: m.part, card: true, kind: m.kind, cw: 0, ch: 0, p: 0, done: 0, w, h, ox: x, oy: y, k, deep, sy: 0, scrollMax: Math.max(0, full - h), color: tone(m.tone), live: o.live, box: () => [x - 4, y - 4, w + 8, h + 14],
@@ -908,7 +911,8 @@
       // Studyhall: a slide or page of the lesson you have open is shown as it is (larger, not as LED dots), so it can be read.
       // (and a labelled figure from Wikimedia Commons, which find_figure found: its detail must stay readable too)
       const ownSlide = /^https:\/\/lesson\.studyhall\.app\//.test(m.url ?? '');
-      const lesson = ownSlide || /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(m.url ?? '');
+      // Studyhall: every photo now, since a photo is often the picture that explains it (LED dots hid what it showed).
+      const lesson = true;
       if (ownSlide) m.credit = 'from your lesson';
       // The picture first (at most 4 s), so the card takes its shape and nothing is cropped.
       const img = m.src && !m.missing ? await new Promise((res) => {
@@ -1083,6 +1087,8 @@
   // ---------------------------------------------------------------- the study board (Studyhall)
   // Two or three slides of the lesson side by side, big enough to read, with rings on the words that matter and arrows
   // from one slide to another (where an idea comes from, where it leads), drawn one by one; other cards go below it.
+  // Studyhall: slide pictures that came while their board was still opening.
+  const boardPics = new Map();
   async function drawBoard(m) {
     // Studyhall: more for the board that's up (rings Nova would otherwise draw on their slide under it, notes, arrows).
     if (m.add) {
@@ -1124,7 +1130,7 @@
     function placeLabels() {
       const placed = rings.map(rbox), hitsAny = (q) => placed.some((p) => q[0] < p[0] + p[2] && p[0] < q[0] + q[2] && q[1] < p[1] + p[3] && p[1] < q[1] + q[3]);
       for (const r of rings) {
-        if (!r.label) continue;
+        if (!r.label || r.tag || r.num) continue;
         const g = geo(r.i), bx = rbox(r), lw = textW(r.label, SMALL) + 6, lx = Math.max(g[0] + 2, Math.min(bx[0] + 2, g[0] + g[2] - lw - 2));
         const tries = [bx[1] - 16, bx[1] + bx[3] + 2, bx[1] - 30, bx[1] + bx[3] + 16, bx[1] - 44].filter((ty) => ty >= g[1] - 14 && ty + 14 <= g[1] + g[3] + 14);
         const ty = tries.find((q) => !hitsAny([lx, q, lw, 14])) ?? tries[0] ?? bx[1] - 16;
@@ -1137,20 +1143,29 @@
       const at = (q) => { const r = byId.get(q.ring); if (!r) return 1e6; const b = rbox(r); return b[0] + b[1] * 0.01; };
       noteRows.sort((p, q) => at(p) - at(q));
       noteRows.forEach((q, k) => { q.x = pad + k * (nw + ngap); q.w = nw; q.rows = wrapRows(q.text, nw - 20, SMALL).slice(0, 5); });
+      // A note and its spot share a number, 1, 2, 3 from the left (no arrow from one to the other).
+      for (const r of rings) r.num = null;
+      noteRows.forEach((q, n2) => { const r = q.ring ? byId.get(q.ring) : null; if (r && !r.num) r.num = n2 + 1; q.num = r ? r.num : null; });
     }
     function addAll(src, at) {
       let k = 0, j = 0;
       for (const s of src.slides ?? []) {
         const i = slides.findIndex((q) => q.page === s.page);
         if (i < 0) continue;
-        for (const r of s.rings ?? []) if (r.rect) { const o = { ...r, i, start: at + k++ * 0.45 }; rings.push(o); byId.set(o.id, o); }
+        // (a calm board: at most 3 rings on their slide and 2 on each other one)
+        for (const r of s.rings ?? []) if (r.rect && rings.filter((q) => q.i === i).length < (i === 0 ? 3 : 2) && !byId.has(r.id)) { const o = { ...r, label: r.label ? String(r.label).slice(0, 22) : '', i, start: at + k++ * 0.45 }; rings.push(o); byId.set(o.id, o); }
       }
-      for (const q of src.links ?? []) if (byId.has(q.from) && byId.has(q.to)) links.push({ ...q, start: at + k * 0.45 + j++ * 0.5 });
+      // Each link has a letter, shown on the rings at both ends: no long arrow across the slides is needed to see it.
+      for (const q of src.links ?? []) if (byId.has(q.from) && byId.has(q.to) && links.length < 4) {
+        const L = { ...q, tag: 'ABCD'[links.length], start: at + k * 0.45 + j++ * 0.6 };
+        links.push(L);
+        for (const id of [q.from, q.to]) byId.get(id).tag ??= L.tag;
+      }
       let nn = 0;
       // (a note already there, by its title, isn't added again)
-      if (hasNotes) for (const q of src.notes ?? []) if (noteRows.length < 4 && !noteRows.some((p) => p.title.toLowerCase() === String(q.title ?? '').slice(0, 50).toLowerCase())) noteRows.push({ ring: q.ring, title: String(q.title ?? '').slice(0, 50), text: String(q.text ?? ''), start: at + k * 0.45 + j * 0.5 + nn++ * 0.5 });
-      placeLabels(); layoutNotes();
-      return at + k * 0.45 + j * 0.5 + nn * 0.5;
+      if (hasNotes) for (const q of src.notes ?? []) if (noteRows.length < 4 && !noteRows.some((p) => p.title.toLowerCase() === String(q.title ?? '').slice(0, 50).toLowerCase())) noteRows.push({ ring: q.ring, title: String(q.title ?? '').slice(0, 50), text: String(q.text ?? ''), start: at + k * 0.45 + j * 0.6 + nn++ * 0.5 });
+      layoutNotes(); placeLabels();
+      return at + k * 0.45 + j * 0.6 + nn * 0.5;
     }
     const buildUp = addAll(m, n * 0.25 + 0.3) + 1.5;
     let hits = [];
@@ -1165,7 +1180,8 @@
         const [gx, gy, gw, gh] = geo(i), sx = x + gx, sy = y + gy, big = order.indexOf(i) === 0;
         typed(b, s.label || `${i === 0 ? 'Now: ' : ''}slide ${s.page}`, sx, sy - 9, SMALL, big ? TEXT : DIM, u);
         b.save(); b.globalAlpha *= u;
-        if (s.img) { b.imageSmoothingEnabled = true; b.drawImage(s.img, sx, sy, gw, gh); } else { b.fillStyle = 'rgba(20,60,143,0.25)'; b.fillRect(sx, sy, gw, gh); }
+        if (s.img) { b.save(); b.globalAlpha *= s.picAt ? clamp((now() - s.picAt) / 0.4, 0, 1) : 1; b.imageSmoothingEnabled = true; b.drawImage(s.img, sx, sy, gw, gh); b.restore(); }
+        else { b.fillStyle = 'rgba(20,60,143,0.25)'; b.fillRect(sx, sy, gw, gh); typed(b, 'slide coming…', sx + gw / 2, sy + gh / 2, SMALL, DIM, 1, { anchor: 'middle' }); }
         const hot = !big && this.hoverId === `s${i}`;
         b.strokeStyle = hot ? HOT : 'rgba(122,170,255,0.5)'; b.lineWidth = hot ? 2 : 1; b.strokeRect(sx + 0.5, sy + 0.5, gw - 1, gh - 1);
         b.restore();
@@ -1181,30 +1197,53 @@
         else if (r.style === 'highlight') { b.fillStyle = 'rgba(168,200,255,0.32)'; b.fillRect(rx + 2, ry + 2, (bw - 4) * u, bh - 4); }
         else { b.beginPath(); b.roundRect ? b.roundRect(rx, ry, bw * u, bh, rad) : b.rect(rx, ry, bw * u, bh); b.stroke(); }
         b.restore();
+        // its letter (the link it's part of) and number (its note), as small round badges on its corners
+        if (u >= 1) {
+          const badge = (str, cx, cy, fill) => { b.save(); b.fillStyle = fill; b.beginPath(); b.arc(cx, cy, 8, 0, Math.PI * 2); b.fill(); b.fillStyle = INKDARK; b.font = `700 10px ${MONO}`; b.textAlign = 'center'; b.textBaseline = 'middle'; b.fillText(str, cx, cy + 0.5); b.restore(); };
+          if (r.num) badge(String(r.num), rx + 2, ry + 2, ACC);
+          if (r.tag) badge(r.tag, rx + bw - 2, ry + 2, HOT);
+        }
         // its label on a small dark tag, so it reads over the slide's own words
-        if (r.label && u >= 1) {
+        if (r.label && !r.tag && !r.num && u >= 1) {
           b.save(); b.fillStyle = 'rgba(12,28,70,0.88)'; b.beginPath(); b.roundRect ? b.roundRect(x + r.lx - 4, y + r.ly - 11, textW(r.label, SMALL) + 8, 15, 4) : b.rect(x + r.lx - 4, y + r.ly - 11, textW(r.label, SMALL) + 8, 15); b.fill(); b.restore();
           typed(b, r.label, x + r.lx, y + r.ly, SMALL, HOT, (age - r.start - 0.4) / 0.3, { rim: 3 });
         }
       }
-      for (const q of links) {
-        const A = rbox(byId.get(q.from)), B = rbox(byId.get(q.to));
+      // Links: a short arrow in the gap between the two slides (from the edge beside one ring to the edge beside the
+      // other), with a faint dotted line from each ring to its edge; the letter on both rings says which go together.
+      // The link Nova is on is lit, the others faint, until all have been shown.
+      const lastEnd = links.length ? links[links.length - 1].start + 4.5 : 0;
+      links.forEach((q, n2) => {
+        const RA = byId.get(q.from), RB = byId.get(q.to), A = rbox(RA), B = rbox(RB), gA = geo(RA.i), gB = geo(RB.i);
         const u = reduced() ? 1 : clamp((age - q.start) / 0.6, 0, 1);
-        if (u <= 0) continue;
-        const ca = A[0] + A[2] / 2, cb = B[0] + B[2] / 2, apart = Math.abs(ca - cb) > Math.min(A[2], B[2]) / 2 + 20;
-        // side by side: from the facing edges, over the top; one above the other (the small slides): round the right
-        const ax = x + (apart ? (cb > ca ? A[0] + A[2] : A[0]) : A[0] + A[2]), ay = y + A[1] + A[3] / 2;
-        const bx = x + (apart ? (cb > ca ? B[0] : B[0] + B[2]) : B[0] + B[2]), by = y + B[1] + B[3] / 2;
-        const cx = apart ? (ax + bx) / 2 : Math.max(ax, bx) + 70, cy = apart ? Math.min(ay, by) - 60 : (ay + by) / 2;
-        const pt = (s) => [(1 - s) * (1 - s) * ax + 2 * (1 - s) * s * cx + s * s * bx, (1 - s) * (1 - s) * ay + 2 * (1 - s) * s * cy + s * s * by];
-        b.save(); b.strokeStyle = HOT; b.lineWidth = 2.5; b.beginPath();
-        for (let s = 0; s <= u; s += 0.02) { const [px, py] = pt(s); s === 0 ? b.moveTo(px, py) : b.lineTo(px, py); }
+        if (u <= 0) return;
+        const next = links[n2 + 1]?.start ?? q.start + 4.5;
+        const lit = reduced() || age >= lastEnd || (age >= q.start && age < next) ? 1 : 0.28;
+        const ay = y + A[1] + A[3] / 2, by = y + B[1] + B[3] / 2;
+        let ex1, ex2, a1x, b1x;
+        if (RA.i !== RB.i) {
+          const right = gB[0] > gA[0];
+          ex1 = x + (right ? gA[0] + gA[2] : gA[0]); ex2 = x + (right ? gB[0] : gB[0] + gB[2]);
+          a1x = x + (right ? A[0] + A[2] : A[0]); b1x = x + (right ? B[0] : B[0] + B[2]);
+        } else { ex1 = ex2 = x + gA[0] + gA[2] - 4; a1x = x + A[0] + A[2]; b1x = x + B[0] + B[2]; }
+        b.save(); b.globalAlpha *= lit;
+        b.strokeStyle = HOT; b.lineWidth = 1.5; b.setLineDash([2, 4]);
+        b.beginPath(); b.moveTo(a1x, ay); b.lineTo(ex1, ay); b.moveTo(b1x, by); b.lineTo(ex2, by); b.stroke(); b.setLineDash([]);
+        const mx = RA.i !== RB.i ? (ex1 + ex2) / 2 : ex1 + 26;
+        const pt = (t2) => { const p = 1 - t2; return [p * p * p * ex1 + 3 * p * p * t2 * mx + 3 * p * t2 * t2 * mx + t2 * t2 * t2 * ex2, p * p * p * ay + 3 * p * p * t2 * ay + 3 * p * t2 * t2 * by + t2 * t2 * t2 * by]; };
+        b.strokeStyle = HOT; b.lineWidth = 2.5; b.beginPath();
+        for (let s2 = 0; s2 <= u; s2 += 0.04) { const [px, py] = pt(s2); s2 === 0 ? b.moveTo(px, py) : b.lineTo(px, py); }
         b.stroke();
-        if (u >= 1) { const [px, py] = pt(0.97), ang = Math.atan2(by - py, bx - px); b.fillStyle = HOT; b.beginPath(); b.moveTo(bx, by); b.lineTo(bx - 11 * Math.cos(ang - 0.4), by - 11 * Math.sin(ang - 0.4)); b.lineTo(bx - 11 * Math.cos(ang + 0.4), by - 11 * Math.sin(ang + 0.4)); b.closePath(); b.fill(); }
+        if (u >= 1) { const [px, py] = pt(0.9), ang = Math.atan2(by - py, ex2 - px); b.fillStyle = HOT; b.beginPath(); b.moveTo(ex2, by); b.lineTo(ex2 - 10 * Math.cos(ang - 0.45), by - 10 * Math.sin(ang - 0.45)); b.lineTo(ex2 - 10 * Math.cos(ang + 0.45), by - 10 * Math.sin(ang + 0.45)); b.closePath(); b.fill(); }
         b.restore();
         if (u >= 1 && q.flow && !reduced()) { const d = (t * 0.5) % 1; const [px, py] = pt(d); l.fillStyle = HOT; l.fillRect(Math.round(px) - 3, Math.round(py) - 3, 6, 6); }
-        if (u >= 1 && q.label) { const [px, py] = pt(0.5), lw = textW(q.label, SMALL) + 8; b.save(); b.fillStyle = 'rgba(12,28,70,0.88)'; b.beginPath(); b.roundRect ? b.roundRect(px - lw / 2, py - 19, lw, 15, 4) : b.rect(px - lw / 2, py - 19, lw, 15); b.fill(); b.restore(); typed(b, q.label, px, py - 8, SMALL, TEXT, (age - q.start - 0.5) / 0.3, { anchor: 'middle', rim: 4 }); }
-      }
+        // its letter and words, on a dark tag just above the arrow, while it's the one lit (all of them at the end)
+        if (u >= 1 && lit > 0.5) {
+          const str = q.label ? `${q.tag} · ${String(q.label).slice(0, 28)}` : q.tag, lw = textW(str, SMALL) + 10, [px] = pt(0.5), tx = clamp(px - lw / 2, x + 4, x + W - lw - 4), ty = Math.min(ay, by) - 24;
+          b.save(); b.fillStyle = 'rgba(12,28,70,0.92)'; b.beginPath(); b.roundRect ? b.roundRect(tx, ty, lw, 16, 4) : b.rect(tx, ty, lw, 16); b.fill(); b.restore();
+          typed(b, str, tx + 5, ty + 12, SMALL, HOT, (age - q.start - 0.5) / 0.3);
+        }
+      });
       for (const q of noteRows) {
         const u = reduced() ? 1 : clamp((age - q.start) / 0.45, 0, 1);
         if (u <= 0) continue;
@@ -1213,27 +1252,35 @@
         b.fillStyle = 'rgba(12,28,70,0.92)'; b.strokeStyle = 'rgba(122,170,255,0.6)'; b.lineWidth = 1.2;
         b.beginPath(); b.roundRect ? b.roundRect(nx, ny, q.w, NH, 8) : b.rect(nx, ny, q.w, NH); b.fill(); b.stroke();
         b.restore();
-        typed(b, q.title, nx + 10, ny + 18, `700 12px ${MONO}`, HOT, (age - q.start - 0.2) / 0.3);
+        // its number (the same as on its spot), then its title and words
+        const off = q.num ? 22 : 0;
+        if (q.num) { b.save(); b.fillStyle = ACC; b.beginPath(); b.arc(nx + 18, ny + 14, 8, 0, Math.PI * 2); b.fill(); b.fillStyle = INKDARK; b.font = `700 10px ${MONO}`; b.textAlign = 'center'; b.textBaseline = 'middle'; b.fillText(String(q.num), nx + 18, ny + 14.5); b.restore(); }
+        typed(b, q.title, nx + 10 + off, ny + 18, `700 12px ${MONO}`, HOT, (age - q.start - 0.2) / 0.3);
         q.rows.forEach((row, j) => typed(b, row, nx + 10, ny + 34 + j * 14, SMALL, TEXT, (age - q.start - 0.3) / 0.4));
-        const r = q.ring ? byId.get(q.ring) : null;
-        if (r && u >= 1) {
-          const bx = rbox(r), sx2 = x + bx[0] + bx[2] / 2, sy2 = y + bx[1] + bx[3], ex = nx + q.w / 2, ey = ny - 2;
-          b.save(); b.strokeStyle = ACC; b.lineWidth = 2; b.setLineDash([5, 5]);
-          b.beginPath(); b.moveTo(sx2, sy2); b.bezierCurveTo(sx2, sy2 + 30, ex, ey - 30, ex, ey); b.stroke(); b.setLineDash([]);
-          b.fillStyle = ACC; b.beginPath(); b.moveTo(ex, ey); b.lineTo(ex - 5, ey - 9); b.lineTo(ex + 5, ey - 9); b.closePath(); b.fill();
-          b.restore();
-        }
       }
-    }, { title: m.title || 'study board', live: () => (links.some((q) => q.flow) && !reduced()) || now() - born < buildUp || now() < liveUntil });
+    }, { title: m.title || 'study board', live: () => (links.some((q) => q.flow) && !reduced()) || now() - born < buildUp + links.length * 4.5 || now() < liveUntil });
     if (!c) return;
     c.more = () => hits.map((q) => ({ ...q, part: m.part }));
+    // Nova's globe steps off the board while it's up (it sat in the middle of the slide), and goes back after.
+    R.awayFrom?.(markBox(c), m.part);
+    const gone = setInterval(() => { if (!c.alive || c.leaving) { clearInterval(gone); R.awayFrom?.(null, m.part); } }, 1000);
     // A small slide clicked: it swaps into the big spot (its rings and arrows go with it).
     c.pick = (id) => {
       const i = Number(String(id).slice(1));
       if (!Number.isInteger(i) || order[0] === i) return;
       order = [i, ...order.filter((q) => q !== i)];
-      placeLabels(); layoutNotes(); sfx('pip'); liveUntil = now() + 0.6; touch(0.6);
+      layoutNotes(); placeLabels(); sfx('pip'); liveUntil = now() + 0.6; touch(0.6);
     };
+    // A slide's picture that came after the board opened: it fades in.
+    c.setPic = (page, src) => {
+      const s = slides.find((q) => q.page === page);
+      if (!s || s.img) return;
+      const i = new Image();
+      i.onload = () => { if (!i.naturalWidth) return; s.img = i; s.picAt = now(); liveUntil = Math.max(liveUntil, now() + 0.6); touch(0.6); };
+      i.src = src;
+    };
+    for (const p of boardPics.get(m.part) ?? []) c.setPic(p.page, p.src);
+    boardPics.delete(m.part);
     c.addTo = (more) => { liveUntil = now() + addAll(more, ageNow + 0.1) - ageNow + 1; touch(1); };
     sfx('expand');
   }
@@ -2200,7 +2247,7 @@
     const voiced = b.voiced && clock.T != null, chars = String(b.caption ?? '').length;
     const t0 = voiced ? Math.max(now(), clock.T + clock.before / cps()) : now();
     const dur = voiced ? Math.max(1.2, chars / cps()) : Math.max(1.6, String(b.caption ?? '').split(/\s+/).filter(Boolean).length / 2.6);
-    clock.before += chars + 1;
+    clock.before += chars + 1 + (voiced && e.pause ? e.pause * cps() : 0); // (Studyhall: the voice's pause after each step)
     // Behind the voice (the previous beat's marks took longer than its line): draw this one faster to catch up.
     const late = now() - t0;
     if (penApi()) penApi().speed = late > 0.4 ? clamp(1 + late / 2, 1, 2.5) : 1;
@@ -2412,7 +2459,7 @@
     await fontsReady();
     if (remOpen()) { remRelayout(); return; }
     const L0 = remLayout(0, 0), [x, y] = place(REM_W, L0.h, REM_PART);
-    const c = REM.m = add({ z: 2, part: REM_PART, local: true, card: true, kind: 'reminders', x, y, cw: 0, ch: 0, p: 1, ready: false, opened: Infinity,
+    const c = REM.m = add({ z: 5, part: REM_PART, local: true, card: true, kind: 'reminders', x, y, cw: 0, ch: 0, p: 1, ready: false, opened: Infinity,
       box() { return [this.x - 4, this.y - 4, REM_W + 8, this.h + 14]; },
       draw: remDraw,
       hits() {
@@ -2596,6 +2643,12 @@
       const old = marks.filter((m) => m.alive && !m.pinned && !m.local && !m.leaving);
       for (const id of new Set(old.map((m) => m.part).filter(Boolean))) R.ink.send?.({ type: 'ink_closed', part: id });
       fadeOut(old, 0.4);
+    },
+    // Studyhall: a slide's picture for the board that's up (the board opened before it was made).
+    boardPic(p) {
+      const up = marks.find((q) => q.alive && q.card && q.kind === 'board' && q.part === p.part);
+      if (up?.setPic) up.setPic(p.page, p.src);
+      else boardPics.set(p.part, [...(boardPics.get(p.part) ?? []), p]); // (still opening: it takes them when it's up)
     },
     // Studyhall: where what's marked on the screen is now (for noticing the page change under it), in layer pixels.
     screenMarks(id) {

@@ -15,12 +15,12 @@ import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { getPrefs } from './prefs'
 import { get, getProfileId, getSetting, setSetting } from './db'
-import { agentsUi, hiddenFromCaptures, inkAskMarks, inkLayer, orbPanel, inkClear, inkSnapshot, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
+import { agentsUi, hiddenFromCaptures, inkAskMarks, inkBoardPic, inkLayer, orbPanel, inkClear, inkSnapshot, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
 import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
 import { stageDone } from './novaStage'
 import { lessonFetch } from './lessonReader'
 import { illustration } from './illustrations'
-import { findOnPage, lastLessonId, picture as lessonPicture } from './lessonReader'
+import { findOnPage, lastLessonId, picture as lessonPicture, pictureReady } from './lessonReader'
 
 // A slide on the study board: rings on words (text) or on part of its picture (area: fractions), and how each looks.
 type BoardSlide = { page: number; label?: string; rings?: { id: string; text?: string; area?: number[]; style?: 'ring' | 'underline' | 'highlight'; label?: string }[] }
@@ -163,7 +163,7 @@ async function reminderTick(): Promise<void> {
   const due: Any[] = await store.takeDueReminders(Date.now()).catch(() => [])
   for (const c of due) {
     fired = [...fired.filter((x) => x.id !== c.id), c].slice(-10)
-    orbEmote('remind')
+    orbEmote('remind', true)
     voiceSay(`${c.kind === 'reminder' ? 'Reminder' : 'Hey'}: ${c.text}.`)
     showList(30, c.id)
   }
@@ -625,9 +625,11 @@ export async function showBoard(a: { title?: string; add?: boolean; slides: Boar
     const missed = slides.flatMap((s) => s.rings.filter((r) => !r.rect).map((r) => `"${r.text ?? r.id}" (slide ${s.page})`))
     return `Added to the study board${missed.length ? `, but couldn't find ${missed.join(', ')} (use the words exactly as written there)` : ''}${off.length ? `. Slide ${off.join(' and ')} isn't on the board (it shows ${board.pages.join(', ')}): show a new board for it` : ''}${a.notes?.length && !board.notes ? '. This board has no room for notes (it opened without any): say it, or draw a small card' : ''}.`
   }
+  // The board opens at once: pictures already made go in now, the others fill in as they're made (one at a time,
+  // the big slide first), so nothing waits on them.
   const slides = await Promise.all(
     a.slides.slice(0, 3).map(async (s) => {
-      const buf = await lessonPicture(id, s.page)
+      const buf = pictureReady(id, s.page) ? await lessonPicture(id, s.page) : null
       return { ...s, src: buf ? `data:image/jpeg;base64,${buf.toString('base64')}` : null, rings: (s.rings ?? []).map((r) => ({ ...r, rect: r.area ?? (r.text ? findOnPage(id, s.page, r.text) : null) })) }
     })
   )
@@ -635,6 +637,13 @@ export async function showBoard(a: { title?: string; add?: boolean; slides: Boar
   const part = `b${Date.now().toString(36)}`
   board = { part, pages: slides.map((s) => s.page), notes: (a.notes ?? []).length > 0 }
   inkPlay({ id: `board-${part}`, seg: 0, beats: [{ n: 1, say: '', caption: '', voiced: false, marks: [{ kind: 'board', part, title: a.title, slides, links: a.links ?? [], notes: a.notes ?? [] }] }], last: true, win: null, busy: [] })
+  void (async () => {
+    for (const s of slides.filter((q) => !q.src)) {
+      const buf = await lessonPicture(id, s.page)
+      if (board?.part !== part) return
+      if (buf) inkBoardPic(part, s.page, `data:image/jpeg;base64,${buf.toString('base64')}`)
+    }
+  })()
   const missed = slides.flatMap((s) => s.rings.filter((r) => !r.rect).map((r) => `"${r.text ?? r.id}" (slide ${s.page}${r.text ? '' : ': give text or area'})`))
   const ringIds = new Set(slides.flatMap((s) => s.rings.filter((r) => r.rect).map((r) => r.id)))
   const drawn = (a.links ?? []).filter((q) => ringIds.has(q.from) && ringIds.has(q.to)).length

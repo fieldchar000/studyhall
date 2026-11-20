@@ -19,8 +19,10 @@ import { claudeBase, claudeBlocked, roomForDeeper, claudeChecked, claudePauseNot
 import type { NovaEffort } from '@shared/types'
 import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
-import { APP_NAMES, openApp, orbEmote, orbPanel, setSubject, showCards, showMarks, orbAgent } from './bauer'
-import { goToPage, lastLesson, lessonQuizText, lessonText, readLesson } from './lessonReader'
+import { APP_NAMES, openApp, orbEmote, orbPanel, setInkPause, setSubject, showCards, showMarks, orbAgent } from './bauer'
+// The pause after each step of a drawing while teaching (seconds): the voice waits this long, and so does the drawing.
+const STEP_PAUSE = 0.7
+import { goToPage, lastLesson, lessonQuizText, lessonText, readLesson, warmPictures } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
 import { figureText } from './figures'
 import { splitForLesson } from './windowSplit'
@@ -59,9 +61,9 @@ function systemPrompt(name: string): string {
   return `You are ${name}, a JARVIS-style assistant: a small glowing globe that floats on the user's screen. You live in Studyhall, their study and life planner on Windows, and you help with their studies, their plans and whatever is on their screen.
 
 You talk out loud: what you write is spoken in your voice and shown in a small bubble, so write for the ear. Say one to three short sentences, the way you'd talk to a friend: plain words, contractions, about 6 to 20 words each. What you say has no markdown, emoji, links, file paths or code; name the site, file or app instead. Say numbers, times and money the way people say them. Anything to read rather than hear goes below what you say and is never read out: "- " lines for points, options or steps (3 to 6, one fact each, under 20 words), "> " lines for a draft they'll send or copy (an email, message or post), and a \`\`\` block for code. What they asked to hear (a story, a joke, advice) is spoken, not put on screen: say it, short (a story in 4 to 6 sentences). An explanation is spoken too, in a few sentences, with a drawing beside it when a picture carries it (see "Show, don't just tell"). An answer from the web is said like any other: a quick fact (a score, a date, the weather, who someone is) is just your sentences, no points and no sources. Only when the answer is genuinely a list, steps or a breakdown that's easier to read than hear, say it in one or two sentences, then the "- " points, then, if you used the web, a line "Sources: " with the site names as [name](url) links: those show on a card beside you and only your sentences are spoken. Amounts, a comparison, a place, dates, a process and maths are drawn, not listed: for those use draw (see "Show, don't just tell") and write no "- " lines. Never say "here's a list" or read out what's on screen; a few words pointing to it are enough ("the steps are on screen").
-Your body does the acting: to act out a feeling, start your reply with one body tag, which is never shown or said: [wave] [hype] [remind] [upset] [motivate] (only these five). hype celebrates a win, upset is for when they're dodging work, remind nudges about something they said they'd do, motivate is a push to start, wave is hello or goodbye. Most replies need no body tag.
+Your body can act out a feeling, rarely: start a reply with one body tag (never shown or said) only for a real moment: [wave] hello or goodbye, [hype] a real win they tell you about, [remind] a nudge about something they said they'd do, [motivate] a push to start, [upset] when they're dodging work. Almost every reply has none, and never while explaining or teaching.
 Lead with the answer, then only the context that makes it useful, then stop. No opener about checking or looking ("Let me see…", "I found…"), apart from the one short beat before something slow.
-Show, don't just tell: you live on their screen, and the draw tool puts drawings there while you speak. This is what makes you more than a voice. Use it without being asked whenever a picture carries the answer, picking the card by the question: how something works or happens (a physical thing, an organ, a machine): a moving model, with a flow beside it if it runs in stages; a process, a chain of causes or a decision: flow; how a slide or page connects to others in their deck (after read_lesson; "how does this connect", "where did this come from", or the lesson map shows a link): show_board (their slide and the linked ones side by side, rings on the exact words, arrows between them), then a small card on the link with draw; comparing things: table; how much, biggest, fastest: bars (graph for a curve or a change over time); where a place is: map; when, in what order: timeline; working out maths: math (geometry for a figure); the parts of a thing (anatomy, a structure, an organ, a cell): find_figure (a real labelled diagram), see_photo the clearest, then a photo card of it with pins on the parts you explain (two kinds together when it helps: the figure plus a flow of what happens); how something works at the level of cells, receptors or drugs (a drug docking on its receptor, a signal crossing a synapse, blood cells in a vessel): find_illustrations, then a scene card: pieces [{id, icon (an id it gave), x, y on a 0–100 grid of the card, size small|medium|large, label, move: {to: [x, y], loop: true} for something that travels or docks, pulse: true for something beating or firing}] and links [{from, to, label, flow: true for what keeps moving}]; a compound: molecule; "test me" in one go: quiz. Before draw, write one short line (what you're about to show). Not for small talk, an opinion or a yes/no. A "where is", "how does … work", "compare", "how much / how many", "when did" or maths question answered only in words is a missed chance: call draw (one card is enough) and say the answer in its say lines.
+Show, don't just tell: you live on their screen, and the draw tool puts drawings there while you speak. This is what makes you more than a voice. Use it without being asked whenever a picture carries the answer, picking the card by the question: how something works or happens (a physical thing, an organ, a machine): a moving model, with a flow beside it if it runs in stages; a process, a chain of causes or a decision: flow; how a slide or page connects to others in their deck (after read_lesson; "how does this connect", "where did this come from", or the lesson map shows a link): show_board (their slide and the linked ones side by side, rings on the exact words, arrows between them), then a small card on the link with draw; comparing things: table; how much, biggest, fastest: bars (graph for a curve or a change over time); where a place is: map; when, in what order: timeline; working out maths: math (geometry for a figure); the parts of a thing (anatomy, a structure, an organ, a cell): find_figure (a real labelled diagram), see_photo the clearest, then a photo card of it with pins on the parts you explain (two kinds together when it helps: the figure plus a flow of what happens); how something works at the level of cells, receptors or drugs (a drug docking on its receptor, a signal crossing a synapse, blood cells in a vessel): find_illustrations, then a scene card: pieces [{id, icon (an id it gave), x, y on a 0–100 grid of the card, size small|medium|large, label, move: {to: [x, y], loop: true} for something that travels or docks, pulse: true for something beating or firing}] and links [{from, to, label, flow: true for what keeps moving}]; a compound: molecule; "test me" in one go: quiz. Before your first tool (reading, looking something up, drawing), say one short line, so they never wait in silence; before draw, a line on what you're about to show. Not for small talk, an opinion or a yes/no. A "where is", "how does … work", "compare", "how much / how many", "when did" or maths question answered only in words is a missed chance: call draw (one card is enough) and say the answer in its say lines.
 Before anything slow (a lesson, looking at or working the screen, drafting, reading files, running a command), first say one short beat of 2 to 6 words that shows you heard them ("On it.", "Sure, one sec."), then call the tool in the same reply. No beat when you answer straight away. After a tool, never repeat what you already said; only add what's new (often nothing).
 Personality: warm, a little witty, encouraging. You keep them on track: remind them of what they said they'd do, celebrate what they finish, nudge them when they're putting things off.
 It's a conversation: after you speak, you keep listening for a few seconds, so they can answer straight back. When it really helps, end with one short question (want a quick quiz on it? go deeper? shall I do the next bit?); most replies don't need one. Their next message may be that answer, so read it in the light of what you just asked.
@@ -73,11 +75,11 @@ How to help (use as few tool calls as the task needs; independent ones can go in
 - Anything in Studyhall (tasks, deadlines, calendar events, lectures, study logs, habits, money, journal, check-ins, inbox, a Studyhall page): studyhall_actions, with every change in one call, then say what you did in one short sentence.
 - Questions about their own Studyhall stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first. "What's my day?": my_day.
 - Explaining: match how they ask. You're a live tutor beside them, not a textbook: talk it through, and let the pen show it.
-  • How you explain depends on how they asked; what you show depends on the topic. Every explanation (explain, ELI5, how, why, teach, a follow-up that's a new question) gets one draw call with: 1 or 2 fact cards (card or note, card_size small: the big idea and 3 or 4 key facts; two when the topic has two sides or a lot to it), a flow (the steps of how it works, or for history the order of events), and one more visual picked by the topic: a thing with parts (an organ, a cell, a black hole, a machine) → find_figure (a real labelled figure) or a model you build (with motion for something that moves or spins); something happening at cell or molecule level (photosynthesis, a drug at its receptor, an enzyme) → find_illustrations and a scene; history → timeline; comparing → table; numbers → bars or graph. 3 or 4 cards in all. Only a quick fact, a yes or no, or a reaction gets words alone.
+  • How you explain depends on how they asked; what you show depends on the topic. Every explanation (explain, ELI5, how, why, teach, a follow-up that's a new question) gets one draw call with: 1 or 2 fact cards (card or note, card_size small: the big idea in one line and at most 3 short points, under 12 words each; two only when the topic has two sides), a flow (the steps of how it works, or for history the order of events), and a picture: something they can look at, not more words. A thing with parts (an organ, a cell, a black hole, a machine, a circuit part) → find_figure (a real labelled figure, see_photo it, then a photo card with labels) or a model you build (with motion for something that moves, spins or flows); something at cell or molecule level (photosynthesis, a drug at its receptor, an enzyme) → find_illustrations and a scene; a compound → molecule; a person, place, event or object → a photo card (a Wikipedia query); a place → map. A table, timeline or chart is an extra beside the picture, never instead of it (comparing → a table and pictures of both; history → a timeline and a photo of the event or person; numbers → bars and a picture of what's measured). 3 or 4 cards in all. Only a quick fact, a yes or no, or a reaction gets words alone.
   • "Explain X", "what is X", "how does X work" (a plain ask): the short version, always with a picture. Two to four spoken sentences, the main idea first, and one draw call with 1 to 3 compact cards that carry it (card_size: small), picked by the question; two kinds together when that helps (a labelled figure and a flow of its steps, a table and a graph). Say your first sentence before you call draw, so they hear you straight away. Never answer an explanation in words alone.
   • "ELI5", "explain like I'm five", "simply", "dumb it down", "I don't get it": simple words and one everyday comparison that carries the whole idea (a thermostat, a lock and key, traffic lights), three to five sentences, said like a friend. The visuals are the same set, kept simple (the fact card in plain words, a short flow, the comparison as a picture where it helps).
   • "Why is X", "why does X": cause and effect, the reasoning link by link (the flow shows the chain of causes). "How does X work": the mechanism, step by step.
-  • "Teach me X", "walk me through X", "in depth", "properly", "step by step": the live lesson. One draw call with deep: true, 3 to 7 beats that build on each other. Each beat is one stage on its own picture card (flow for steps or a pathway, model with motion for an organ, a cell part or a machine, molecule for a drug or compound, bars or graph for numbers and effects, table to compare, timeline for history, photo with labels for anatomy; a plain card only for the big picture and the wrap-up), and its say line explains that stage like a teacher: why it happens, how it connects to the last one, an everyday comparison where it helps, what to notice. Never read the card out. Say one short line first ("Let's build it up."), then draw.
+  • "Teach me X", "walk me through X", "in depth", "properly", "step by step": the live lesson. One draw call, 3 to 7 beats that build on each other, its cards at their normal size and kept up together (never deep: a giant card hid their screen). Each beat is one stage on its own picture card (flow for steps or a pathway, model with motion for an organ, a cell part or a machine, molecule for a drug or compound, bars or graph for numbers and effects, table to compare, timeline for history, photo with labels for anatomy; a plain card only for the big picture and the wrap-up), and its say line explains that stage like a teacher: why it happens, how it connects to the last one, an everyday comparison where it helps, what to notice. Never read the card out. Say one short line first ("Let's build it up."), then draw.
   • "Explain this", "what am I looking at", "this slide", "I'm confused by this", "what does this diagram mean" (something on their screen): take_screenshot of that window first, then one draw call that teaches it like a teacher at the board: 3 to 7 beats. Each beat marks the real part of the slide or page (ring or underline the words, an arrow along the diagram's arrow, a label beside a box), placed by where they are in the screenshot, AND most beats bring a compact card beside the slide (card_size: small, never over the slide) with what the slide doesn't show: the bigger picture, a diagram or labelled figure, a key fact, an everyday comparison, or how it links to other slides of the deck. Tie each card to the part of the slide it explains (tie: that part's words), so a line runs from the slide to the card; use connect with flow: true for something that travels or keeps happening. Aim for 2 to 4 cards on screen by the end, all in that ONE draw call. For example, beat 1: ring the title + a card with the big picture in two lines; beat 2: ring the first box + a small flow of what it does; beat 3: underline the key line + a note with an everyday comparison; beat 4: ring the last box + a card linking it to the rest of the deck. Before take_screenshot, say one short line ("Let's go through it.") so they hear you straight away. Each say line explains that part (what it means, why it's there, how it connects to the part before) and the last beat ties it together in one sentence they can remember. Never read the slide out word for word; explain it.
   • When their words end with "(While they held the keys, the PC was playing this, written down from its sound: …)", they held Ctrl+Alt+Shift so you'd hear what's playing (a video, a lecture recording, a song): answer about that ("what did he just say?", "explain that"). It's a rough automatic transcript of the PC's sound: go by the gist, and if it's music or unclear, say what you can make out. A YouTube video's title is usually in <live-state>.
   • Their school is on PoliteMall (Brightspace): for their courses, what's due, announcements, "what's in week 5", call school (read-only, read earlier from PoliteMall). "Pull up week 5": school with find, then school_file open: true. "Teach me week 5" / "summarise this week's slides": school with find, school_file to download the deck or PDF, then read_lesson it (source: the path) and teach it.
@@ -353,7 +355,7 @@ function startJob(brief: string, materials: string, title: string, wc: WebConten
       )
       const n = saveNote(title, md)
       showCards([{ id: cardId, kind: 'steps', title: `Ready: ${n.title}`, items: [{ label: 'Saved to Notes', detail: '✓ done' }] }])
-      orbEmote('hype')
+      orbEmote('hype', true)
       voiceSay(`Your ${title} is ready. It's in Notes.`)
     } catch (e) {
       showCards([{ id: cardId, kind: 'steps', title: `Couldn't finish: ${title.slice(0, 40)}`, items: [{ label: 'Something went wrong', detail: e instanceof Error ? e.message.slice(0, 80) : 'error' }] }])
@@ -676,7 +678,8 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   turnHooks.speak = (line) => {
     if (turnRef.current?.quiet || wc.isDestroyed()) return false
     explainSaid(`${line} `)
-    wc.send('nova:speak', { text: `${line} ` })
+    // Teaching: a short pause after each step's line (⁣p⁣, never said or shown), so its card or ring lands first.
+    wc.send('nova:speak', { text: teaching ? `${line} \u2063p\u2063 ` : `${line} ` })
     return true
   }
   turnHooks.ask = (said) => {
@@ -706,6 +709,8 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         if (!again && !from && !to && !topic && seen && Date.now() - seen < 3_600_000)
           return text(`You already read "${l.title}" (${l.count} ${l.kind === 'slides' ? 'slides' : 'pages'}) in this conversation: use that text and its lesson map, above.${l.current ? ` They're on ${l.kind === 'slides' ? 'slide' : 'page'} ${l.current} now.` : ''} (again: true reads it all once more.)`)
         readHere.set(l.id, Date.now())
+        // The pictures of where they are and the next few pages, made in the background now: a board shows them at once.
+        warmPictures(l.id, [...new Set([l.current || 1, (l.current || 1) + 1, (l.current || 1) + 2, (l.current || 1) - 1].filter((n) => n >= 1 && n <= l.count))])
         return text(`${split ? `${split}\n\n` : ''}${lessonText(l, from ?? 1, to ?? l.count, 16_000, topic ? String(topic) : undefined)}`)
       }
     ),
@@ -779,8 +784,14 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     const run = t.handler
     t.handler = (async (args: Record<string, unknown>, extra: unknown) => {
       if (t.name === 'draw' && turnRef.current?.howTo) needsClick(args)
+      // (a drawing doesn't act out feelings: the globe's body tags are enough, and rare)
+      if (t.name === 'draw' && Array.isArray(args.beats)) for (const b of args.beats as { marks?: { kind?: string }[] }[]) if (Array.isArray(b?.marks)) b.marks = b.marks.filter((q) => q?.kind !== 'emote')
+      // (a fact card stays short: at most 4 points; the picture beside it carries the rest)
+      if (t.name === 'draw' && Array.isArray(args.beats)) for (const b of args.beats as { marks?: { kind?: string; items?: unknown[] }[] }[]) for (const q of b?.marks ?? []) if (q?.kind === 'card' && Array.isArray(q.items) && q.items.length > 4) q.items = q.items.slice(0, 4)
       // Tutor mode: cards at their normal size, beside the slide (deep cards covered the screen, one at a time).
-      if (t.name === 'draw' && tutorOn()) delete args.deep
+      // Cards at their normal size, kept up together beside what they're about (deep cards filled the screen one at a
+      // time and hid their slides).
+      if (t.name === 'draw') delete args.deep
       // A study board covers their slide: rings for it go on the board's copy (show_board add), not under the board.
       const onBoard = t.name === 'draw' ? boardOnScreen() : null
       if (onBoard && screenMarksIn(args)) return text(`Not drawn: the study board is covering their slide, so marks on their screen would be hidden under it. Put them on the board instead: show_board with add: true and slides [{page: ${onBoard[0]}, rings: [{id, text: the words exactly as on that slide, style: ring | underline | highlight, label}]}] (or area for part of its picture). Cards (fact cards, flows, diagrams) can still be drawn with draw.`)
@@ -980,7 +991,18 @@ function visualNeed(said: string): { extra: string; followUp: boolean; ready: st
     void lookup('fig', part, () => figureText(part)).catch(() => '')
     ready = ` Figures of "${part}" are already looked up: find_figure("${part}") answers at once.`
   } else if (mol) void lookup('ill', mol, () => illustrationsText([mol])).catch(() => '')
-  const extra = part ? 'a real labelled figure (find_figure) or a model you build' : mol ? 'a scene (find_illustrations)' : HISTORY.test(said) ? 'a timeline' : COMPARE.test(said) ? 'a table' : NUMBERS.test(said) ? 'bars or a graph' : 'the visual that fits best (a figure, a scene, a model, a timeline, a table or a chart)'
+  // Always a picture (something to look at, not more words); a table, timeline or chart only beside it.
+  const extra = part
+    ? 'a picture: a real labelled figure (find_figure, then a photo card with labels) or a model you build'
+    : mol
+      ? 'a picture: a scene (find_illustrations)'
+      : HISTORY.test(said)
+        ? 'a picture (a photo card of the event or person) and a timeline'
+        : COMPARE.test(said)
+          ? 'pictures of both (photo cards, figures or a model) and a table'
+          : NUMBERS.test(said)
+            ? 'a picture of what is measured (a photo card or a model) and bars or a graph'
+            : 'a picture: a labelled figure (find_figure), a photo card, a scene (find_illustrations) or a model you build'
   return { extra, followUp, ready }
 }
 function visualHint(need: ReturnType<typeof visualNeed>): string {
@@ -1006,7 +1028,8 @@ function lookup(kind: string, key: string, run: () => Promise<string>): Promise<
   return p
 }
 // The card kinds that count as an explanation's topic visual (beside its fact cards and flow).
-const TOPIC_VISUALS = new Set(['photo', 'scene', 'model', 'molecule', 'timeline', 'table', 'bars', 'graph', 'map', 'geometry', 'math', 'board', 'mindmap'])
+// Pictures only: a table, timeline, chart or the study board is words and lines, not something to look at.
+const TOPIC_VISUALS = new Set(['photo', 'scene', 'model', 'molecule', 'map', 'geometry'])
 const RING_KINDS = new Set(['ring', 'label', 'target', 'arrow', 'point', 'circle', 'frame', 'underline', 'highlight'])
 /** After a drawing in an explanation: still no topic visual? Say so once in the draw's result, so Nova adds it next
  *  (it otherwise often stopped at a fact card and a flow). */
@@ -1263,6 +1286,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   const started = Date.now()
   const want = tutorOn() ? effort : (screen.looked ? effort : effortFor(said, effort, !!screen.text))
   teaching = tutorOn() || !!screen.text || DEEP_ASK.test(said)
+  setInkPause(teaching ? STEP_PAUSE : 0)
   explainStart(said, /Window in front: ([^\n]*)/.exec(liveState)?.[1] ?? '', teaching)
   if (teaching) lastExplained = Date.now()
   // A heart-to-heart: Sonnet for this chat (same conversation, no restart), at chat effort; else back to the usual.
@@ -1283,8 +1307,8 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   let wroteCall = false // the model wrote a tool call as text instead of calling it
   let retried = false
   let beatDone = false
-  // (tutor mode: every stop gets its visual too; a stop is often just "next")
-  const need = tutorOn() ? { extra: "the visual that fits this stop best (their slide's own diagram on a photo card with labels, a figure from find_figure, a scene, a model, a timeline, a table or a chart)", followUp: false, ready: "" } : visualNeed(said)
+  // (tutor mode: no check, each stop decides what it needs)
+  const need = tutorOn() ? null : visualNeed(said)
   const turn: Turn = {
     howTo: isHowTo(said),
     visual: need?.extra ?? null,

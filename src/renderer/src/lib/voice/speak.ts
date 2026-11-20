@@ -257,15 +257,26 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
   // "[look N]" cues arrive inside the text (⁣N⁣): the globe floats to mark N as the piece holding it starts playing.
   const looks: number[][] = []
   let lookNext: number[] = []
+  // "⁣p⁣" after a step's line while teaching: a short silence there, so the card or ring it's about lands first.
+  const pauses: boolean[] = []
+  let pauseNext = false
   const enqueue = (piece: string): void => {
     for (const m of piece.matchAll(/⁣(\d)⁣/g)) lookNext.push(Number(m[1]))
+    const at = piece.indexOf('⁣p⁣')
     const p = piece
+      .replace(/⁣p⁣/g, ' ')
       .replace(/⁣\d⁣/g, ' ')
       .replace(/[*_#`>]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
-    if (!p || !/[\p{L}\p{N}]/u.test(p)) return
+    if (!p || !/[\p{L}\p{N}]/u.test(p)) {
+      if (at >= 0) pauseNext = true
+      return
+    }
     said = true
+    // a cue at its start: the pause comes before it; at its end: before the next piece
+    pauses[texts.length] = pauseNext || (at >= 0 && at < piece.length / 2)
+    pauseNext = at >= piece.length / 2
     looks[texts.length] = lookNext
     lookNext = []
     texts.push(p)
@@ -306,6 +317,8 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
       for (;;) {
         if (gen !== generation) return
         if (i < queue.length) {
+          if (pauses[i] && shown > 0) await new Promise((r) => setTimeout(r, 700))
+          if (gen !== generation) return
           const audio = await queue[i++]
           if (gen !== generation) return
           for (const n of looks[i - 1] ?? []) {
@@ -333,7 +346,7 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
     push(t) {
       if (gen !== generation) return
       buf += t
-      all += t
+      all += t.replace(/⁣p⁣/g, '')
       cut(false)
     },
     beat() {

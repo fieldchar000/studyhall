@@ -60,9 +60,26 @@ async function pageBoxes(page: import('pdfjs-dist').PDFPageProxy): Promise<[numb
   return lines.slice(0, 60).map((l) => [r(l.x / W), r(l.y / H), r(l.w / W), r(l.h / H), l.s.trim().slice(0, 160)])
 }
 
+// The lesson's PDF stays open while its pages are drawn (opening a big one again for every page was slow).
+const docs = new Map<string, Promise<import('pdfjs-dist').PDFDocumentProxy>>()
+function openKept(key: string | undefined, data: Uint8Array): Promise<import('pdfjs-dist').PDFDocumentProxy> {
+  if (!key) return open(data)
+  let d = docs.get(key)
+  if (!d) {
+    for (const [k, v] of docs) if (docs.size >= 2) {
+      docs.delete(k)
+      void v.then((x) => x.cleanup()).catch(() => {})
+    }
+    d = open(data)
+    d.catch(() => docs.delete(key))
+    docs.set(key, d)
+  }
+  return d
+}
+
 /** Page n drawn as a JPEG data URL, about `width` pixels wide. */
-export async function lessonPdfPage(data: Uint8Array, n: number, width = 1280): Promise<string> {
-  const doc = await open(data)
+export async function lessonPdfPage(data: Uint8Array, n: number, width = 1280, key?: string): Promise<string> {
+  const doc = await openKept(key, data)
   try {
     const page = await doc.getPage(Math.max(1, Math.min(doc.numPages, n)))
     const base = page.getViewport({ scale: 1 })
@@ -73,9 +90,12 @@ export async function lessonPdfPage(data: Uint8Array, n: number, width = 1280): 
     const ctx = canvas.getContext('2d')!
     ctx.fillStyle = '#fff'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
-    await page.render({ canvasContext: ctx, canvas, viewport }).promise
+    // 'print': drawn straight through. The usual way waits on the screen's refresh, which Windows pauses for a window
+    // in the background (Studyhall behind Edge): pages took a minute or never came.
+    await page.render({ canvasContext: ctx, canvas, viewport, intent: 'print' }).promise
+    page.cleanup()
     return canvas.toDataURL('image/jpeg', 0.8)
   } finally {
-    await doc.cleanup().catch(() => {})
+    if (!key) await doc.cleanup().catch(() => {})
   }
 }

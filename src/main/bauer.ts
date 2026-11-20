@@ -167,12 +167,17 @@ function sendLayer(): void {
 // ---------- Drawings (Roamies' ink) on the globe's layer ----------
 export const inkHooks = { event: (_msg: Record<string, unknown>): void => {} }
 /** Play a drawing segment (screen places in DIP), on the screen the drawing is about. */
+// The pause after each step while teaching (the voice waits that long after each step's line: the drawing keeps time).
+let inkPause = 0
+export function setInkPause(s: number): void {
+  inkPause = s
+}
 export function inkPlay(seg: unknown, near?: { x: number; y: number } | null): void {
   if (suspended || !orbWin || orbWin.isDestroyed()) return
   if (near && !OFFSCREEN) layerOn(screen.getDisplayNearestPoint(near))
   if (!orbWin.isVisible()) orbWin.showInactive()
   // (captions at the bottom only when they're switched on; else its lines show in Nova's speech bubble)
-  orbWin.webContents.send('bauer:ink', { play: { ...(seg as Record<string, unknown>), captions: getPrefs().novaCaptions === true } })
+  orbWin.webContents.send('bauer:ink', { play: { ...(seg as Record<string, unknown>), captions: getPrefs().novaCaptions === true, pause: inkPause } })
 }
 /** Roamies' reminders card (today / later), on the globe's layer. */
 export function inkReminders(msg: Record<string, unknown>): void {
@@ -227,6 +232,10 @@ export function inkClear(e: Record<string, unknown> = {}): void {
 }
 /** Ask the overlay where what it marked on the screen is (rings, underlines, labels): it answers with a
  *  'screen_marks' event (see roamiesTools.ts). Also where its layer is on screen (DIP). */
+/** A slide's picture for the study board that's up (it opened before the picture was made). */
+export function inkBoardPic(part: string, page: number, src: string): void {
+  orbWin?.webContents.send('bauer:ink', { boardPic: { part, page, src } })
+}
 export function inkAskMarks(id: string): void {
   orbWin?.webContents.send('bauer:ink', { marksAsk: id })
 }
@@ -428,8 +437,15 @@ export function setPen(mode: PenMode | null, cancel = false): void {
 }
 
 /** A little performance from the globe (Nova's emote tags): wave, hype, remind, upset, motivate. */
-export function orbEmote(e: string): void {
-  if (['wave', 'hype', 'remind', 'upset', 'motivate'].includes(e)) orbWin?.webContents.send('bauer:emote', e)
+// The globe acts out a feeling only now and then, so each one means something: at most one every 3 minutes, and none
+// while it explains or teaches (it was dancing so often nobody could tell why). A reminder going off always gets its own.
+export const emoteHooks = { quiet: (): boolean => false }
+let lastEmote = 0
+export function orbEmote(e: string, always = false): void {
+  if (!['wave', 'hype', 'remind', 'upset', 'motivate'].includes(e)) return
+  if (!always && (emoteHooks.quiet() || Date.now() - lastEmote < 180_000)) return
+  lastEmote = Date.now()
+  orbWin?.webContents.send('bauer:emote', e)
 }
 
 /** Studyhall closed to the tray: hide the orb, cards and circling layer, and free Ctrl+Alt+B. Opened again: bring them back. */

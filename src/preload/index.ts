@@ -289,7 +289,7 @@ const api: Api = {
   },
   lesson: {
     onPdf: (cb) => {
-      const l = async (_e: unknown, req: { id: number; op: 'text' | 'page'; data: Uint8Array; n?: number; width?: number }): Promise<void> => {
+      const l = async (_e: unknown, req: { id: number; op: 'text' | 'page'; data: Uint8Array; n?: number; width?: number; key?: string }): Promise<void> => {
         const result = await cb(req).catch((e: unknown) => `error: ${e instanceof Error ? e.message : String(e)}`)
         ipcRenderer.send('lesson:pdfDone', { id: req.id, result })
       }
