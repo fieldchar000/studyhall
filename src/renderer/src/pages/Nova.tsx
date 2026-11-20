@@ -177,12 +177,12 @@ function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | 
           or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> (again to stop)
         </span>
       </div>
-      <Row title="Tutor brain" hint="Haiku: cheaper, quick, good for most lessons. Sonnet: smarter with tricky topics, about 3 times the cost per stop.">
+      <Row title="Tutor brain" hint="Sonnet: the best teacher (the default). Haiku: much cheaper, but it teaches less well and can take extra steps.">
         <Seg
-          value={prefs?.novaTutorBrain === 'sonnet' ? 'sonnet' : 'haiku'}
+          value={prefs?.novaTutorBrain === 'haiku' ? 'haiku' : 'sonnet'}
           options={[
-            ['haiku', 'Haiku (cheaper)'],
-            ['sonnet', 'Sonnet (smarter)']
+            ['sonnet', 'Sonnet (best)'],
+            ['haiku', 'Haiku (cheaper)']
           ]}
           onChange={(v) => save({ novaTutorBrain: v })}
         />

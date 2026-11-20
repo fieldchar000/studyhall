@@ -369,7 +369,7 @@ function startJob(brief: string, materials: string, title: string, wc: WebConten
 
 const ACTION_TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page'] as const
 
-type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean; visual?: string | null; drew?: string[]; nudged?: boolean; circled?: boolean }
+type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean; visual?: string | null; drew?: string[]; nudged?: boolean; circled?: boolean; stopNudged?: boolean }
 // Sites that came up in this hour's searches, pages read and what they said: Nova opens only those (or everyday sites),
 // so it can't open a guessed address (it opened krillion.com for "the Krillion game page").
 const seenHosts = new Map<string, number>()
@@ -733,6 +733,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         if (typeof got === 'string' && !earlier) return text(got)
         const l = typeof got === 'string' ? earlier! : got
         if (tutorOn()) tutorTitle(l.title)
+        if (tutorOn()) tutorRead = true
         // Tutor mode, split screen: their slides window moves to the left for the lesson (back when it ends).
         const split = tutorOn() && getPrefs().novaTutorLayout === 'split' && l.window ? await splitForLesson(l.window) : ''
         // Already read in this conversation (the last hour): its text and lesson map are above; don't pay for them twice.
@@ -742,7 +743,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         readHere.set(l.id, Date.now())
         // The pictures of where they are and the next few pages, made in the background now: a board shows them at once.
         warmPictures(l.id, [...new Set([l.current || 1, (l.current || 1) + 1, (l.current || 1) + 2, (l.current || 1) - 1].filter((n) => n >= 1 && n <= l.count))])
-        const next = tutorOn() ? `\n\n(Now: say your plan in a sentence or two, or if the slides aren't in a clear order, ask once whether they'd like it slide by slide or topic by topic. Then teach the first stop: ring its key words and draw 2 cards.)` : ''
+        const next = tutorOn() ? `\n\n(Now: say your plan in a sentence or two, or if the slides aren't in a clear order, ask once whether they'd like it slide by slide or topic by topic. Then teach the first stop: ring its key words and draw 2 cards. You now have the whole document, every page: teach from it; there's no need to look at their screen or scroll.)` : ''
         return text(`${split ? `${split}\n\n` : ''}${lessonText(l, from ?? 1, to ?? l.count, 16_000, topic ? String(topic) : undefined)}${next}`)
       }
     ),
@@ -809,7 +810,9 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       return text('Tutor mode is off.')
     })
   ]
-  const TUTOR_KEEP = new Set(['draw', 'see_photo', 'find_figure', 'find_illustrations', 'show_board', 'read_lesson', 'go_to_page', 'take_screenshot', 'read_window', 'tutor_done', 'school', 'school_file'])
+  // (The lesson stage teaches from the whole document it read and shows the slides on the board: no screenshots, page
+  // turning or window reading, which only led to extra steps. Split screen rings their own window, so it keeps them.)
+  const TUTOR_KEEP = new Set(['draw', 'see_photo', 'find_figure', 'find_illustrations', 'show_board', 'read_lesson', 'tutor_done', 'school', 'school_file', ...(getPrefs().novaTutorLayout === 'split' ? ['go_to_page', 'take_screenshot', 'read_window'] : [])])
   const all = [...tools, ...lessonTools, ...figureTools, ...schoolTools, ...tutorTools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
   // Every tool shows what it's doing beside the globe while it runs (Roamies' activity lines).
   for (const t of all) {
@@ -930,6 +933,29 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
       allowedTools: ['mcp__nova__*', 'WebSearch'],
       includePartialMessages: true,
       maxTurns: 12,
+      // Tutor mode: a stop that's about to end with the board up (or the lesson read) but no cards drawn carries on, in
+      // the same turn, to draw them: no extra request, no mic opening again (the way 0.72.0 tried it).
+      ...(tutor
+        ? {
+            hooks: {
+              Stop: [
+                {
+                  hooks: [
+                    async (hookInput: import('@anthropic-ai/claude-agent-sdk').HookInput) => {
+                      const input = hookInput as { stop_hook_active?: boolean; last_assistant_message?: string }
+                      const tr = turnRef.current
+                      if (!tr || input.stop_hook_active || tr.stopNudged || tr.tools.includes('draw')) return {}
+                      const taught = tr.tools.includes('show_board') || tr.tools.includes('read_lesson') || String(input.last_assistant_message ?? '').length > 300
+                      if (!taught) return {}
+                      tr.stopNudged = true
+                      return { decision: 'block' as const, reason: "Before this stop ends, show it: draw its 2 cards now (a short fact card, and a flow of the steps or a picture), with one short line while it draws. Don't repeat what you've said." }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        : {}),
       // The conversation is saved on this PC (never to your Claude account) so it carries on after a pause or a
       // restart; Claude Code folds older turns into a summary itself when it gets long, as Roamies does.
       persistSession: process.env.STUDYHALL_OFFSCREEN !== '1' && !tutor, // (test copies and tutor lessons save nothing)
@@ -937,6 +963,7 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
     }
   })
   c.tutor = tutor
+  if (tutor) tutorRead = false // (a new lesson conversation: its deck isn't read yet)
   c.resumed = !tutor && !!resumeId()
   c.costSeen = 0
   c.lastSteady = ''
@@ -1124,6 +1151,9 @@ function chatDepth(said: string): { deep: boolean; effort: NovaEffort } {
 
 /** This request is explaining or teaching (or tutor mode): its voice uses the teaching speed. */
 let teaching = false
+// Tutor mode: this lesson's deck has been read (its first request gets a line straight away while it's read).
+let tutorRead = false
+const pick = <T>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)]
 // The chat card is up (a long chat or a heart-to-heart, written out beside the globe).
 let chatCard = false
 export const teachingNow = (): boolean => teaching
@@ -1147,7 +1177,7 @@ function logTiming(line: string): void {
 function settingsFor(): { model: ModelKey; effort: NovaEffort } {
   // Tutor mode, in a lean conversation of its own: Haiku with no thinking (cheaper and quick to speak, the default), or Sonnet with
   // none (Nova's page: Tutor brain).
-  if (tutorOn()) return getPrefs().novaTutorBrain === 'sonnet' ? { model: 'sonnet', effort: 'low' } : { model: 'haiku', effort: 'low' }
+  if (tutorOn()) return getPrefs().novaTutorBrain === 'haiku' ? { model: 'haiku', effort: 'low' } : { model: 'sonnet', effort: 'low' }
   const p = getPrefs()
   // Auto: Haiku with little thinking, like Roamies (fast). A brain picked on the Nova page is used as it is.
   if ((p.novaBrain ?? 'auto') === 'auto') return { model: 'haiku', effort: 'low' }
@@ -1476,6 +1506,10 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   c.turnRef.current = turn
   // A circled diagram looked at closely: its opening sentence is said straight away (Nova's own reply takes a few
   // seconds to start while it writes the drawing), and Nova carries on from it.
+  // Tutor mode, the lesson not read yet and they've asked for it: a line straight away while the slides are read
+  // (Sonnet took up to 17 s to say anything while it read them).
+  const opening = screen.opening || (tutorOn() && !tutorRead && /\b(lesson|teach|slides?|deck|pdf|summary|full|start|begin|go)\b/i.test(said) ? pick(['Okay, reading through your slides now.', 'Sure, let me read through your slides first.', 'Okay, give me a second to read your slides.']) : '')
+  if (opening && !screen.opening) screen.opening = opening
   if (screen.opening && !wc.isDestroyed()) {
     wc.send('nova:speak', { text: `${screen.opening} ` })
     explainSaid(`${screen.opening} `)
