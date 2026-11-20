@@ -53,6 +53,7 @@ import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, sho
 import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
 import { conversationLine, convHooks, setConversation, toggleConversation } from './conversation'
 import { restoreAfterLesson } from './windowSplit'
+import { warmLesson } from './lessonReader'
 import { setTutor, tutorOn, lessonRecording, listLessons, openLesson, serveLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
 import { reportClicks, voiceAsk, voiceConversation, voiceRecord } from './voice'
 import { askBeside, reportPen, startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
@@ -60,8 +61,8 @@ import { stopTeach, teach, teachHooks } from './teach'
 import { doOnScreen, handsHooks, stopHands } from './hands'
 import { eyes, eyesHooks, helpOnScreen, pointerHooks, see, stopEyes, stopWalkthrough } from './eyes'
 import { forgetNovaFactById, listNovaFacts } from './novaMemory'
-import { addPromise, changePromise, listPromises, roamies, roamiesAbort, roamiesClick, roamiesEsc, testWindowShot } from './roamiesTools'
-import { factsBlock, frontWindow, noteCircle, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova, teachingNow } from './novaBrain'
+import { addPromise, changePromise, listPromises, roamies, roamiesAbort, roamiesClick, roamiesEsc, testWindowShot, clearLessonInk } from './roamiesTools'
+import { factsBlock, frontWindow, noteCircle, novaToolResult, novaTurn, noteReminder, resetNova, setNovaAllowed, warmNova, teachingNow, calmVoice } from './novaBrain'
 import { closeVoice, configureVoice, downloadVoice, isVoiceContents, serveVoiceModel, setVoiceSuspended, startBrief, syncVoiceWindow, voiceFromWindow, voiceStatus } from './voice'
 
 const DEV_URL = process.env['ELECTRON_RENDERER_URL'] // set by `npm run dev`
@@ -557,7 +558,7 @@ if (!app.requestSingleInstanceLock()) {
         handle('mouth:speak', (_e, text, voice, speed) => {
           const p = getPrefs()
           // (explaining or teaching: the teaching speed, a little slower, unless a speed was asked for)
-          return speakMouth(String(text ?? ''), typeof voice === 'string' ? voice : (p.novaVoice ?? 'af_heart'), typeof speed === 'number' ? speed : teachingNow() ? (p.novaTeachSpeed ?? 0.85) : (p.novaSpeed ?? 1.05))
+          return speakMouth(String(text ?? ''), typeof voice === 'string' ? voice : (p.novaVoice ?? 'af_heart'), typeof speed === 'number' ? speed : calmVoice() ? (p.novaTeachSpeed ?? 0.85) : (p.novaSpeed ?? 1.05))
         })
         handle('claude:status', () => claudeStatus())
         handle('claude:install', () => installClaude())
@@ -664,7 +665,9 @@ if (!app.requestSingleInstanceLock()) {
     }
     eyesHooks.hide = hiddenFromCaptures
     tutorHooks.failed = (text) => notify('Tutor mode', text)
-    emoteHooks.quiet = () => teachingNow() || tutorOn()
+    tutorHooks.warm = () => warmLesson()
+    tutorHooks.ended = () => clearLessonInk()
+    emoteHooks.quiet = () => calmVoice() || tutorOn()
     teachHooks.ask = (messages, onText) => claudeChat(messages, undefined, getPrefs(), 'explain', onText)
     teachHooks.prefs = getPrefs
     teachHooks.live = liveCards

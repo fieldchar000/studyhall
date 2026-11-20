@@ -14,6 +14,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { getPrefs } from './prefs'
+import { tutorOn } from './tutor'
 import { get, getProfileId, getSetting, setSetting } from './db'
 import { agentsUi, hiddenFromCaptures, inkAskMarks, inkBoardPic, inkLayer, orbPanel, inkClear, inkSnapshot, inkClick, inkHooks, inkPlay, inkReminders, inkStale, lookAtRect, orbEmote, setHandsActive, showCards } from './bauer'
 import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
@@ -179,6 +180,10 @@ export function roamiesClick(): void {
   if (watchingClicks) rt?.ink.userClick({ x: p.x, y: p.y })
 }
 
+/** Tutor mode ended: the lesson's board, cards and rings go (pinned cards stay). */
+export function clearLessonInk(): void {
+  rt?.ink.clear()
+}
 /** Esc anywhere: stop drawing (and the drawing goes), as Roamies does. */
 export function roamiesEsc(): void {
   rt?.ink.stop(true)
@@ -648,7 +653,7 @@ export async function showBoard(a: { title?: string; add?: boolean; slides: Boar
   const ringIds = new Set(slides.flatMap((s) => s.rings.filter((r) => r.rect).map((r) => r.id)))
   const drawn = (a.links ?? []).filter((q) => ringIds.has(q.from) && ringIds.has(q.to)).length
   if (slides.length > 1 && !drawn) missed.push(`no arrow (give each slide a ring and link a ring on one to a ring on another by id)`)
-  return `The study board is up: slides ${slides.map((s) => s.page).join(' and ')} side by side${missed.length ? `. Couldn't find ${missed.join(', ')} on the slide (use the words exactly as written there)` : ', rings and arrows drawn'}. Now say the link out loud in a sentence or two (and add a small card with draw if it helps).`
+  return `The study board is up: slides ${slides.map((s) => s.page).join(' and ')} side by side${missed.length ? `. Couldn't find ${missed.join(', ')} on the slide (use the words exactly as written there)` : ', rings and arrows drawn'}. Now say the link out loud in a sentence or two${tutorOn() ? ', then draw 2 cards for this stop (a fact card and a flow or a picture) beside the board' : ' (and add a small card with draw if it helps)'}.`
 }
 
 // ---------- Rings that outlive their page ----------

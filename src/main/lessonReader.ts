@@ -214,6 +214,24 @@ export async function readLesson(target = 'front'): Promise<Lesson | string> {
   }
   const fr = await front()
   if (!fr) return OFFSCREEN ? '(Automated test: give the file instead of "front".)' : 'I can’t tell which window is in front.'
+  // The same deck read moments ago (tutor mode starts reading it at once, before Nova asks): that reading is used.
+  const key = `${fr.exe}|${fr.url ?? fr.title}`
+  const hit = recentFront.get(key)
+  if (hit && Date.now() - hit.at < 120_000) {
+    const l = await hit.p
+    if (typeof l !== 'string') return l
+  }
+  const p = readFront(fr)
+  recentFront.set(key, { at: Date.now(), p })
+  void p.then((l) => typeof l === 'string' && recentFront.delete(key))
+  return p
+}
+const recentFront = new Map<string, { at: number; p: Promise<Lesson | string> }>()
+/** Start reading what's open now, in the background (tutor mode, the moment it starts). */
+export function warmLesson(): void {
+  void readLesson('front').catch(() => null)
+}
+async function readFront(fr: NonNullable<Awaited<ReturnType<typeof front>>>): Promise<Lesson | string> {
   if (/powerpnt/i.test(fr.exe) || /powerpoint/i.test(fr.app)) return remember(await readSlides(fr.title))
   if (fr.url && (isPdfUrl(fr.url) || /^file:/i.test(fr.url))) return remember(await readPdf(fr.url, fr))
   if (/\.pdf\b/i.test(fr.title) && fr.url) return remember(await readPdf(fr.url, fr))

@@ -26,10 +26,10 @@ import { goToPage, lastLesson, lessonQuizText, lessonText, readLesson, warmPictu
 import { schoolFile, schoolText } from './politemall'
 import { figureText } from './figures'
 import { splitForLesson } from './windowSplit'
-import { setConversation } from './conversation'
+import { conversationOn, setConversation } from './conversation'
 import { explainDrew, explainEnd, explainSaid, explainStart, saveExplanation } from './explanations'
 import { illustrationsText } from './illustrations'
-import { setTutor, tutorOn, tutorPrompt, tutorTitle } from './tutor'
+import { setTutor, tutorHooks, tutorOn, tutorPrompt, tutorTitle } from './tutor'
 import { stageDone, stageStart, stageTool, stageToolEnd, trailEnd, trailPlan, trailSettle } from './novaStage'
 import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, type Seen, type SeenControl } from './eyes'
 import { doOnScreen } from './hands'
@@ -68,7 +68,7 @@ Before anything slow (a lesson, looking at or working the screen, drafting, read
 Personality: warm, a little witty, encouraging. You keep them on track: remind them of what they said they'd do, celebrate what they finish, nudge them when they're putting things off.
 It's a conversation: after you speak, you keep listening for a few seconds, so they can answer straight back. When it really helps, end with one short question (want a quick quiz on it? go deeper? shall I do the next bit?); most replies don't need one. Their next message may be that answer, so read it in the light of what you just asked.
 Their messages are usually speech transcripts: expect missing punctuation and misheard words, and act on what they most likely meant. Half sentences, or talk clearly meant for someone else: reply in a few words or not at all (an empty reply is fine). Small talk gets a short, warm reply.
-Being a friend: when they tell you about their life (their day, a friend, family, something that happened, how they feel) or vent, talk like a good friend would, not like an assistant: react, reflect back what you heard, ask about it, and take as long as the conversation needs (several sentences is fine; this is the one place long replies are right). Work out whether they want to be heard or want advice; if it's unclear, ask ("want my take, or did you just need to get that out?"). When they want advice, be concrete and practical (what to say, what to do tomorrow, what you'd do) and honest: say so kindly if they might be wrong. Use what you remember about the people and things they've mentioned, and ask how things went later. No drawings here, and don't steer them back to studying unless they asked you to keep them on track. If they sound like they're really struggling or not safe, stay with them, take it seriously, and gently mention talking to someone they trust or a helpline, without lecturing or ending the chat. If something they've shared deserves real care (a hard situation, a big decision, something that hurt), call go_deeper so your next replies get more thought.
+Being a friend: when they tell you about their life (their day, a friend, family, something that happened, how they feel) or vent, talk like a good friend would, not like an assistant: react, reflect back what you heard, ask about it, and take as long as the conversation needs (several sentences is fine; this is the one place long replies are right). Work out whether they want to be heard or want advice; if it's unclear, ask ("want my take, or did you just need to get that out?"). When they want advice, be concrete and practical (what to say, what to do tomorrow, what you'd do) and honest: say so kindly if they might be wrong. Use what you remember about the people and things they've mentioned, and ask how things went later. One question at a time. No drawings while they're getting it out; a small card only when there's something to keep: the plan once they ask what to do (a few next steps), pros and cons when they're weighing a decision, or a helpline if they're struggling. Don't steer them back to studying unless they asked you to keep them on track. If they sound like they're really struggling or not safe, stay with them, take it seriously, and gently mention talking to someone they trust or a helpline, without lecturing or ending the chat. If something they've shared deserves real care (a hard situation, a big decision, something that hurt), call go_deeper so your next replies get more thought.
 Tools are called for real, never written out as text (never write "[call …]"). Never claim you did something you didn't. Never invent their details (names, dates, amounts, who someone is); use what they said, what you remember and what's on screen. On a small ambiguity, take the likeliest reading and go.
 
 How to help (use as few tool calls as the task needs; independent ones can go in one turn, in the order given):
@@ -89,7 +89,7 @@ How to help (use as few tool calls as the task needs; independent ones can go in
 - Their own study files (lecture notes, slides, HTML study pages and labs in Studyhall): when they mention their notes, a week, a module or a file, find_material first, then read_material (to answer or teach from them) or quiz_me.
 - "Save that" / "save this as notes" (after you explained something): save_explanation. "Save that as flashcards" / "make flashcards from that": save_flashcards with the key points of what you just explained (5 to 12 cards, one fact each, question on the front), the deck named after the topic ("Nephron", "Beta blockers"), or after one of their modules only when the topic clearly belongs to it (a nephron isn't Chemistry).
 - "Quiz me" / "test me", or "yes" to a quiz you offered: quiz_me straight away (from a study file's own questions with material_id, their flashcards, or, with neither, the deck you read and what you just explained: give topic), then ask question 1 in the same reply and run it yourself, one question per reply. Offer save_flashcards for the ones they missed. Never answer a quiz request without starting the quiz.
-- The web: "pull up a video on X", "a study music playlist": youtube, then open the best real result. "Find me a source for…", facts that change: WebSearch, then web_fetch to read a page (offset reads on). Music to study to: play_music (Spotify in Studyhall; they have Premium), or a YouTube playlist if they ask for YouTube. Never make up links: only open ones a search gave you.
+- The web: "pull up a video on X", "a study music playlist": youtube, then open the best real result. "Pull up / open / go to X" (a site, a page, lyrics, a game, a shop, anything that isn't an everyday site like YouTube, Google, Spotify or Wikipedia): WebSearch first, never guess a web address, then open the result that is the kind of page they asked for: lyrics → a lyrics page (its title says lyrics, not an article about the song; or Genius' own search, https://genius.com/search?q=…); "the X page" or "X's website" → X's official site (its name matches X, not news or a review about it; when the results say another address is the original or official one, open that one, not just the top result); a video → YouTube. When no result clearly matches, open the search itself (https://www.google.com/search?q=…) and say that you did. "Find me a source for…", facts that change: WebSearch, then web_fetch to read a page (offset reads on). Music to study to: play_music (Spotify in Studyhall; they have Premium), or a YouTube playlist if they ask for YouTube. Never make up links: only open ones a search gave you.
 - Notes from a video or page: video_transcript (YouTube) or web_fetch, then save_note (and save_flashcards if they want cards). A revision sheet or summary from their own study files, saved into Studyhall's Notes ("make a revision sheet from all my week 3 notes"): start_job with a full brief; just say you're on it.
 - "Summarise what I copied", "turn this into flashcards": read_clipboard first. "Notes on the left, lecture on the right": list_windows if you need the names, then arrange_windows. A document into their apps with their Claude connectors: draft_document.
 - Focus ("focus on chemistry for 45 minutes", "help me stay on task"): start_focus (stop_focus ends it).
@@ -370,6 +370,34 @@ function startJob(brief: string, materials: string, title: string, wc: WebConten
 const ACTION_TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page'] as const
 
 type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean; visual?: string | null; drew?: string[]; nudged?: boolean; circled?: boolean }
+// Sites that came up in this hour's searches, pages read and what they said: Nova opens only those (or everyday sites),
+// so it can't open a guessed address (it opened krillion.com for "the Krillion game page").
+const seenHosts = new Map<string, number>()
+const hostOf = (u: string): string => {
+  try {
+    return new URL(u).hostname.replace(/^www\./, '').toLowerCase()
+  } catch {
+    return ''
+  }
+}
+function noteHosts(text: string): void {
+  for (const m of text.matchAll(/https?:\/\/[^\s"'\\)<>\]]+/g)) {
+    const h = hostOf(m[0])
+    if (h) seenHosts.set(h, Date.now())
+  }
+  // (and addresses written out without a link: "the game is at krillion.io")
+  for (const m of text.matchAll(/\b((?:[a-z0-9-]+\.)+(?:com|org|net|io|gg|app|co|uk|edu|gov|dev|tv|me|ai|xyz|games|game|info|sg|au|ca|de|fr|jp))\b/gi)) seenHosts.set(m[1].toLowerCase().replace(/^www\./, ''), Date.now())
+}
+const EVERYDAY = /(^|\.)(google\.[a-z.]+|youtube\.com|youtu\.be|spotify\.com|wikipedia\.org|wikimedia\.org|bing\.com|duckduckgo\.com|github\.com|reddit\.com|netflix\.com|outlook\.com|live\.com|office\.com|microsoft\.com|apple\.com|amazon\.[a-z.]+|instagram\.com|tiktok\.com|x\.com|twitter\.com|facebook\.com|whatsapp\.com|discord\.com|chatgpt\.com|claude\.ai|notion\.so|canva\.com|quizlet\.com|khanacademy\.org|studyhall\.app|genius\.com|azlyrics\.com|musixmatch\.com)$/
+/** A web address Nova is about to open whose site didn't come up anywhere (a guess): its site, else ''. */
+function guessedSite(url: string): string {
+  if (!/^https?:\/\//i.test(url)) return ''
+  const h = hostOf(url)
+  if (!h || EVERYDAY.test(h)) return ''
+  const now = Date.now()
+  for (const [k, at] of seenHosts) if (now - at > 3_600_000) seenHosts.delete(k)
+  return [...seenHosts.keys()].some((k) => h === k || h.endsWith(`.${k}`) || k.endsWith(`.${h}`)) ? '' : h
+}
 /** Marks on their screen (rings, underlines, arrows, labels at a place on it) in a draw call. */
 const SCREEN_KINDS = new Set(['point', 'target', 'hover', 'ring', 'frame', 'underline', 'strike', 'check', 'cross', 'connect', 'trace', 'num', 'label', 'write', 'spotlight', 'highlight', 'line', 'curve', 'arrow', 'circle', 'rect'])
 function screenMarksIn(args: Record<string, unknown>): boolean {
@@ -711,7 +739,8 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         readHere.set(l.id, Date.now())
         // The pictures of where they are and the next few pages, made in the background now: a board shows them at once.
         warmPictures(l.id, [...new Set([l.current || 1, (l.current || 1) + 1, (l.current || 1) + 2, (l.current || 1) - 1].filter((n) => n >= 1 && n <= l.count))])
-        return text(`${split ? `${split}\n\n` : ''}${lessonText(l, from ?? 1, to ?? l.count, 16_000, topic ? String(topic) : undefined)}`)
+        const next = tutorOn() ? `\n\n(Now: say your plan in a sentence or two, or if the slides aren't in a clear order, ask once whether they'd like it slide by slide or topic by topic. Then teach the first stop: ring its key words and draw 2 cards.)` : ''
+        return text(`${split ? `${split}\n\n` : ''}${lessonText(l, from ?? 1, to ?? l.count, 16_000, topic ? String(topic) : undefined)}${next}`)
       }
     ),
     tool(
@@ -784,6 +813,10 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     const run = t.handler
     t.handler = (async (args: Record<string, unknown>, extra: unknown) => {
       if (t.name === 'draw' && turnRef.current?.howTo) needsClick(args)
+      // A web address that didn't come up in any search or page: a guess. Search first instead.
+      const urls = t.name === 'open' ? [String(args.target ?? '')] : t.name === 'studyhall_actions' ? ((args.actions as { type?: string; url?: string }[] | undefined) ?? []).filter((q) => q?.type === 'open_website').map((q) => String(q.url ?? '')) : []
+      const guessed = urls.map(guessedSite).find(Boolean)
+      if (guessed) return text(`Not opened: ${guessed} didn't come up in any search, so it may be a guessed address. WebSearch for what they asked for first, then open the result that matches it (or open a Google search for it and say so).`)
       // (a drawing doesn't act out feelings: the globe's body tags are enough, and rare)
       if (t.name === 'draw' && Array.isArray(args.beats)) for (const b of args.beats as { marks?: { kind?: string }[] }[]) if (Array.isArray(b?.marks)) b.marks = b.marks.filter((q) => q?.kind !== 'emote')
       // (a fact card stays short: at most 4 points; the picture beside it carries the rest)
@@ -1033,10 +1066,18 @@ const TOPIC_VISUALS = new Set(['photo', 'scene', 'model', 'molecule', 'map', 'ge
 const RING_KINDS = new Set(['ring', 'label', 'target', 'arrow', 'point', 'circle', 'frame', 'underline', 'highlight'])
 /** After a drawing in an explanation: still no topic visual? Say so once in the draw's result, so Nova adds it next
  *  (it otherwise often stopped at a fact card and a flow). */
+const CARD_KINDS = new Set(['card', 'note', 'list', 'mindmap', 'photo', 'graph', 'timeline', 'molecule', 'model', 'flow', 'table', 'bars', 'map', 'math', 'geometry', 'scene'])
 function stillMissing(tr: Turn | null | undefined, args: Record<string, unknown>): string {
-  if (!tr?.visual || tr.nudged) return ''
+  if (!tr || tr.nudged) return ''
   const kinds = ((args.beats as { marks?: { kind?: string }[] }[] | undefined) ?? []).flatMap((b) => (b?.marks ?? []).map((q) => String(q?.kind)))
   tr.drew = [...(tr.drew ?? []), ...kinds]
+  // Tutor mode: every stop teaches with 2 cards (it was skipping them and only talking).
+  if (tutorOn()) {
+    if (tr.drew.some((k) => k === 'quiz' || k === 'medal') || tr.drew.filter((k) => CARD_KINDS.has(k)).length >= 2) return ''
+    tr.nudged = true
+    return '\n\nThis stop has only one card: add one more now in another draw call (a flow of the steps, a picture of it, or a short fact card), and keep talking while it draws.'
+  }
+  if (!tr.visual) return ''
   if (tr.drew.some((k) => TOPIC_VISUALS.has(k) || (tr.circled && RING_KINDS.has(k)))) return ''
   if (tr.drew.some((k) => k === 'quiz' || k === 'medal')) return '' // (a quiz is its own thing)
   tr.nudged = true
@@ -1080,7 +1121,12 @@ function chatDepth(said: string): { deep: boolean; effort: NovaEffort } {
 
 /** This request is explaining or teaching (or tutor mode): its voice uses the teaching speed. */
 let teaching = false
+// The chat card is up (a long chat or a heart-to-heart, written out beside the globe).
+let chatCard = false
 export const teachingNow = (): boolean => teaching
+// A heart-to-heart: the voice slows to the teaching speed too, and the globe keeps still (no emotes).
+let heart = false
+export const calmVoice = (): boolean => teaching || heart
 function effortFor(said: string, base: NovaEffort, marked: boolean): NovaEffort {
   return marked || DEEP_ASK.test(said) ? (STEP[base] ?? base) : base
 }
@@ -1096,8 +1142,9 @@ function logTiming(line: string): void {
 }
 
 function settingsFor(): { model: ModelKey; effort: NovaEffort } {
-  // Tutor mode: Sonnet (better with diagrams and teaching), with no thinking (it's in a lean conversation of its own).
-  if (tutorOn()) return { model: 'sonnet', effort: 'low' }
+  // Tutor mode, in a lean conversation of its own: Haiku with no thinking (cheaper and quick to speak, the default), or Sonnet with
+  // none (Nova's page: Tutor brain).
+  if (tutorOn()) return getPrefs().novaTutorBrain === 'sonnet' ? { model: 'sonnet', effort: 'low' } : { model: 'haiku', effort: 'low' }
   const p = getPrefs()
   // Auto: Haiku with little thinking, like Roamies (fast). A brain picked on the Nova page is used as it is.
   if ((p.novaBrain ?? 'auto') === 'auto') return { model: 'haiku', effort: 'low' }
@@ -1291,6 +1338,19 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   if (teaching) lastExplained = Date.now()
   // A heart-to-heart: Sonnet for this chat (same conversation, no restart), at chat effort; else back to the usual.
   const chat = tutorOn() ? { deep: false, effort: want } : chatDepth(said)
+  noteHosts(said)
+  // A long chat (conversation mode, or a heart-to-heart) goes on a card beside the globe as well, both sides, so a long
+  // rant or reply can be read back instead of being cut off in the bubble. It goes when the chat moves on.
+  heart = chat.deep
+  const chatty = !tutorOn() && !said.startsWith('(') && (conversationOn() || chat.deep)
+  if (chatty && (chatCard || said.length > 160)) {
+    if (!chatCard) orbPanel('open', 'Our chat')
+    chatCard = true
+    orbPanel('append', `**You:** ${said.trim()}\n\n**${getPrefs().novaName ?? 'Nova'}:** `)
+  } else if (chatCard && !chatty) {
+    chatCard = false
+    orbPanel('close')
+  }
   const useModel: ModelKey = chat.deep ? 'sonnet' : model
   const useEffort: NovaEffort = chat.deep ? chat.effort : want
   if ((c.liveModel ?? c.model) !== useModel) {
@@ -1338,6 +1398,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
       explainSaid(t)
       beatDone = true
       if (!wc.isDestroyed()) wc.send('nova:speak', { text: t })
+      if (chatCard && !turn.research) orbPanel('append', t)
     },
     (t) => {
       // The research card: once the answer turns into points or cites sources, all of it streams onto the card.
@@ -1470,8 +1531,13 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
             if (turn.research === 'writing') orbPanel('append', ' ')
           }
         }
+      } else if (m.type === 'user') {
+        // (tool results: web search results, pages read… their sites may be opened)
+        noteHosts(JSON.stringify((m as { message?: { content?: unknown } }).message?.content ?? ''))
       } else if (m.type === 'assistant') {
         trailSettle() // a model turn ended: the step trail ticks off what it did
+        // (a web search answered inside the reply itself: its results' sites may be opened; never the reply's own words)
+        for (const b of m.message.content as { type: string }[]) if (/tool_result/.test(b.type)) noteHosts(JSON.stringify(b))
         for (const b of m.message.content as { type: string; name?: string }[]) if (b.type === 'tool_use' && b.name) turn.tools.push(b.name.replace(/^mcp__nova__/, ''))
       } else if (m.type === 'result') {
         const total = m.total_cost_usd ?? 0
@@ -1517,6 +1583,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     c.turnRef.current = null
     c.at = Date.now()
   }
+  if (chatCard && !turn.research) orbPanel('append', '\n\n')
   // Read-on-screen lines go on a card beside the globe.
   if (turn.research) orbPanel('end', turn.fromWeb ? 'From the web' : /\n\s*>/.test(`\n${written}`) ? 'Draft' : 'Answer')
   recordClaudeCost(c.liveModel ?? model, c.liveEffort ?? effort, Date.now() - started, cost)
@@ -1528,6 +1595,9 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   stageDone()
   if (agentish) agentsHatch(false)
   const reply = spoken.replace(MARKER, '').replace(/\s+/g, ' ').trim()
+  // Tutor mode: a stop taught out loud with nothing shown (it happened): it's asked straight away to show it.
+  if (tutorOn() && !said.startsWith('(System') && reply.length > 220 && !turn.tools.some((n) => n === 'draw' || n === 'show_board'))
+    setTimeout(() => tutorHooks.ask("(System, not them: you taught that stop without showing anything. Show it now: ring its key words and draw 2 cards. Don't repeat what you said; one short line while it draws is enough.)"), 300)
   noteExchange(said, reply, userName())
   rememberExchange(said, reply)
   return { text: reply, quiet: turn.quiet, tools: turn.tools }

@@ -1007,6 +1007,7 @@ export interface Prefs {
   novaAgents?: 'auto' | 'haiku' | 'sonnet' // which model background agents use (auto: Sonnet to make things, Haiku otherwise)
   novaChatDepth?: 'auto' | 'quick' | 'deeper' // chats: Nova goes deeper (Sonnet) by itself for a heart-to-heart (auto), or always quick / always deeper
   novaAutoNotes?: boolean // every explanation Nova draws for is added to the day's "Nova notes" page (default off)
+  novaTutorBrain?: 'haiku' | 'sonnet' // tutor mode's model: Haiku (cheaper, the default) or Sonnet (smarter, about 3 times the cost)
   novaTutorLayout?: 'stage' | 'split' // tutor mode: their slide big on the study board with the cards beside it (stage, the default), or their own slides window moved to the left of the screen (split)
   novaCaptions?: boolean // while it draws, what it says shows as captions at the bottom of the screen (off: in its speech bubble, the default)
   novaTeachSpeedSet?: boolean // they moved the teaching speed slider themselves

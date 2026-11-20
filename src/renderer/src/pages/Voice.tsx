@@ -157,7 +157,7 @@ export default function VoicePanel(): React.JSX.Element {
           woke.current = false
           setHeard(false)
           if (conv.current) markAsked() // (in a conversation, whatever they say next is for Nova)
-          await engine.listen(false, conv.current ? 25 : 6).catch(() => (followUp.current = false))
+          await engine.listen(false, conv.current ? 25 : 6, false, conv.current).catch(() => (followUp.current = false))
           if (followUp.current) {
             setPhase('listening')
             youSaid('')
@@ -232,7 +232,7 @@ export default function VoicePanel(): React.JSX.Element {
               return
             }
             markAsked()
-            void engine.listen(false, 25).catch(() => {})
+            void engine.listen(false, 25, false, true).catch(() => {})
             return
           }
           // No follow-up came: quietly stop listening (nothing to report).
@@ -312,7 +312,7 @@ export default function VoicePanel(): React.JSX.Element {
             markAsked()
             void api.eyes.stop().catch(() => {})
             void (async () => {
-              await engine.listen(false, 25).catch(() => {})
+              await engine.listen(false, 25, false, true).catch(() => {})
               followUp.current = true
               setPhase('listening')
               youSaid('')

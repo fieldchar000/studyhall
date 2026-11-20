@@ -27,6 +27,10 @@ export const tutorHooks = {
   record: (_on: boolean, _sourceId?: string): void => {},
   /** The lesson couldn't be recorded: tell them (a notification). */
   failed: (_text: string): void => {},
+  /** Tutor mode ended: the lesson's drawings go. */
+  ended: (): void => {},
+  /** Start reading the deck or PDF that's open, in the background, the moment tutor mode starts. */
+  warm: (): void => {},
   /** The conversation for tutor mode starts fresh (or the normal one comes back). */
   reset: (): void => {}
 }
@@ -46,6 +50,7 @@ export function setTutor(next: boolean, style?: 'summary' | 'full', what?: strin
   tutorHooks.reset()
   if (on) {
     title = what ?? ''
+    tutorHooks.warm()
     void startRecording()
     tutorHooks.ask(
       style
@@ -55,6 +60,7 @@ export function setTutor(next: boolean, style?: 'summary' | 'full', what?: strin
   } else {
     stopRecording()
     void restoreAfterLesson()
+    tutorHooks.ended()
   }
 }
 export const toggleTutor = (): void => setTutor(!on)
@@ -180,6 +186,10 @@ export async function showLessonsFolder(): Promise<void> {
   await shell.openPath(lessonsDir())
 }
 
+/** Where a stop's rings go: on the board's copy of the slide (lesson stage) or on their own slides window (split). */
+function stopLayoutShort(): string {
+  return getPrefs().novaTutorLayout === 'split' ? 'on their own slides window, with draw after go_to_page and take_screenshot' : 'on the study board: show_board with the slide, rings and underlines'
+}
 /** How a stop that points at its slide is laid out (Nova's page: Lesson layout). */
 function stopLayout(): string {
   return getPrefs().novaTutorLayout === 'split'
@@ -193,10 +203,11 @@ export function tutorPrompt(name: string, user: string): string {
 - Start by reading the lesson (read_lesson, once) and noticing how it's built: what the opening slides introduce, which ideas are the core, what's detail. Say how many stops there are. Summary lesson: 4 to 8 stops (the big ideas and how they connect); full lesson: a stop per section, in order.
 - Find out what they know before going deep: on an overview or a new term, ask one quick question ("Do you know what an LDR is?") and wait. Go light on what they know and on overviews; spend the time on what's new to them and on the core ideas.
 - Each stop is one idea. Always say your first line before any tool, so they're never left waiting in silence. Then explain like a teacher: why it happens, how it links to the last stop, an everyday comparison, what to notice. End with "Say next when you're ready" or a one-line check question. Never read slides out.
-- What a stop shows depends on what it is:
-  • An intro, overview or a quick check: a line or two, at most one small card, and your question. No board.
-  • A core idea (how something works, a key mechanism, a worked example): the full set in one draw call of 2 to 4 beats: 1 or 2 short fact cards (at most 3 points), a flow, and a picture: their slide's own diagram (see_photo its picture address, then a photo card with labels), a labelled figure (find_figure), a scene (find_illustrations) for cells, receptors or drugs, or a model you build. A table or chart only beside the picture. Normal size, never deep.
-  • A board only when there's something on the slide worth pointing at (a diagram, a key line) or a real link to an earlier slide. ${stopLayout()}
+- Every stop rings and teaches with cards, never just talk: ring or underline the key words on its slide (${stopLayoutShort()}), and one draw call with 2 cards (more for a core idea): a short fact card (at most 3 points) and a flow of the steps or a picture (their slide's own diagram on a photo card with labels, a labelled figure from find_figure, a scene from find_illustrations, or a model you build). A quick check question goes alongside the cards, never instead of them. Normal size, never deep.
+- A light stop (the deck's opening overview, a slide that only lists terms) is short: the same 2 cards, fewer words. A core idea (how something works) gets more time: 3 or 4 cards.
+- Slides not in a clear order (topics jump about, repeats): ask once, slide by slide or topic by topic, and teach that way.
+- When a stop builds on an earlier slide (the lesson map shows it), bring it back: show_board with this slide and that one, and say it ("remember slide 4, where we covered…").
+- ${stopLayout()}
 - Their questions mid-lesson ("wait, what's that?", "go back", "skip to the ECG part", "quiz me on this bit"): answer them, then carry on from where you were. At the end: a short recap of the stops and offer a 3-question quiz (a quiz card).
 Talk like a person: short spoken sentences, no markdown, no lists out loud. Use tutor_done when they want to stop or the lesson is finished.`
 }

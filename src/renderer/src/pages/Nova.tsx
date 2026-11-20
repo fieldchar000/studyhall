@@ -177,6 +177,16 @@ function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | 
           or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> (again to stop)
         </span>
       </div>
+      <Row title="Tutor brain" hint="Haiku: cheaper, quick, good for most lessons. Sonnet: smarter with tricky topics, about 3 times the cost per stop.">
+        <Seg
+          value={prefs?.novaTutorBrain === 'sonnet' ? 'sonnet' : 'haiku'}
+          options={[
+            ['haiku', 'Haiku (cheaper)'],
+            ['sonnet', 'Sonnet (smarter)']
+          ]}
+          onChange={(v) => save({ novaTutorBrain: v })}
+        />
+      </Row>
       <Row title="Lesson layout" hint="Lesson stage: each stop shows your slide big on Nova's study board, with its rings, and the cards beside it. Split screen: Studyhall moves your own slides window to the left of the screen for the lesson (and back afterwards), and the cards go on the right.">
         <Seg
           value={prefs?.novaTutorLayout === 'split' ? 'split' : 'stage'}

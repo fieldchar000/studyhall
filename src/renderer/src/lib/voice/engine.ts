@@ -321,8 +321,8 @@ class Engine {
     const pause = (this.silentFrames * FRAME) / RATE
     if (this.ptt) {
       if (seconds >= 120) void this.finish() // (the talk key is still held after two minutes)
-    } else if ((this.spoke && pause >= 1.0) || seconds >= 45)
-      void this.finish() // (a one-second pause ends it, like Roamies)
+    } else if ((this.spoke && pause >= this.endPause) || seconds >= this.maxS)
+      void this.finish() // (a one-second pause ends it, like Roamies; in a conversation, a longer one: see listen)
     else if (!this.spoke && seconds >= this.waitS) {
       this.mode = this.wake ? 'wake' : 'idle'
       this.rec = []
@@ -458,17 +458,23 @@ class Engine {
   }
 
   /** Start listening for a briefing now (no wake word needed). */
-  async listen(pushToTalk = false, waitS = 7, hearPc = false): Promise<void> {
+  async listen(pushToTalk = false, waitS = 7, hearPc = false, patient = false): Promise<void> {
     stopSpeaking() // talking to Nova interrupts it
     if (this.mode === 'record' || this.mode === 'busy') return
     await this.openMic()
     this.startRecording(false)
     this.ptt = pushToTalk
     this.waitS = waitS // how long to wait for you to start talking (a follow-up waits less)
+    // Conversation mode: you pause to think mid-rant, so it waits 1.8 s of quiet (not 1) and lets you go on for two
+    // minutes (not 45 s) before it takes its turn.
+    this.endPause = patient ? 1.8 : 1.0
+    this.maxS = patient ? 120 : 45
     if (hearPc) void this.openPc()
   }
   /** Seconds to wait for speech to start before giving up. */
   private waitS = 7
+  private endPause = 1.0
+  private maxS = 45
 
   get pushToTalk(): boolean {
     return this.ptt
