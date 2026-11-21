@@ -26,7 +26,7 @@ export type LessonCheck = {
 }
 export type LessonEvent =
   | { t: number; type: 'slide'; page: number; beside: number | null }
-  | { t: number; type: 'draw'; e: unknown }
+  | { t: number; type: 'draw'; e: unknown; slide?: number[] | null }
   | { t: number; type: 'line'; id: number; text: string; audio?: string }
   | { t: number; type: 'say'; text: string }
   | { t: number; type: 'you'; text: string }
@@ -129,9 +129,9 @@ export function noteSlide(page: number, beside: number | null): void {
   run.events.push({ t: t(), type: 'slide', page, beside })
   save()
 }
-export function noteDraw(e: unknown): void {
+export function noteDraw(e: unknown, slide: number[] | null = null): void {
   if (!run) return
-  run.events.push({ t: t(), type: 'draw', e })
+  run.events.push({ t: t(), type: 'draw', e, slide })
   save()
 }
 export function noteClear(): void {

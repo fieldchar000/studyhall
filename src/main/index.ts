@@ -55,6 +55,8 @@ import { conversationLine, convHooks, setConversation, toggleConversation } from
 import { restoreAfterLesson } from './windowSplit'
 import { picture, warmLesson } from './lessonReader'
 import { configureLessonWindow } from './lessonWindow'
+import { registerLessonsIpc } from './lessonsIpc'
+import { replayOrb } from './lessonReplay'
 import { setTutor, tutorOn, lessonRecording, listLessons, openLesson, serveLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
 import { reportClicks, voiceAsk, voiceConversation, voiceRecord } from './voice'
 import { askBeside, reportPen, startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
@@ -700,6 +702,9 @@ if (!app.requestSingleInstanceLock()) {
     })
     configureBauer({ url: appUrl, webPreferences: SECURE_PREFS, startBrief: () => void startBrief() })
     configureLessonWindow({ url: appUrl, webPreferences: SECURE_PREFS })
+    // Nova's Lessons and Map tabs; a lesson's pack when it ends; Replay's two Novas.
+    registerLessonsIpc((title, body) => notify(title, body, 'nova'))
+    replayOrb.lesson = (on) => orbAgent({ type: 'lesson', on })
     // Started hidden in the tray (with Windows)? Bauer waits until Studyhall is opened.
     bauerAway(!mainWindow?.isVisible())
     // Tell every other window when data changes (e.g. quick capture -> inbox badge).

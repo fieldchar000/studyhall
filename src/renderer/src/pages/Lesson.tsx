@@ -66,7 +66,8 @@ export function LessonWindow(): React.JSX.Element {
     }
   }, [report])
 
-  const cmd = (d: 'next' | 'back' | 'pause' | 'end' | 'goto' | 'answer', n?: number): void => window.api.lesson.cmd({ do: d, n })
+  const cmd = (d: 'next' | 'back' | 'pause' | 'end' | 'goto' | 'answer' | 'chapter', n?: number): void => window.api.lesson.cmd({ do: d, n })
+  const rp = s?.replay ?? null
   const c = s?.check ?? null
   const word = s?.kind === 'slides' ? 'Slide' : 'Page'
 
@@ -80,7 +81,9 @@ export function LessonWindow(): React.JSX.Element {
             {word} {s.page} of {s.count}
           </span>
         )}
-        {s?.paused && <span className="shrink-0 rounded-full bg-[#a8c8ff]/15 px-2.5 py-0.5 text-xs text-[#a8c8ff]">Paused</span>}
+        {rp && <span className="shrink-0 rounded-full bg-[#7ad8e6]/15 px-2.5 py-0.5 text-xs text-[#9fe6f0]">▶ Replay{rp.done ? ' · finished' : ''}</span>}
+        {(s?.paused || rp?.paused) && <span className="shrink-0 rounded-full bg-[#a8c8ff]/15 px-2.5 py-0.5 text-xs text-[#a8c8ff]">Paused</span>}
+        {rp?.you && <span className="min-w-0 truncate rounded-full bg-[#a8c8ff]/10 px-3 py-0.5 text-xs text-[#dce8ff]">You: “{rp.you}”</span>}
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -165,26 +168,40 @@ export function LessonWindow(): React.JSX.Element {
           ‹ Back
         </button>
         <button className="rounded-lg px-3 py-2 text-sm text-[#a8c8ff] hover:bg-[#a8c8ff]/10" onClick={() => cmd('pause')}>
-          {s?.paused ? 'Resume' : 'Pause'}
+          {s?.paused || rp?.paused ? 'Resume' : 'Pause'}
         </button>
         <button className="rounded-lg bg-[#a8c8ff]/20 px-5 py-2 text-sm font-medium text-[#e4eeff] ring-1 ring-[#a8c8ff]/40 hover:bg-[#a8c8ff]/30" onClick={() => cmd('next')}>
           Next ›
         </button>
-        <div className="mx-3 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1">
-          {s?.seen.map((n) => (
-            <button
-              key={n}
-              title={`${word} ${n}`}
-              onClick={() => cmd('goto', n)}
-              className={`relative h-10 w-16 shrink-0 overflow-hidden rounded border ${n === s.page ? 'border-[#a8c8ff]' : 'border-[#a8c8ff]/15 opacity-70 hover:opacity-100'}`}
-            >
-              <img src={src(s.id, n)} alt="" className="h-full w-full object-cover" draggable={false} />
-              <span className="absolute bottom-0 right-0 bg-[#050b1e]/80 px-1 text-[10px] leading-tight">{n}</span>
-            </button>
-          ))}
-        </div>
+        {rp ? (
+          <div className="mx-3 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1">
+            {(rp.chapters ?? []).map((c, k) => (
+              <button
+                key={k}
+                onClick={() => cmd('chapter', k)}
+                className={`shrink-0 rounded-full border px-3 py-1 text-xs ${k === rp.chapter ? 'border-[#a8c8ff] bg-[#a8c8ff]/15 text-[#e4eeff]' : 'border-[#a8c8ff]/15 text-[#8aa4cc] hover:text-[#dce8ff]'}`}
+              >
+                {k + 1}. {c}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mx-3 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1">
+            {s?.seen.map((n) => (
+              <button
+                key={n}
+                title={`${word} ${n}`}
+                onClick={() => cmd('goto', n)}
+                className={`relative h-10 w-16 shrink-0 overflow-hidden rounded border ${n === s.page ? 'border-[#a8c8ff]' : 'border-[#a8c8ff]/15 opacity-70 hover:opacity-100'}`}
+              >
+                <img src={src(s.id, n)} alt="" className="h-full w-full object-cover" draggable={false} />
+                <span className="absolute bottom-0 right-0 bg-[#050b1e]/80 px-1 text-[10px] leading-tight">{n}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <button className="rounded-lg px-3 py-2 text-sm text-[#8aa4cc] hover:bg-[#ff8a7a]/10 hover:text-[#ffb0a6]" onClick={() => cmd('end')}>
-          End lesson
+          {rp ? 'Close replay' : 'End lesson'}
         </button>
       </div>
     </div>

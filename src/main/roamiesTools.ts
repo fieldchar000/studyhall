@@ -322,7 +322,7 @@ export function roamies(): Promise<Any> {
             const near = first ? { x: first.at.rect[0] + first.at.rect[2] / 2, y: first.at.rect[1] + first.at.rect[3] / 2 } : Array.isArray(e.win) ? { x: e.win[0] + e.win[2] / 2, y: e.win[1] + e.win[3] / 2 } : null
             inkPlay(e, near)
             if (e.lesson) {
-              noteDraw(e) // (tutor mode: kept for the lesson's Replay)
+              noteDraw(e, lessonArea()?.busy[0] ?? null) // (tutor mode: kept for the lesson's Replay, with where the slide was)
               lessonDrawing.add(String(e.id))
             }
           } else if (e.type === 'ink_clear') {

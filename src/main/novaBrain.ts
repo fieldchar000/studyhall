@@ -25,6 +25,7 @@ const STEP_PAUSE = 0.7
 import { openLessonWindow, showLessonSlide, lessonHooks, lessonShown, lessonPage, lessonWindowOpen, showCheck, markCheck, checkUp } from './lessonWindow'
 import { noteAnswer, noteCheck, noteLine, noteSaid, noteSlide, noteYou, openCheck, startRun } from './lessonRecord'
 import { lessonPlan, planText } from './lessonPlan'
+import { replaying } from './lessonReplay'
 import { goToPage, lastLesson, lessonQuizText, lessonText, pageLog, readLesson, warmPictures } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
 import { figureText } from './figures'
@@ -1513,6 +1514,12 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   if (process.env.STUDYHALL_OFFSCREEN === '1' && screen.text) console.info('screen context>', screen.text.slice(0, 600))
   const news = [roamiesNotes(), said.startsWith('(') ? '' : agentsBlock(said)].filter(Boolean).join('\n')
   if (news) screen.text = [screen.text, news].filter(Boolean).join('\n')
+  // Watching a lesson's Replay and asking about it: which lesson and slide, so "this" means what's on it.
+  const rp = !said.startsWith('(') ? replaying() : null
+  if (rp)
+    screen.text = [screen.text, `(They're watching a Replay of their lesson "${rp.title}" in the lesson window, on slide or page ${rp.page}, and asked about it: "this" means what's on that slide. Answer like their tutor; rings and cards drawn now go on that slide.)`]
+      .filter(Boolean)
+      .join('\n')
   // "Send an agent to…": the agents' corner hatches one while the brief is written (as in Roamies).
   const agentish = !said.startsWith('(') && wantsAgent(said)
   if (agentish) agentsHatch(true)

@@ -87,7 +87,7 @@ let checkTimer: NodeJS.Timeout | null = null
 export const lessonRecording = (): boolean => asking || !!out
 
 async function startRecording(): Promise<void> {
-  if (OFFSCREEN || getPrefs().novaRecord === false) return
+  if (OFFSCREEN || getPrefs().novaRecord !== true) return // (off unless switched on: Replay covers watching a lesson again)
   // The screen your mouse is on (where the lesson happens).
   const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => [])

@@ -11,6 +11,7 @@ import { startBrief } from '@/lib/voice'
 import { VoiceCard } from '@/components/VoiceCard'
 import { onSpeaking, speak, voiceLevelRef } from '@/lib/voice/speak'
 import { NovaOrb } from '@/components/NovaOrb'
+import { LessonsTab, MapTab, ShortcutsCard } from './NovaLessons'
 
 const NAMES: { n: NovaName; hint: string }[] = [
   { n: 'Nova', hint: 'Default · clear, 2 syllables' },
@@ -187,8 +188,8 @@ function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | 
           onChange={(v) => save({ novaTutorBrain: v })}
         />
       </Row>
-      <Row title="Record lessons" hint="Each tutor lesson is saved as a video (your screen and its voice) in Documents\Nova Lessons, to watch again any time without using your Claude plan.">
-        <input type="checkbox" checked={prefs?.novaRecord !== false} onChange={(e) => save({ novaRecord: e.target.checked })} aria-label="Record lessons" />
+      <Row title="Also record a video" hint="Off by default: every lesson can be watched again with Replay on the Lessons tab. On: each lesson is also saved as a video (your screen and its voice) in Documents\Nova Lessons, to keep or send.">
+        <input type="checkbox" checked={prefs?.novaRecord === true} onChange={(e) => save({ novaRecord: e.target.checked })} aria-label="Record lessons" />
       </Row>
       <h3 className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">Recorded lessons</h3>
       <ul className="mt-1 flex flex-col">
@@ -228,6 +229,28 @@ function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | 
         </div>
       )}
     </section>
+  )
+}
+
+type NovaTab = 'lessons' | 'map' | 'nova' | 'settings'
+
+/** Settings search: shows only the setting cards that mention what you type (their words, or the hidden keywords). */
+function SettingsSearch(): React.JSX.Element {
+  const [q, setQ] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const box = ref.current?.parentElement?.querySelector('.nova-settings')
+    if (!box) return
+    const want = q.trim().toLowerCase()
+    for (const sec of Array.from(box.querySelectorAll('section'))) {
+      const hay = `${sec.textContent ?? ''} ${sec.getAttribute('data-settings') ?? ''}`.toLowerCase()
+      ;(sec as HTMLElement).style.display = !want || hay.includes(want) ? '' : 'none'
+    }
+  }, [q])
+  return (
+    <div ref={ref} className="mb-4">
+      <input className="field-boxed w-full max-w-md rounded-full px-4 py-2 text-sm" placeholder="Search settings (wake word, voice, usage…)" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search settings" />
+    </div>
   )
 }
 
@@ -538,6 +561,23 @@ const resetIn = (iso: string | null | undefined): string => {
 }
 
 export function NovaPage(): React.JSX.Element {
+  // (the tab: Lessons by default; the one you were on, next time)
+  const [tab, setTab] = useState<NovaTab>(() => {
+    try {
+      const t = localStorage.getItem('nova.tab')
+      return t === 'map' || t === 'nova' || t === 'settings' ? t : 'lessons'
+    } catch {
+      return 'lessons'
+    }
+  })
+  const pickTab = (t: NovaTab): void => {
+    setTab(t)
+    try {
+      localStorage.setItem('nova.tab', t)
+    } catch {
+      /* not kept */
+    }
+  }
   const phone = isPhoneApp()
   const prefs = usePrefs()
   const claude = useClaude()
@@ -693,610 +733,631 @@ export function NovaPage(): React.JSX.Element {
         </div>
       </section>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
-        <div className="flex min-w-0 flex-col gap-4">
-          <section className="card rounded-2xl p-5">
-            <h2 className="font-semibold">Name</h2>
-            <p className="mb-3 text-[13px] text-muted">What you call your assistant. The wake word follows the name (“Hey {name}”), with no extra download.</p>
-            <div className="flex flex-wrap gap-2">
-              {NAMES.map(({ n, hint }) => (
-                <button key={n} className="nova-name" aria-pressed={name === n} onClick={() => save({ novaName: n })}>
-                  <b>{n}</b>
-                  <span>{hint}</span>
-                </button>
-              ))}
-            </div>
-          </section>
+      <div className="nova-tabs mb-4 flex flex-wrap gap-1.5" role="tablist">
+        {(
+          [
+            ['lessons', 'Lessons'],
+            ['map', 'Map'],
+            ['nova', name],
+            ['settings', 'Settings']
+          ] as [NovaTab, string][]
+        ).map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={`rounded-full px-4 py-1.5 text-sm font-semibold ${tab === k ? 'btn-primary' : 'glass text-muted'}`} onClick={() => pickTab(k)}>
+            {label}
+          </button>
+        ))}
+      </div>
 
-          {!phone && ears && (
+      {tab === 'lessons' && <LessonsTab name={name} />}
+      {tab === 'map' && <MapTab />}
+      {tab === 'nova' && (
+        <div className="grid items-start gap-4 lg:grid-cols-2">
             <section className="card rounded-2xl p-5">
-              <h2 className="flex items-center gap-2 font-semibold">
-                Ears <span className="nova-tag free">Free · on this PC</span>
-              </h2>
-              <p className="mb-3 text-[13px] text-muted">How {name} hears you. Your voice is written down on this PC by Parakeet, a free offline speech model, so it never leaves your computer.</p>
-              <Row title="Talk" hint="Hold, speak, let go. Works in any app.">
-                <span className="nova-keys">
-                  hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>
-                </span>
-              </Row>
-              <Row
-                title="Follow-up"
-                hint={`After ${name} finishes talking, it keeps listening for about 6 seconds so you can answer straight back (no key or “Hey ${name}”). It never hears itself: it only listens once it has stopped.`}
-              >
-                <Seg
-                  value={prefs?.novaFollowUp ?? 'asked'}
-                  options={[
-                    ['off', 'Off'],
-                    ['asked', 'When it asks me'],
-                    ['always', 'After every reply']
-                  ]}
-                  onChange={(v) => save({ novaFollowUp: v as Prefs['novaFollowUp'] })}
-                />
-              </Row>
-              <Row
-                title="Draw while you talk"
-                hint="While you hold the talk keys, hold the left mouse button to draw on the screen: circle, underline or point at what you mean (right-click undoes the last mark). Or press Ctrl+Alt+B to mark first and then type. The marks fade when they’ve been sent."
-              >
-                <span className="nova-keys">
-                  hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd> + drag
-                </span>
-              </Row>
-              <Row title="Type instead" hint="Opens a small box beside your cursor">
-                <span className="nova-keys">
-                  tap <kbd>Ctrl</kbd>+<kbd>Shift</kbd>
-                </span>
-              </Row>
-              <Row title={`Wake word: “Hey ${name}”`} hint="Listens for the name without pressing anything (switch it on below, under voice settings)">
-                <span className="text-xs text-muted">{prefs?.voiceWake ? 'On' : 'Off'}</span>
-              </Row>
-              <Row
-                title="Hearing model"
-                hint={ears.installed ? 'Parakeet and the wake-word listener are ready' : `Parakeet (writing down) and the “Hey ${name}” listener: ${ears.sizeMb} MB, downloaded once`}
-              >
-                {ears.installed ? (
-                  earsConfirm ? (
-                    <span className="flex items-center gap-2 text-[13px]">
-                      Remove them?
-                      <button
-                        className="nova-quiet danger"
-                        onClick={() => {
-                          setEarsConfirm(false)
-                          void api.ears.remove()
-                        }}
-                      >
-                        Remove
-                      </button>
-                      <button className="nova-quiet" onClick={() => setEarsConfirm(false)}>
-                        Cancel
-                      </button>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-2">
-                      <span className="text-[13px] text-[#7ee2b8]">● Ready</span>
-                      <button className="nova-quiet" onClick={() => setEarsConfirm(true)}>
-                        Remove
-                      </button>
-                    </span>
-                  )
-                ) : ears.downloading ? (
-                  <span className="tabular-nums text-[13px] text-muted">Downloading… {Math.round(ears.progress * 100)}%</span>
-                ) : (
-                  <button className="btn-primary rounded-full px-4 py-1.5 text-sm font-semibold" onClick={() => void api.ears.install()}>
-                    Download ({ears.sizeMb} MB)
-                  </button>
-                )}
-              </Row>
-              {ears.error && <p className="text-sm text-danger">{ears.error}</p>}
+              <h2 className="font-semibold">Recently</h2>
+              <ul className="mt-2 flex flex-col">
+                {(log ?? []).map((r) => (
+                  <li key={r.id} className="border-t border-line py-2 text-[13px] first:border-t-0">
+                    <div className="text-muted">“{r.said}”</div>
+                    <div>{r.reply}</div>
+                  </li>
+                ))}
+                {log && !log.length && <li className="text-sm text-muted">Nothing yet. Ask {name} something.</li>}
+              </ul>
+              <button className="mt-2 text-sm underline" onClick={() => navigate({ name: 'bauer' })}>
+                Full log, typing and Undo
+              </button>
             </section>
-          )}
-
-          {!phone && mouth && (
+            {!phone && <PromisesCard name={name} />}
+            {!phone && <MemoryCard name={name} />}
             <section className="card rounded-2xl p-5">
-              <h2 className="flex items-center gap-2 font-semibold">
-                Voice <span className="nova-tag free">Free · on this PC</span>
-              </h2>
-              <p className="mb-3 text-[13px] text-muted">How {name} talks back. Kokoro, a free voice model, speaks on this PC, starting while the rest of the answer is still being made.</p>
-              <Row title={`${name} talks back`} hint="Off: answers are shown, not spoken">
-                <input type="checkbox" checked={prefs?.bauerTalk !== false} onChange={(e) => save({ bauerTalk: e.target.checked })} aria-label="Talks back" />
-              </Row>
-              {mouth.installed ? (
-                <>
-                  <div className="grid grid-cols-1 gap-2 py-2 sm:grid-cols-3">
-                    {VOICES.map((v) => (
-                      <div key={v.id} className="nova-voice" aria-pressed={(prefs?.novaVoice ?? 'af_heart') === v.id}>
-                        <button className="nova-play" aria-label={`Hear ${v.name}`} disabled={!!previewing} onClick={() => void preview(v.id, v.line)}>
-                          {previewing === v.id ? '…' : '▶'}
+              <h2 className="font-semibold">Try saying</h2>
+              <ul className="nova-try mt-2 flex flex-col gap-1.5 text-[13px] text-muted">
+                <li>“Add revise thermodynamics to my tasks for Thursday”</li>
+                <li>“Move my gym session to six”</li>
+                <li>“Explain integration by parts”</li>
+                <li>“Where’s the export button?”</li>
+                <li>“Walk me through making a chart in Excel”</li>
+                <li>“Click save for me” (with Hands on)</li>
+                <li>“Draft a revision plan for chemistry in Claude Docs” (with connectors on)</li>
+                <li>“I’ll email Sam the notes tomorrow morning” (a promise: it reminds you)</li>
+                <li>“Remember I’m doing chemistry A-level” · “Forget that”</li>
+                <li>Tap Ctrl + Shift to type to {name} beside your cursor</li>
+                <li>“Teach me week 3 PNS from my notes” · “Quiz me on my pharm week 2 file”</li>
+                <li>“Pull up a YouTube video on how beta blockers work” · “Play some study music”</li>
+                <li>Hold Ctrl + Alt, circle something on screen and ask “what’s this?” (or Ctrl + Alt + B, then circle)</li>
+                <li>Highlight text anywhere and say “explain this”</li>
+                <li>“Focus on chemistry for 45 minutes” · “What’s my day?”</li>
+                <li>“Write this in my essay: …” · “Summarise what I just copied”</li>
+                <li>“Notes on the left, lecture on the right”</li>
+                <li>“Make a revision sheet from all my week 3 notes” (runs in the background)</li>
+                <li>“Make notes and flashcards from this lecture video”</li>
+              </ul>
+            </section>
+        </div>
+      )}
+      <div className={tab === 'settings' ? '' : 'hidden'}>
+        <SettingsSearch />
+        <div className="nova-settings grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
+          <div className="flex min-w-0 flex-col gap-4">
+            <section className="card rounded-2xl p-5">
+              <h2 className="font-semibold">Name</h2>
+              <p className="mb-3 text-[13px] text-muted">What you call your assistant. The wake word follows the name (“Hey {name}”), with no extra download.</p>
+              <div className="flex flex-wrap gap-2">
+                {NAMES.map(({ n, hint }) => (
+                  <button key={n} className="nova-name" aria-pressed={name === n} onClick={() => save({ novaName: n })}>
+                    <b>{n}</b>
+                    <span>{hint}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {!phone && ears && (
+              <section className="card rounded-2xl p-5">
+                <h2 className="flex items-center gap-2 font-semibold">
+                  Ears <span className="nova-tag free">Free · on this PC</span>
+                </h2>
+                <p className="mb-3 text-[13px] text-muted">How {name} hears you. Your voice is written down on this PC by Parakeet, a free offline speech model, so it never leaves your computer.</p>
+                <Row title="Talk" hint="Hold, speak, let go. Works in any app.">
+                  <span className="nova-keys">
+                    hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd>
+                  </span>
+                </Row>
+                <Row
+                  title="Follow-up"
+                  hint={`After ${name} finishes talking, it keeps listening for about 6 seconds so you can answer straight back (no key or “Hey ${name}”). It never hears itself: it only listens once it has stopped.`}
+                >
+                  <Seg
+                    value={prefs?.novaFollowUp ?? 'asked'}
+                    options={[
+                      ['off', 'Off'],
+                      ['asked', 'When it asks me'],
+                      ['always', 'After every reply']
+                    ]}
+                    onChange={(v) => save({ novaFollowUp: v as Prefs['novaFollowUp'] })}
+                  />
+                </Row>
+                <Row
+                  title="Draw while you talk"
+                  hint="While you hold the talk keys, hold the left mouse button to draw on the screen: circle, underline or point at what you mean (right-click undoes the last mark). Or press Ctrl+Alt+B to mark first and then type. The marks fade when they’ve been sent."
+                >
+                  <span className="nova-keys">
+                    hold <kbd>Ctrl</kbd>+<kbd>Alt</kbd> + drag
+                  </span>
+                </Row>
+                <Row title="Type instead" hint="Opens a small box beside your cursor">
+                  <span className="nova-keys">
+                    tap <kbd>Ctrl</kbd>+<kbd>Shift</kbd>
+                  </span>
+                </Row>
+                <Row title={`Wake word: “Hey ${name}”`} hint="Listens for the name without pressing anything (switch it on below, under voice settings)">
+                  <span className="text-xs text-muted">{prefs?.voiceWake ? 'On' : 'Off'}</span>
+                </Row>
+                <Row
+                  title="Hearing model"
+                  hint={ears.installed ? 'Parakeet and the wake-word listener are ready' : `Parakeet (writing down) and the “Hey ${name}” listener: ${ears.sizeMb} MB, downloaded once`}
+                >
+                  {ears.installed ? (
+                    earsConfirm ? (
+                      <span className="flex items-center gap-2 text-[13px]">
+                        Remove them?
+                        <button
+                          className="nova-quiet danger"
+                          onClick={() => {
+                            setEarsConfirm(false)
+                            void api.ears.remove()
+                          }}
+                        >
+                          Remove
                         </button>
-                        <button className="min-w-0 flex-1 text-left" onClick={() => save({ novaVoice: v.id })}>
-                          <b className="block text-[13px]">{v.name}</b>
-                          <span className="block text-[11px] text-muted">{v.hint}</span>
+                        <button className="nova-quiet" onClick={() => setEarsConfirm(false)}>
+                          Cancel
                         </button>
-                      </div>
-                    ))}
-                  </div>
-                  <Row title="Speed">
-                    <input
-                      type="range"
-                      min={0.8}
-                      max={1.3}
-                      step={0.05}
-                      value={speed ?? prefs?.novaSpeed ?? 1.05}
-                      onChange={(e) => setSpeed(Number(e.target.value))}
-                      onPointerUp={() => speed != null && save({ novaSpeed: speed })}
-                      onKeyUp={() => speed != null && save({ novaSpeed: speed })}
-                      aria-label="Speaking speed"
-                    />
-                    <span className="w-12 text-right tabular-nums">{(speed ?? prefs?.novaSpeed ?? 1.05).toFixed(2)}×</span>
-                  </Row>
-                  <Row title="Teaching speed" hint="When it explains or teaches something (and in tutor mode): a little slower, so it's easier to follow.">
-                    <input
-                      type="range"
-                      min={0.7}
-                      max={1.3}
-                      step={0.05}
-                      value={teachSpeed ?? prefs?.novaTeachSpeed ?? 0.85}
-                      onChange={(e) => setTeachSpeed(Number(e.target.value))}
-                      onPointerUp={() => teachSpeed != null && save({ novaTeachSpeed: teachSpeed })}
-                      onKeyUp={() => teachSpeed != null && save({ novaTeachSpeed: teachSpeed })}
-                      aria-label="Teaching speed"
-                    />
-                    <span className="w-12 text-right tabular-nums">{(teachSpeed ?? prefs?.novaTeachSpeed ?? 0.85).toFixed(2)}×</span>
-                  </Row>
-                  <Row title="Voice model" hint="Kokoro, ready">
-                    <button className="nova-quiet" onClick={() => void api.mouth.remove()}>
-                      Remove
-                    </button>
-                  </Row>
-                </>
-              ) : (
-                <Row title="Voice model" hint={`Kokoro: ${mouth.sizeMb} MB, downloaded once. Until then ${name} uses the voice built into Windows.`}>
-                  {mouth.downloading ? (
-                    <span className="tabular-nums text-[13px] text-muted">Downloading… {Math.round(mouth.progress * 100)}%</span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <span className="text-[13px] text-[#7ee2b8]">● Ready</span>
+                        <button className="nova-quiet" onClick={() => setEarsConfirm(true)}>
+                          Remove
+                        </button>
+                      </span>
+                    )
+                  ) : ears.downloading ? (
+                    <span className="tabular-nums text-[13px] text-muted">Downloading… {Math.round(ears.progress * 100)}%</span>
                   ) : (
-                    <button className="btn-primary rounded-full px-4 py-1.5 text-sm font-semibold" onClick={() => void api.mouth.install()}>
-                      Download ({mouth.sizeMb} MB)
+                    <button className="btn-primary rounded-full px-4 py-1.5 text-sm font-semibold" onClick={() => void api.ears.install()}>
+                      Download ({ears.sizeMb} MB)
                     </button>
                   )}
                 </Row>
-              )}
-              {mouth.error && <p className="text-sm text-danger">{mouth.error}</p>}
-            </section>
-          )}
-
-          {!phone && (
-            <section className="card rounded-2xl p-5">
-              <h2 className="flex items-center gap-2 font-semibold">
-                Eyes &amp; pointing <span className="nova-tag">Screenshots go to Claude</span>
-              </h2>
-              <p className="mb-3 text-[13px] text-muted">
-                Ask about the app you’re using: “where’s export?”, “how do I save this as a PDF?”, “what does this button do?”. {name} reads that window’s buttons and text through Windows (the way
-                screen readers do), takes one screenshot of just that window, and puts a ring around the right place. Nothing is looked at unless you ask.
-              </p>
-              <Row title="Look at my screen" hint="Only for requests about what’s on screen. Needs Claude connected.">
-                <Seg
-                  value={prefs?.novaEyes ?? 'auto'}
-                  options={[
-                    ['off', 'Off'],
-                    ['auto', 'When I ask']
-                  ]}
-                  onChange={(v) => save({ novaEyes: v as Prefs['novaEyes'] })}
-                />
-              </Row>
-              <Row
-                title="Teaching something that isn’t on my screen"
-                hint={`When you ask ${name} to explain a topic you’re not reading about, it can open a brief source page beside the cards and underline the key bit there.`}
-              >
-                <Seg
-                  value={prefs?.novaSource ?? 'source'}
-                  options={[
-                    ['source', 'Show a source page'],
-                    ['none', 'Just explain']
-                  ]}
-                  onChange={(v) => save({ novaSource: v as Prefs['novaSource'] })}
-                />
-              </Row>
-              <Row
-                title="Turn pages and scroll"
-                hint={`When it explains a slide deck or PDF you have open, ${name} can turn to the slide or page it's talking about, or scroll a web page to it, so it can point at it. It only reads: nothing is changed or saved.`}
-              >
-                <input type="checkbox" checked={prefs?.novaPages !== false} onChange={(e) => save({ novaPages: e.target.checked })} aria-label="Turn pages and scroll" />
-              </Row>
-              <Row title="Walk me through it" hint="Rings step 1, waits for your click there, then shows step 2 (up to 8 steps). Esc stops.">
-                <input type="checkbox" checked={prefs?.novaWalk !== false} onChange={(e) => save({ novaWalk: e.target.checked })} aria-label="Walkthroughs" />
-              </Row>
-              <p className="text-xs text-muted">
-                {name} can’t see apps running as administrator. The ring and {name} itself never appear in screenshots.
-              </p>
-            </section>
-          )}
-
-          {!phone && (
-            <section className="card rounded-2xl p-5">
-              <h2 className="flex items-center gap-2 font-semibold">
-                Hands <span className="nova-tag">Off until you turn it on</span>
-              </h2>
-              <p className="mb-3 text-[13px] text-muted">
-                Say “click export”, “type my name in the search box”, “turn on dark mode”, or “… for me”, and {name} does it in the app you’re using: pressing buttons, filling in fields, ticking
-                boxes, choosing tabs. It works the controls through Windows, so it never moves your mouse or types with your keyboard. Esc stops it at once.
-              </p>
-              <Row title="Use my apps">
-                <Seg
-                  value={prefs?.novaHands ?? 'off'}
-                  options={[
-                    ['off', 'Off'],
-                    ['ask', 'Ask me each time'],
-                    ['allowed', 'Allowed apps only']
-                  ]}
-                  onChange={(v) => save({ novaHands: v as Prefs['novaHands'] })}
-                />
-              </Row>
-              <Row title="Allowed apps" hint="Used without asking when “Allowed apps only” is on. Other apps still ask.">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {(prefs?.novaHandsApps ?? []).map((a) => (
-                    <span key={a} className="nova-app">
-                      {APP_NAMES[a.toLowerCase()] ?? a}
-                      <button
-                        aria-label={`Remove ${a}`}
-                        onClick={() =>
-                          save({
-                            novaHandsApps: (prefs?.novaHandsApps ?? []).filter((x) => x !== a)
-                          })
-                        }
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                  <select
-                    className="nova-app-add"
-                    value=""
-                    onChange={(e) =>
-                      e.target.value &&
-                      save({
-                        novaHandsApps: [...new Set([...(prefs?.novaHandsApps ?? []), e.target.value])]
-                      })
-                    }
-                    aria-label="Add an app"
-                  >
-                    <option value="">+ Add</option>
-                    {Object.entries(APP_NAMES)
-                      .filter(([k]) => !(prefs?.novaHandsApps ?? []).some((a) => a.toLowerCase() === k))
-                      .map(([k, label]) => (
-                        <option key={k} value={k}>
-                          {label}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              </Row>
-              <p className="text-xs text-muted">
-                Always asks first, in every mode: sending, posting, deleting, buying, paying, ordering, installing, submitting forms, signing out. Never types into password fields. Some controls only
-                answer to a real mouse click: {name} rings those for you to click instead.
-              </p>
-            </section>
-          )}
-
-          {!phone && (
-            <section className="card rounded-2xl p-5">
-              <h2 className="font-semibold">Look</h2>
-              <p className="mb-3 text-[13px] text-muted">
-                A JARVIS globe of pixel lights in your blue (from Roamies). It ripples with {name}’s voice, pulses with yours while listening, and a light sweeps round it while it thinks. It never
-                shows up in screenshots or screen recordings.
-              </p>
-              <Row title={`Show ${name}`} hint="Ctrl + Alt + N also shows or hides it">
-                <input type="checkbox" checked={prefs?.bauerOrb ?? true} onChange={(e) => save({ bauerOrb: e.target.checked })} aria-label="Show the orb" />
-              </Row>
-              <Row title="Size">
-                <Seg
-                  value={prefs?.novaOrbSize ?? 'default'}
-                  options={[
-                    ['small', 'Small'],
-                    ['default', 'Default'],
-                    ['cursor', 'Follows my cursor']
-                  ]}
-                  onChange={(v) => save({ novaOrbSize: v as Prefs['novaOrbSize'] })}
-                />
-              </Row>
-              <Row title="Hide when idle" hint="It disappears a few seconds after it's done and comes back when you talk to it, it speaks, or it draws something.">
-                <input type="checkbox" checked={prefs?.novaHideIdle === true} onChange={(e) => save({ novaHideIdle: e.target.checked })} aria-label="Hide when idle" />
-              </Row>
-              <Row title="Chats" hint="When you open up about something (venting, a friend, a big decision), Nova switches to Sonnet by itself for more thoughtful replies, and back when the chat moves on. It stays quick if your week's Claude is running low.">
-                <select className="field-boxed text-sm" value={prefs?.novaChatDepth ?? 'auto'} onChange={(e) => save({ novaChatDepth: e.target.value as 'auto' | 'quick' | 'deeper' })} aria-label="Chats">
-                  <option value="auto">Auto (deeper when it matters)</option>
-                  <option value="quick">Always quick</option>
-                  <option value="deeper">Always deeper</option>
-                </select>
-              </Row>
-              <Row
-                title="Save my explanations to Notes"
-                hint="Every explanation Nova draws for goes onto that day's “Nova notes” page: your question, what it said and pictures of its cards. You can always say “save that” (or press the save icon on a card) to save one as its own note."
-              >
-                <input type="checkbox" checked={prefs?.novaAutoNotes === true} onChange={(e) => save({ novaAutoNotes: e.target.checked })} aria-label="Save my explanations to Notes" />
-              </Row>
-              <Row title="Captions while it draws" hint="What Nova says while it draws shows as captions at the bottom of the screen, like subtitles. Off: in its speech bubble, as when it's just talking.">
-                <input type="checkbox" checked={prefs?.novaCaptions === true} onChange={(e) => save({ novaCaptions: e.target.checked })} aria-label="Captions while it draws" />
-              </Row>
-              <Row
-                title="Quieter while I talk"
-                hint="Other apps (videos, music) turn down while you hold the talk key, and back up when you let go. Hold Ctrl + Alt + Shift instead to have Nova listen to what's playing."
-              >
-                <input type="checkbox" checked={prefs?.novaDuck !== false} onChange={(e) => save({ novaDuck: e.target.checked })} aria-label="Quieter while I talk" />
-              </Row>
-              <Row title="Sound effects" hint="Little chiptune sounds when it appears, draws, and when an agent starts or finishes.">
-                <input type="checkbox" checked={prefs?.novaSounds !== false} onChange={(e) => save({ novaSounds: e.target.checked })} aria-label="Sound effects" />
-              </Row>
-              <p className="text-xs text-muted">
-                Drag it to move it (or fling it); drop it somewhere and that becomes its spot; click it to talk; right-click it for Hide. In “follows my cursor” size it shrinks to a little HUD ring
-                beside your mouse.
-              </p>
-            </section>
-          )}
-
-          {!phone && (
-            <section className="card rounded-2xl p-5">
-              <h2 className="font-semibold">Study buddy</h2>
-              <p className="mb-3 text-[13px] text-muted">
-                Things {name} does on its own. To do them it only looks at the title of the window in front (what your taskbar shows), and only during a focus session or while you’re on study notes.
-                Nothing is saved or sent anywhere.
-              </p>
-              <Row title="Morning brief" hint={`The first time you’re at the PC each morning, ${name} says what’s on today and what’s due, and shows it on a card. Ask “what’s my day?” any time.`}>
-                <input type="checkbox" checked={prefs?.novaBrief !== false} onChange={(e) => save({ novaBrief: e.target.checked })} aria-label="Morning brief" />
-              </Row>
-              <Row
-                title="Nudges and offers"
-                hint={`In a focus session (“focus on chemistry for 45 minutes”), ${name} nudges you if you drift to YouTube, games or socials. After half an hour on the same notes it offers a quick quiz.`}
-              >
-                <input type="checkbox" checked={prefs?.novaProactive !== false} onChange={(e) => save({ novaProactive: e.target.checked })} aria-label="Nudges and offers" />
-              </Row>
-            </section>
-          )}
-
-          <section className="card rounded-2xl p-5">
-            <h2 className="flex items-center gap-2 font-semibold">
-              Brain <span className="nova-tag">Your Claude plan</span>
-            </h2>
-            <p className="mb-3 text-[13px] text-muted">Which Claude model thinks, and how hard. Higher effort is smarter but slower and uses more of your plan.</p>
-            <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {MODELS.map(({ m, label, hint }) => (
-                <button key={m} className="nova-model" aria-pressed={brain === m} onClick={() => save({ novaBrain: m })}>
-                  <b>{label}</b>
-                  <span>{hint}</span>
-                </button>
-              ))}
-            </div>
-            <Row title="Effort" hint={brain === 'auto' ? 'Auto chooses the effort too' : 'Low = quickest replies, High = most careful'}>
-              <Seg<NovaEffort>
-                value={effort}
-                disabled={brain === 'auto'}
-                options={[
-                  ['low', 'Low'],
-                  ['medium', 'Medium'],
-                  ['high', 'High']
-                ]}
-                onChange={(v) => save({ novaEffort: v })}
-              />
-            </Row>
-            {brain === 'auto' && (
-              <table className="nova-table">
-                <tbody>
-                  {AUTO_TABLE.map(([what, pick]) => (
-                    <tr key={what}>
-                      <td>{what}</td>
-                      <td className="text-right text-ink">{pick}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                {ears.error && <p className="text-sm text-danger">{ears.error}</p>}
+              </section>
             )}
-            <Row
-              title="Background agents"
-              hint="Auto: Sonnet when an agent makes something (a page, a document, slides), Haiku when it finds things out or tidies files, which uses much less of your plan."
-            >
-              <Seg<'auto' | 'haiku' | 'sonnet'>
-                value={prefs?.novaAgents ?? 'auto'}
-                options={[
-                  ['auto', 'Auto'],
-                  ['haiku', 'Haiku'],
-                  ['sonnet', 'Sonnet']
-                ]}
-                onChange={(v) => save({ novaAgents: v })}
-              />
-            </Row>
-            <Row title="Offline backup" hint="Use the model on this PC when Claude isn’t connected, there’s no internet, or Claude is paused (slower)">
-              <input type="checkbox" checked={prefs?.novaOffline ?? true} onChange={(e) => save({ novaOffline: e.target.checked })} aria-label="Offline backup" />
-            </Row>
-          </section>
 
-          {!phone && (
+            {!phone && mouth && (
+              <section className="card rounded-2xl p-5">
+                <h2 className="flex items-center gap-2 font-semibold">
+                  Voice <span className="nova-tag free">Free · on this PC</span>
+                </h2>
+                <p className="mb-3 text-[13px] text-muted">How {name} talks back. Kokoro, a free voice model, speaks on this PC, starting while the rest of the answer is still being made.</p>
+                <Row title={`${name} talks back`} hint="Off: answers are shown, not spoken">
+                  <input type="checkbox" checked={prefs?.bauerTalk !== false} onChange={(e) => save({ bauerTalk: e.target.checked })} aria-label="Talks back" />
+                </Row>
+                {mouth.installed ? (
+                  <>
+                    <div className="grid grid-cols-1 gap-2 py-2 sm:grid-cols-3">
+                      {VOICES.map((v) => (
+                        <div key={v.id} className="nova-voice" aria-pressed={(prefs?.novaVoice ?? 'af_heart') === v.id}>
+                          <button className="nova-play" aria-label={`Hear ${v.name}`} disabled={!!previewing} onClick={() => void preview(v.id, v.line)}>
+                            {previewing === v.id ? '…' : '▶'}
+                          </button>
+                          <button className="min-w-0 flex-1 text-left" onClick={() => save({ novaVoice: v.id })}>
+                            <b className="block text-[13px]">{v.name}</b>
+                            <span className="block text-[11px] text-muted">{v.hint}</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <Row title="Speed">
+                      <input
+                        type="range"
+                        min={0.8}
+                        max={1.3}
+                        step={0.05}
+                        value={speed ?? prefs?.novaSpeed ?? 1.05}
+                        onChange={(e) => setSpeed(Number(e.target.value))}
+                        onPointerUp={() => speed != null && save({ novaSpeed: speed })}
+                        onKeyUp={() => speed != null && save({ novaSpeed: speed })}
+                        aria-label="Speaking speed"
+                      />
+                      <span className="w-12 text-right tabular-nums">{(speed ?? prefs?.novaSpeed ?? 1.05).toFixed(2)}×</span>
+                    </Row>
+                    <Row title="Teaching speed" hint="When it explains or teaches something (and in tutor mode): a little slower, so it's easier to follow.">
+                      <input
+                        type="range"
+                        min={0.7}
+                        max={1.3}
+                        step={0.05}
+                        value={teachSpeed ?? prefs?.novaTeachSpeed ?? 0.85}
+                        onChange={(e) => setTeachSpeed(Number(e.target.value))}
+                        onPointerUp={() => teachSpeed != null && save({ novaTeachSpeed: teachSpeed })}
+                        onKeyUp={() => teachSpeed != null && save({ novaTeachSpeed: teachSpeed })}
+                        aria-label="Teaching speed"
+                      />
+                      <span className="w-12 text-right tabular-nums">{(teachSpeed ?? prefs?.novaTeachSpeed ?? 0.85).toFixed(2)}×</span>
+                    </Row>
+                    <Row title="Voice model" hint="Kokoro, ready">
+                      <button className="nova-quiet" onClick={() => void api.mouth.remove()}>
+                        Remove
+                      </button>
+                    </Row>
+                  </>
+                ) : (
+                  <Row title="Voice model" hint={`Kokoro: ${mouth.sizeMb} MB, downloaded once. Until then ${name} uses the voice built into Windows.`}>
+                    {mouth.downloading ? (
+                      <span className="tabular-nums text-[13px] text-muted">Downloading… {Math.round(mouth.progress * 100)}%</span>
+                    ) : (
+                      <button className="btn-primary rounded-full px-4 py-1.5 text-sm font-semibold" onClick={() => void api.mouth.install()}>
+                        Download ({mouth.sizeMb} MB)
+                      </button>
+                    )}
+                  </Row>
+                )}
+                {mouth.error && <p className="text-sm text-danger">{mouth.error}</p>}
+              </section>
+            )}
+
+            {!phone && (
+              <section className="card rounded-2xl p-5">
+                <h2 className="flex items-center gap-2 font-semibold">
+                  Eyes &amp; pointing <span className="nova-tag">Screenshots go to Claude</span>
+                </h2>
+                <p className="mb-3 text-[13px] text-muted">
+                  Ask about the app you’re using: “where’s export?”, “how do I save this as a PDF?”, “what does this button do?”. {name} reads that window’s buttons and text through Windows (the way
+                  screen readers do), takes one screenshot of just that window, and puts a ring around the right place. Nothing is looked at unless you ask.
+                </p>
+                <Row title="Look at my screen" hint="Only for requests about what’s on screen. Needs Claude connected.">
+                  <Seg
+                    value={prefs?.novaEyes ?? 'auto'}
+                    options={[
+                      ['off', 'Off'],
+                      ['auto', 'When I ask']
+                    ]}
+                    onChange={(v) => save({ novaEyes: v as Prefs['novaEyes'] })}
+                  />
+                </Row>
+                <Row
+                  title="Teaching something that isn’t on my screen"
+                  hint={`When you ask ${name} to explain a topic you’re not reading about, it can open a brief source page beside the cards and underline the key bit there.`}
+                >
+                  <Seg
+                    value={prefs?.novaSource ?? 'source'}
+                    options={[
+                      ['source', 'Show a source page'],
+                      ['none', 'Just explain']
+                    ]}
+                    onChange={(v) => save({ novaSource: v as Prefs['novaSource'] })}
+                  />
+                </Row>
+                <Row
+                  title="Turn pages and scroll"
+                  hint={`When it explains a slide deck or PDF you have open, ${name} can turn to the slide or page it's talking about, or scroll a web page to it, so it can point at it. It only reads: nothing is changed or saved.`}
+                >
+                  <input type="checkbox" checked={prefs?.novaPages !== false} onChange={(e) => save({ novaPages: e.target.checked })} aria-label="Turn pages and scroll" />
+                </Row>
+                <Row title="Walk me through it" hint="Rings step 1, waits for your click there, then shows step 2 (up to 8 steps). Esc stops.">
+                  <input type="checkbox" checked={prefs?.novaWalk !== false} onChange={(e) => save({ novaWalk: e.target.checked })} aria-label="Walkthroughs" />
+                </Row>
+                <p className="text-xs text-muted">
+                  {name} can’t see apps running as administrator. The ring and {name} itself never appear in screenshots.
+                </p>
+              </section>
+            )}
+
+            {!phone && (
+              <section className="card rounded-2xl p-5">
+                <h2 className="flex items-center gap-2 font-semibold">
+                  Hands <span className="nova-tag">Off until you turn it on</span>
+                </h2>
+                <p className="mb-3 text-[13px] text-muted">
+                  Say “click export”, “type my name in the search box”, “turn on dark mode”, or “… for me”, and {name} does it in the app you’re using: pressing buttons, filling in fields, ticking
+                  boxes, choosing tabs. It works the controls through Windows, so it never moves your mouse or types with your keyboard. Esc stops it at once.
+                </p>
+                <Row title="Use my apps">
+                  <Seg
+                    value={prefs?.novaHands ?? 'off'}
+                    options={[
+                      ['off', 'Off'],
+                      ['ask', 'Ask me each time'],
+                      ['allowed', 'Allowed apps only']
+                    ]}
+                    onChange={(v) => save({ novaHands: v as Prefs['novaHands'] })}
+                  />
+                </Row>
+                <Row title="Allowed apps" hint="Used without asking when “Allowed apps only” is on. Other apps still ask.">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(prefs?.novaHandsApps ?? []).map((a) => (
+                      <span key={a} className="nova-app">
+                        {APP_NAMES[a.toLowerCase()] ?? a}
+                        <button
+                          aria-label={`Remove ${a}`}
+                          onClick={() =>
+                            save({
+                              novaHandsApps: (prefs?.novaHandsApps ?? []).filter((x) => x !== a)
+                            })
+                          }
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    <select
+                      className="nova-app-add"
+                      value=""
+                      onChange={(e) =>
+                        e.target.value &&
+                        save({
+                          novaHandsApps: [...new Set([...(prefs?.novaHandsApps ?? []), e.target.value])]
+                        })
+                      }
+                      aria-label="Add an app"
+                    >
+                      <option value="">+ Add</option>
+                      {Object.entries(APP_NAMES)
+                        .filter(([k]) => !(prefs?.novaHandsApps ?? []).some((a) => a.toLowerCase() === k))
+                        .map(([k, label]) => (
+                          <option key={k} value={k}>
+                            {label}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </Row>
+                <p className="text-xs text-muted">
+                  Always asks first, in every mode: sending, posting, deleting, buying, paying, ordering, installing, submitting forms, signing out. Never types into password fields. Some controls only
+                  answer to a real mouse click: {name} rings those for you to click instead.
+                </p>
+              </section>
+            )}
+
+            {!phone && (
+              <section className="card rounded-2xl p-5">
+                <h2 className="font-semibold">Look</h2>
+                <p className="mb-3 text-[13px] text-muted">
+                  A JARVIS globe of pixel lights in your blue (from Roamies). It ripples with {name}’s voice, pulses with yours while listening, and a light sweeps round it while it thinks. It never
+                  shows up in screenshots or screen recordings.
+                </p>
+                <Row title={`Show ${name}`} hint="Ctrl + Alt + N also shows or hides it">
+                  <input type="checkbox" checked={prefs?.bauerOrb ?? true} onChange={(e) => save({ bauerOrb: e.target.checked })} aria-label="Show the orb" />
+                </Row>
+                <Row title="Size">
+                  <Seg
+                    value={prefs?.novaOrbSize ?? 'default'}
+                    options={[
+                      ['small', 'Small'],
+                      ['default', 'Default'],
+                      ['cursor', 'Follows my cursor']
+                    ]}
+                    onChange={(v) => save({ novaOrbSize: v as Prefs['novaOrbSize'] })}
+                  />
+                </Row>
+                <Row title="Hide when idle" hint="It disappears a few seconds after it's done and comes back when you talk to it, it speaks, or it draws something.">
+                  <input type="checkbox" checked={prefs?.novaHideIdle === true} onChange={(e) => save({ novaHideIdle: e.target.checked })} aria-label="Hide when idle" />
+                </Row>
+                <Row title="Chats" hint="When you open up about something (venting, a friend, a big decision), Nova switches to Sonnet by itself for more thoughtful replies, and back when the chat moves on. It stays quick if your week's Claude is running low.">
+                  <select className="field-boxed text-sm" value={prefs?.novaChatDepth ?? 'auto'} onChange={(e) => save({ novaChatDepth: e.target.value as 'auto' | 'quick' | 'deeper' })} aria-label="Chats">
+                    <option value="auto">Auto (deeper when it matters)</option>
+                    <option value="quick">Always quick</option>
+                    <option value="deeper">Always deeper</option>
+                  </select>
+                </Row>
+                <Row
+                  title="Save my explanations to Notes"
+                  hint="Every explanation Nova draws for goes onto that day's “Nova notes” page: your question, what it said and pictures of its cards. You can always say “save that” (or press the save icon on a card) to save one as its own note."
+                >
+                  <input type="checkbox" checked={prefs?.novaAutoNotes === true} onChange={(e) => save({ novaAutoNotes: e.target.checked })} aria-label="Save my explanations to Notes" />
+                </Row>
+                <Row title="Captions while it draws" hint="What Nova says while it draws shows as captions at the bottom of the screen, like subtitles. Off: in its speech bubble, as when it's just talking.">
+                  <input type="checkbox" checked={prefs?.novaCaptions === true} onChange={(e) => save({ novaCaptions: e.target.checked })} aria-label="Captions while it draws" />
+                </Row>
+                <Row
+                  title="Quieter while I talk"
+                  hint="Other apps (videos, music) turn down while you hold the talk key, and back up when you let go. Hold Ctrl + Alt + Shift instead to have Nova listen to what's playing."
+                >
+                  <input type="checkbox" checked={prefs?.novaDuck !== false} onChange={(e) => save({ novaDuck: e.target.checked })} aria-label="Quieter while I talk" />
+                </Row>
+                <Row title="Sound effects" hint="Little chiptune sounds when it appears, draws, and when an agent starts or finishes.">
+                  <input type="checkbox" checked={prefs?.novaSounds !== false} onChange={(e) => save({ novaSounds: e.target.checked })} aria-label="Sound effects" />
+                </Row>
+                <p className="text-xs text-muted">
+                  Drag it to move it (or fling it); drop it somewhere and that becomes its spot; click it to talk; right-click it for Hide. In “follows my cursor” size it shrinks to a little HUD ring
+                  beside your mouse.
+                </p>
+              </section>
+            )}
+
+            {!phone && (
+              <section className="card rounded-2xl p-5">
+                <h2 className="font-semibold">Study buddy</h2>
+                <p className="mb-3 text-[13px] text-muted">
+                  Things {name} does on its own. To do them it only looks at the title of the window in front (what your taskbar shows), and only during a focus session or while you’re on study notes.
+                  Nothing is saved or sent anywhere.
+                </p>
+                <Row title="Morning brief" hint={`The first time you’re at the PC each morning, ${name} says what’s on today and what’s due, and shows it on a card. Ask “what’s my day?” any time.`}>
+                  <input type="checkbox" checked={prefs?.novaBrief !== false} onChange={(e) => save({ novaBrief: e.target.checked })} aria-label="Morning brief" />
+                </Row>
+                <Row
+                  title="Nudges and offers"
+                  hint={`In a focus session (“focus on chemistry for 45 minutes”), ${name} nudges you if you drift to YouTube, games or socials. After half an hour on the same notes it offers a quick quiz.`}
+                >
+                  <input type="checkbox" checked={prefs?.novaProactive !== false} onChange={(e) => save({ novaProactive: e.target.checked })} aria-label="Nudges and offers" />
+                </Row>
+              </section>
+            )}
+
             <section className="card rounded-2xl p-5">
               <h2 className="flex items-center gap-2 font-semibold">
-                Usage <span className="nova-tag">Your Claude plan</span>
+                Brain <span className="nova-tag">Your Claude plan</span>
               </h2>
-              <p className="mb-3 text-[13px] text-muted">Your plan’s real usage, as Claude reports it (this includes your own chats with Claude, not just {name}).</p>
-              {claude?.signedIn ? (
-                <div className="flex flex-col gap-3">
-                  {(
-                    [
-                      ['This 5-hour window', claude.usage?.fiveHour, claude.usage?.fiveHourResets],
-                      ['This week', claude.usage?.sevenDay, claude.usage?.sevenDayResets]
-                    ] as const
-                  ).map(([label, v, r]) => (
-                    <div key={label}>
-                      <div className="mb-1 flex justify-between text-[13px]">
-                        <span>{label}</span>
-                        <span className="tabular-nums text-muted">
-                          {pct(v)} {resetIn(r) && `· ${resetIn(r)}`}
-                        </span>
-                      </div>
-                      <div className="nova-meter">
-                        <i style={{ width: `${Math.min(100, v ?? 0)}%` }} />
-                        {label === 'This week' && <em style={{ left: `${capNow}%` }} />}
-                      </div>
-                    </div>
-                  ))}
-                  <div className="text-xs text-muted">
-                    {name} this month: about ${(claude.monthCostUsd ?? 0).toFixed(2)} at Claude’s API prices (a guide to how heavy it is; your plan covers it).{' '}
-                    <button className="underline" onClick={() => void api.claude.refreshUsage()}>
-                      Refresh
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-muted">Connect Claude to see your plan’s usage here.</p>
-              )}
-              <Row title="Never use paid extra usage" hint={`Your Claude account has extra usage switched on. With this on, ${name} stays inside your plan.`}>
-                <input type="checkbox" checked={prefs?.novaNoExtra ?? true} onChange={(e) => save({ novaNoExtra: e.target.checked })} aria-label="Never use paid extra usage" />
-              </Row>
-              <Row title={`Pause ${name} at`} hint="When your weekly Claude usage reaches this, so you keep plenty for chatting with Claude">
-                <input
-                  type="range"
-                  min={10}
-                  max={100}
-                  step={5}
-                  value={capNow}
-                  onChange={(e) => setCap(Number(e.target.value))}
-                  onPointerUp={() => save({ novaCap: capNow })}
-                  onKeyUp={() => save({ novaCap: capNow })}
-                  aria-label="Weekly cap"
+              <p className="mb-3 text-[13px] text-muted">Which Claude model thinks, and how hard. Higher effort is smarter but slower and uses more of your plan.</p>
+              <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {MODELS.map(({ m, label, hint }) => (
+                  <button key={m} className="nova-model" aria-pressed={brain === m} onClick={() => save({ novaBrain: m })}>
+                    <b>{label}</b>
+                    <span>{hint}</span>
+                  </button>
+                ))}
+              </div>
+              <Row title="Effort" hint={brain === 'auto' ? 'Auto chooses the effort too' : 'Low = quickest replies, High = most careful'}>
+                <Seg<NovaEffort>
+                  value={effort}
+                  disabled={brain === 'auto'}
+                  options={[
+                    ['low', 'Low'],
+                    ['medium', 'Medium'],
+                    ['high', 'High']
+                  ]}
+                  onChange={(v) => save({ novaEffort: v })}
                 />
-                <span className="w-10 text-right tabular-nums">{capNow}%</span>
               </Row>
-              {claude?.signedIn && <RoomLeft name={name} usage={claude.usage} cap={capNow} noExtra={prefs?.novaNoExtra ?? true} />}
-
-              <h3 className="mt-4 text-[13.5px] font-medium">Estimate by brain setting</h3>
-              <Row title="Your plan" hint="Pick yours to see the percentages">
-                <Seg value={planKey} options={PLANS.map((p) => [p.key, p.label] as [string, string])} onChange={setPlan} />
-              </Row>
-              <Row title="Requests a day" hint="About 6 in 10 quick jobs, 2–3 questions, 1 about your screen, an app task now and then">
-                <input type="range" min={10} max={150} step={5} value={perDay} onChange={(e) => setPerDay(Number(e.target.value))} aria-label="Requests a day" />
-                <span className="w-10 text-right tabular-nums">{perDay}</span>
-              </Row>
-              <div className="overflow-x-auto">
-                <table className="nova-table nova-use">
+              {brain === 'auto' && (
+                <table className="nova-table">
                   <tbody>
-                    {(['auto', 'haiku', 'sonnet', 'opus'] as NovaBrain[]).flatMap((m) =>
-                      (m === 'auto' ? (['medium'] as NovaEffort[]) : (['low', 'medium', 'high'] as NovaEffort[])).map((e) => {
-                        const month = dayCost(m, e, perDay) * 30
-                        const p = (month / planUsd) * 100
-                        const sel = m === brain && (m === 'auto' || e === effort)
-                        return (
-                          <tr key={m + e} className={sel ? 'sel' : ''}>
-                            <td>{m === 'auto' ? 'Auto' : `${m[0].toUpperCase()}${m.slice(1)} · ${e}`}</td>
-                            <td className="w-[45%]">
-                              <div className={`nova-bar ${p > 100 ? 'over' : ''}`}>
-                                <i
-                                  style={{
-                                    width: `${Math.min(100, Math.max(1, p))}%`
-                                  }}
-                                />
-                              </div>
-                            </td>
-                            <td className="text-right tabular-nums">
-                              {p < 1 ? '<1%' : `${Math.round(p)}%`} <span className="text-[11px] text-muted">≈ ${month < 1 ? month.toFixed(2) : month.toFixed(0)}</span>
-                            </td>
-                          </tr>
-                        )
-                      })
-                    )}
+                    {AUTO_TABLE.map(([what, pick]) => (
+                      <tr key={what}>
+                        <td>{what}</td>
+                        <td className="text-right text-ink">{pick}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
-              </div>
-              <p className="mt-2 text-xs text-muted">
-                Anthropic doesn’t publish exact plan limits, so the estimate uses Claude’s API prices against about $20 (Pro), $100 (Max 5×) or $200 (Max 20×) a month.
-              </p>
-            </section>
-          )}
-
-          {!phone && (
-            <section className="card rounded-2xl p-5">
-              <h2 className="flex items-center gap-2 font-semibold">
-                Claude extras <span className="nova-tag">Off unless you switch them on</span>
-              </h2>
-              <Row
-                title="Let Nova use my Claude connectors"
-                hint={`For “draft a document about…” only: ${name} may use the apps linked to your Claude account (like Claude Docs) and asks before every action. All other requests never see your connectors.`}
-              >
-                <input type="checkbox" checked={!!prefs?.novaConnectors} onChange={(e) => save({ novaConnectors: e.target.checked })} aria-label="Let Nova use my Claude connectors" />
-              </Row>
-              {prefs?.novaConnectors && (
-                <div className="pb-2 text-xs text-muted">
-                  {connectors === null ? (
-                    <button
-                      className="underline"
-                      onClick={() =>
-                        void api.claude
-                          .connectors()
-                          .then(setConnectors)
-                          .catch(() => setConnectors([]))
-                      }
-                    >
-                      Show which connectors my account has
-                    </button>
-                  ) : connectors.length ? (
-                    <>Your connectors: {connectors.join(', ')}</>
-                  ) : (
-                    <>No connectors found on your Claude account.</>
-                  )}
-                </div>
               )}
               <Row
-                title="Share usage statistics and crash reports with Anthropic"
-                hint="Lets Claude Code send Anthropic the usage statistics and crash reports it normally sends, to help improve it. Changes nothing about how Nova works."
+                title="Background agents"
+                hint="Auto: Sonnet when an agent makes something (a page, a document, slides), Haiku when it finds things out or tidies files, which uses much less of your plan."
               >
-                <input type="checkbox" checked={!!prefs?.novaShareStats} onChange={(e) => save({ novaShareStats: e.target.checked })} aria-label="Share usage statistics" />
+                <Seg<'auto' | 'haiku' | 'sonnet'>
+                  value={prefs?.novaAgents ?? 'auto'}
+                  options={[
+                    ['auto', 'Auto'],
+                    ['haiku', 'Haiku'],
+                    ['sonnet', 'Sonnet']
+                  ]}
+                  onChange={(v) => save({ novaAgents: v })}
+                />
+              </Row>
+              <Row title="Offline backup" hint="Use the model on this PC when Claude isn’t connected, there’s no internet, or Claude is paused (slower)">
+                <input type="checkbox" checked={prefs?.novaOffline ?? true} onChange={(e) => save({ novaOffline: e.target.checked })} aria-label="Offline backup" />
               </Row>
             </section>
-          )}
+
+            {!phone && (
+              <section className="card rounded-2xl p-5">
+                <h2 className="flex items-center gap-2 font-semibold">
+                  Usage <span className="nova-tag">Your Claude plan</span>
+                </h2>
+                <p className="mb-3 text-[13px] text-muted">Your plan’s real usage, as Claude reports it (this includes your own chats with Claude, not just {name}).</p>
+                {claude?.signedIn ? (
+                  <div className="flex flex-col gap-3">
+                    {(
+                      [
+                        ['This 5-hour window', claude.usage?.fiveHour, claude.usage?.fiveHourResets],
+                        ['This week', claude.usage?.sevenDay, claude.usage?.sevenDayResets]
+                      ] as const
+                    ).map(([label, v, r]) => (
+                      <div key={label}>
+                        <div className="mb-1 flex justify-between text-[13px]">
+                          <span>{label}</span>
+                          <span className="tabular-nums text-muted">
+                            {pct(v)} {resetIn(r) && `· ${resetIn(r)}`}
+                          </span>
+                        </div>
+                        <div className="nova-meter">
+                          <i style={{ width: `${Math.min(100, v ?? 0)}%` }} />
+                          {label === 'This week' && <em style={{ left: `${capNow}%` }} />}
+                        </div>
+                      </div>
+                    ))}
+                    <div className="text-xs text-muted">
+                      {name} this month: about ${(claude.monthCostUsd ?? 0).toFixed(2)} at Claude’s API prices (a guide to how heavy it is; your plan covers it).{' '}
+                      <button className="underline" onClick={() => void api.claude.refreshUsage()}>
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted">Connect Claude to see your plan’s usage here.</p>
+                )}
+                <Row title="Never use paid extra usage" hint={`Your Claude account has extra usage switched on. With this on, ${name} stays inside your plan.`}>
+                  <input type="checkbox" checked={prefs?.novaNoExtra ?? true} onChange={(e) => save({ novaNoExtra: e.target.checked })} aria-label="Never use paid extra usage" />
+                </Row>
+                <Row title={`Pause ${name} at`} hint="When your weekly Claude usage reaches this, so you keep plenty for chatting with Claude">
+                  <input
+                    type="range"
+                    min={10}
+                    max={100}
+                    step={5}
+                    value={capNow}
+                    onChange={(e) => setCap(Number(e.target.value))}
+                    onPointerUp={() => save({ novaCap: capNow })}
+                    onKeyUp={() => save({ novaCap: capNow })}
+                    aria-label="Weekly cap"
+                  />
+                  <span className="w-10 text-right tabular-nums">{capNow}%</span>
+                </Row>
+                {claude?.signedIn && <RoomLeft name={name} usage={claude.usage} cap={capNow} noExtra={prefs?.novaNoExtra ?? true} />}
+
+                <h3 className="mt-4 text-[13.5px] font-medium">Estimate by brain setting</h3>
+                <Row title="Your plan" hint="Pick yours to see the percentages">
+                  <Seg value={planKey} options={PLANS.map((p) => [p.key, p.label] as [string, string])} onChange={setPlan} />
+                </Row>
+                <Row title="Requests a day" hint="About 6 in 10 quick jobs, 2–3 questions, 1 about your screen, an app task now and then">
+                  <input type="range" min={10} max={150} step={5} value={perDay} onChange={(e) => setPerDay(Number(e.target.value))} aria-label="Requests a day" />
+                  <span className="w-10 text-right tabular-nums">{perDay}</span>
+                </Row>
+                <div className="overflow-x-auto">
+                  <table className="nova-table nova-use">
+                    <tbody>
+                      {(['auto', 'haiku', 'sonnet', 'opus'] as NovaBrain[]).flatMap((m) =>
+                        (m === 'auto' ? (['medium'] as NovaEffort[]) : (['low', 'medium', 'high'] as NovaEffort[])).map((e) => {
+                          const month = dayCost(m, e, perDay) * 30
+                          const p = (month / planUsd) * 100
+                          const sel = m === brain && (m === 'auto' || e === effort)
+                          return (
+                            <tr key={m + e} className={sel ? 'sel' : ''}>
+                              <td>{m === 'auto' ? 'Auto' : `${m[0].toUpperCase()}${m.slice(1)} · ${e}`}</td>
+                              <td className="w-[45%]">
+                                <div className={`nova-bar ${p > 100 ? 'over' : ''}`}>
+                                  <i
+                                    style={{
+                                      width: `${Math.min(100, Math.max(1, p))}%`
+                                    }}
+                                  />
+                                </div>
+                              </td>
+                              <td className="text-right tabular-nums">
+                                {p < 1 ? '<1%' : `${Math.round(p)}%`} <span className="text-[11px] text-muted">≈ ${month < 1 ? month.toFixed(2) : month.toFixed(0)}</span>
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-2 text-xs text-muted">
+                  Anthropic doesn’t publish exact plan limits, so the estimate uses Claude’s API prices against about $20 (Pro), $100 (Max 5×) or $200 (Max 20×) a month.
+                </p>
+              </section>
+            )}
+
+            {!phone && (
+              <section className="card rounded-2xl p-5">
+                <h2 className="flex items-center gap-2 font-semibold">
+                  Claude extras <span className="nova-tag">Off unless you switch them on</span>
+                </h2>
+                <Row
+                  title="Let Nova use my Claude connectors"
+                  hint={`For “draft a document about…” only: ${name} may use the apps linked to your Claude account (like Claude Docs) and asks before every action. All other requests never see your connectors.`}
+                >
+                  <input type="checkbox" checked={!!prefs?.novaConnectors} onChange={(e) => save({ novaConnectors: e.target.checked })} aria-label="Let Nova use my Claude connectors" />
+                </Row>
+                {prefs?.novaConnectors && (
+                  <div className="pb-2 text-xs text-muted">
+                    {connectors === null ? (
+                      <button
+                        className="underline"
+                        onClick={() =>
+                          void api.claude
+                            .connectors()
+                            .then(setConnectors)
+                            .catch(() => setConnectors([]))
+                        }
+                      >
+                        Show which connectors my account has
+                      </button>
+                    ) : connectors.length ? (
+                      <>Your connectors: {connectors.join(', ')}</>
+                    ) : (
+                      <>No connectors found on your Claude account.</>
+                    )}
+                  </div>
+                )}
+                <Row
+                  title="Share usage statistics and crash reports with Anthropic"
+                  hint="Lets Claude Code send Anthropic the usage statistics and crash reports it normally sends, to help improve it. Changes nothing about how Nova works."
+                >
+                  <input type="checkbox" checked={!!prefs?.novaShareStats} onChange={(e) => save({ novaShareStats: e.target.checked })} aria-label="Share usage statistics" />
+                </Row>
+              </section>
+            )}
+          </div>
+          <aside className="flex min-w-0 flex-col gap-4">
+            {!phone && <TutorCard name={name} prefs={prefs} save={save} />}
+            <ShortcutsCard capture={prefs?.quickCaptureShortcut ?? ''} />
+            <VoiceCard />
+          </aside>
         </div>
-
-        <aside className="flex min-w-0 flex-col gap-4">
-          <section className="card rounded-2xl p-5">
-            <h2 className="font-semibold">Recently</h2>
-            <ul className="mt-2 flex flex-col">
-              {(log ?? []).map((r) => (
-                <li key={r.id} className="border-t border-line py-2 text-[13px] first:border-t-0">
-                  <div className="text-muted">“{r.said}”</div>
-                  <div>{r.reply}</div>
-                </li>
-              ))}
-              {log && !log.length && <li className="text-sm text-muted">Nothing yet. Ask {name} something.</li>}
-            </ul>
-            <button className="mt-2 text-sm underline" onClick={() => navigate({ name: 'bauer' })}>
-              Full log, typing and Undo
-            </button>
-          </section>
-          {!phone && <TutorCard name={name} prefs={prefs} save={save} />}
-          {!phone && <PromisesCard name={name} />}
-          {!phone && <MemoryCard name={name} />}
-          <section className="card rounded-2xl p-5">
-            <h2 className="font-semibold">Try saying</h2>
-            <ul className="nova-try mt-2 flex flex-col gap-1.5 text-[13px] text-muted">
-              <li>“Add revise thermodynamics to my tasks for Thursday”</li>
-              <li>“Move my gym session to six”</li>
-              <li>“Explain integration by parts”</li>
-              <li>“Where’s the export button?”</li>
-              <li>“Walk me through making a chart in Excel”</li>
-              <li>“Click save for me” (with Hands on)</li>
-              <li>“Draft a revision plan for chemistry in Claude Docs” (with connectors on)</li>
-              <li>“I’ll email Sam the notes tomorrow morning” (a promise: it reminds you)</li>
-              <li>“Remember I’m doing chemistry A-level” · “Forget that”</li>
-              <li>Tap Ctrl + Shift to type to {name} beside your cursor</li>
-              <li>“Teach me week 3 PNS from my notes” · “Quiz me on my pharm week 2 file”</li>
-              <li>“Pull up a YouTube video on how beta blockers work” · “Play some study music”</li>
-              <li>Hold Ctrl + Alt, circle something on screen and ask “what’s this?” (or Ctrl + Alt + B, then circle)</li>
-              <li>Highlight text anywhere and say “explain this”</li>
-              <li>“Focus on chemistry for 45 minutes” · “What’s my day?”</li>
-              <li>“Write this in my essay: …” · “Summarise what I just copied”</li>
-              <li>“Notes on the left, lecture on the right”</li>
-              <li>“Make a revision sheet from all my week 3 notes” (runs in the background)</li>
-              <li>“Make notes and flashcards from this lecture video”</li>
-            </ul>
-          </section>
-        </aside>
-      </div>
-
-      <div className="mt-4 max-w-[760px]">
-        <VoiceCard />
       </div>
     </div>
   )

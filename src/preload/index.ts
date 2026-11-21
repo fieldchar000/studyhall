@@ -305,6 +305,18 @@ const api: Api = {
     layout: (m) => ipcRenderer.send('lesson:layout', m),
     cmd: (m) => ipcRenderer.send('lesson:cmd', m)
   },
+  lessons: {
+    list: () => ipcRenderer.invoke('lessons:list'),
+    get: (id) => ipcRenderer.invoke('lessons:get', id),
+    map: () => ipcRenderer.invoke('lessons:map'),
+    suggest: () => ipcRenderer.invoke('lessons:suggest'),
+    markSaq: (id, i, answer) => ipcRenderer.invoke('lessons:markSaq', id, i, answer),
+    saveTest: (id, taken) => ipcRenderer.invoke('lessons:saveTest', id, taken),
+    replay: (id) => ipcRenderer.invoke('lessons:replay', id),
+    remove: (id) => ipcRenderer.invoke('lessons:remove', id),
+    makePack: (id) => ipcRenderer.invoke('lessons:makePack', id),
+    teach: (path, carryOn) => ipcRenderer.invoke('lessons:teach', path, carryOn)
+  },
   nova: {
     turn: (said, studyhall) => ipcRenderer.invoke('nova:turn', said, studyhall),
     offlineExplain: (said) => ipcRenderer.invoke('nova:offlineExplain', said),

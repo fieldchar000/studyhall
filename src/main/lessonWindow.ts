@@ -18,9 +18,32 @@ let paused = false
 // The check question on the lesson window's answer card (tap an option, or say the answer), and how it went.
 let check: { question: string; kind: 'choice' | 'say'; options: string[]; picked: number | null; right: number | null } | null = null
 const seen = new Set<number>()
+// Tutor mode teaches in this window; a Replay plays a lesson back in it (its buttons go to the replay then).
+let mode: 'tutor' | 'replay' = 'tutor'
+let replay: { title?: string; chapters?: string[]; chapter?: number; done?: boolean; you?: string | null; paused?: boolean } | null = null
 // Where the slides are on the screen (DIP), as the window last laid them out; null while it lays them out again.
 let layout: { page: number; slide: Rect | null; side: Rect | null; column: Rect | null; bars: Rect[]; win: Rect } | null = null
 const layoutWaiters: ((ok: boolean) => void)[] = []
+
+/** What the buttons do during a Replay (lessonReplay.ts). */
+export const replayHooks = {
+  next: (): void => {},
+  back: (): void => {},
+  pause: (_on: boolean): void => {},
+  end: (): void => {},
+  chapter: (_k: number): void => {}
+}
+export function setLessonMode(m: 'tutor' | 'replay'): void {
+  mode = m
+  replay = m === 'replay' ? {} : null
+  paused = false
+}
+/** The replay's chapters, where it is, a line they said, done. */
+export function setReplayState(p: NonNullable<typeof replay>): void {
+  if (mode !== 'replay') return
+  replay = { ...(replay ?? {}), ...p }
+  send()
+}
 
 /** What the lesson's buttons do (novaBrain and tutor.ts fill these in). */
 export const lessonHooks = {
@@ -68,6 +91,18 @@ export function configureLessonWindow(o: { url: (hash: string) => string; webPre
   ipcMain.on('lesson:cmd', (e, m) => {
     if (!win || e.sender !== win.webContents || !m || typeof m !== 'object') return
     const d = String(m.do ?? '')
+    if (mode === 'replay') {
+      if (d === 'next') replayHooks.next()
+      else if (d === 'back') replayHooks.back()
+      else if (d === 'pause') {
+        paused = !paused
+        replay = { ...(replay ?? {}), paused }
+        send()
+        replayHooks.pause(paused)
+      } else if (d === 'end') replayHooks.end()
+      else if (d === 'chapter' && Number.isInteger(Number(m.n))) replayHooks.chapter(Number(m.n))
+      return
+    }
     if (d === 'next') lessonHooks.next()
     else if (d === 'back') lessonHooks.back()
     else if (d === 'pause') {
@@ -87,7 +122,7 @@ export function configureLessonWindow(o: { url: (hash: string) => string; webPre
 }
 
 const state = (): Record<string, unknown> | null =>
-  lesson ? { id: lesson.id, title: lesson.title, kind: lesson.kind, count: lesson.count, page, beside, seen: [...seen].sort((a, b) => a - b), paused, check } : null
+  lesson ? { id: lesson.id, title: lesson.title, kind: lesson.kind, count: lesson.count, page, beside, seen: [...seen].sort((a, b) => a - b), paused, check, replay } : null
 function send(): void {
   if (win && !win.isDestroyed()) win.webContents.send('lesson:state', state())
 }
@@ -145,7 +180,8 @@ export function openLessonWindow(l: Lesson, start = 1): void {
     win = null
     layout = null
     for (const w of layoutWaiters.splice(0)) w(false)
-    lessonHooks.end()
+    if (mode === 'replay') replayHooks.end()
+    else lessonHooks.end()
   })
 }
 

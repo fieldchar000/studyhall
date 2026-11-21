@@ -953,8 +953,47 @@ export type NovaName = 'Nova' | 'Atlas' | 'Onyx' | 'Bauer'
 export type NovaBrain = 'auto' | 'haiku' | 'sonnet' | 'opus'
 export type NovaEffort = 'low' | 'medium' | 'high'
 /** What a request is for, so Auto can pick the right model. */
+/** A lesson taken in tutor mode (Nova's Lessons tab). */
+export type LessonSummary = {
+  id: string
+  title: string
+  module: string | null
+  started: number
+  ended: number | null
+  kind: 'slides' | 'pdf'
+  source: string
+  stops: number
+  taught: number
+  checks: { right: number; total: number }
+  shaky: number
+  pack: { made: boolean; noteId?: string; mindmapId?: string; deck?: string; score?: number; outOf?: number; testAt?: number } | null
+  replay: boolean
+}
+export type LessonTestPack = {
+  made: number
+  module: { id: string; name: string } | null
+  notes: { topic: string; title: string; idea: string; analogy: string; realUse: string; why: string; points: string[] }[]
+  test: { mcq: { q: string; options: string[]; answer: number; why: string; topic: string }[]; saq: { q: string; points: string[]; model: string; topic: string }[] }
+  mindmap: { root: string; topics: { name: string; ideas: string[] }[] }
+  noteId?: string
+  mindmapId?: string
+  deck?: string
+  taken?: { at: number; mcq: (number | null)[]; saq: { answer: string; hit: boolean[]; feedback: string }[]; score: number; outOf: number }
+}
+export type LessonDetail = Omit<LessonSummary, 'pack'> & {
+  stopsList: { n: number; topic: string; idea: string; slides: number[] }[]
+  checksList: { question: string; kind: 'choice' | 'say'; options?: string[]; answer: string; given?: string; correct?: boolean; missed?: string; topic: string }[]
+  shakyList: { topic: string; idea: string; fix: string; fixed?: boolean }[]
+  transcript: { who: 'nova' | 'you'; text: string; at: number }[]
+  pack: LessonTestPack | null
+}
+export type LessonMapData = {
+  modules: { name: string; topics: { topic: string; status: 'solid' | 'shaky' | 'taught' | 'new'; lessons: { id: string; title: string }[]; noteId?: string; mindmapId?: string; deck?: string }[] }[]
+  due: { tests: { id: string; title: string }[]; shaky: { id: string; title: string; topic: string; idea: string }[] }
+}
+
 /** Tutor mode's lesson window (main/lessonWindow.ts). */
-export type LessonWindowState = { id: string; title: string; kind: 'slides' | 'pdf'; count: number; page: number; beside: number | null; seen: number[]; paused: boolean; check: { question: string; kind: 'choice' | 'say'; options: string[]; picked: number | null; right: number | null } | null }
+export type LessonWindowState = { id: string; title: string; kind: 'slides' | 'pdf'; count: number; page: number; beside: number | null; seen: number[]; paused: boolean; check: { question: string; kind: 'choice' | 'say'; options: string[]; picked: number | null; right: number | null } | null; replay?: { title?: string; chapters?: string[]; chapter?: number; done?: boolean; you?: string | null; paused?: boolean } | null }
 
 export type AiPurpose = 'act' | 'chat' | 'explain' | 'look'
 
@@ -1265,7 +1304,20 @@ export interface Api {
     /** Where the slides are drawn in the lesson window (CSS px in the window): for Nova's rings and cards. */
     layout(m: { page: number; slide: number[] | null; side: number[] | null; column: number[] | null; bars?: number[][]; check?: number[] | null }): void
     /** The lesson window's buttons. */
-    cmd(m: { do: 'next' | 'back' | 'pause' | 'end' | 'goto' | 'answer'; n?: number }): void
+    cmd(m: { do: 'next' | 'back' | 'pause' | 'end' | 'goto' | 'answer' | 'chapter'; n?: number }): void
+  }
+  /** Nova's Lessons and Map tabs (main/lessonsIpc.ts). */
+  lessons: {
+    list(): Promise<LessonSummary[]>
+    get(id: string): Promise<LessonDetail | null>
+    map(): Promise<LessonMapData>
+    suggest(): Promise<{ path: string; name: string; at: number; taught: boolean }[]>
+    markSaq(id: string, i: number, answer: string): Promise<{ hit: boolean[]; feedback: string } | null>
+    saveTest(id: string, taken: { mcq: (number | null)[]; saq: { answer: string; hit: boolean[]; feedback: string }[] }): Promise<{ score: number; outOf: number } | null>
+    replay(id: string): Promise<string>
+    remove(id: string): Promise<void>
+    makePack(id: string): Promise<boolean>
+    teach(path: string, carryOn?: string): Promise<string>
   }
   nova: {
     /** One request. Speech arrives meanwhile through onSpeak / onBeat; tools that live in this window through onTool. */
