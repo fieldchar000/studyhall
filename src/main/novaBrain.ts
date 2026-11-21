@@ -22,7 +22,7 @@ import { getPrefs } from './prefs'
 import { APP_NAMES, openApp, orbEmote, orbPanel, setInkPause, setSubject, showCards, showMarks, orbAgent } from './bauer'
 // The pause after each step of a drawing while teaching (seconds): the voice waits this long, and so does the drawing.
 const STEP_PAUSE = 0.7
-import { goToPage, lastLesson, lessonQuizText, lessonText, readLesson, warmPictures } from './lessonReader'
+import { goToPage, lastLesson, lessonQuizText, lessonText, pageLog, readLesson, warmPictures } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
 import { figureText } from './figures'
 import { splitForLesson } from './windowSplit'
@@ -36,7 +36,7 @@ import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { claudeChat, draftWithConnectors } from './claude'
 import { voiceConfirm, voiceHush, voiceSay } from './voice'
-import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot, pageTurnedByNova, boardOnScreen, slideHasRoom } from './roamiesTools'
+import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot, pageTurnedByNova, boardOnScreen, slideHasRoom, screenLook, sameLook } from './roamiesTools'
 import { memoryOnEnd, noteExchange } from './novaMemory'
 import { get, getProfileId } from './db'
 import { briefText, startFocus, stopFocus } from './buddy'
@@ -768,8 +768,30 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       'Turn the deck or PDF they have open to a slide or page (page), or scroll a web page to some words on it (find). Then take_screenshot and point at what you mean on it. Only when showing them something there helps (a later slide that explains what they asked about).',
       { page: z.number().int().min(1).optional(), find: z.string().max(80).optional().describe('words on the web page to scroll to') },
       async ({ page, find }) => {
+        if (find || !page) {
+          pageTurnedByNova()
+          return text(await goToPage({ page: page ?? undefined, find: find ? String(find) : undefined }))
+        }
+        // Already there (Nova turned to it and the screen still looks the same): no turning again (every stop on the same
+        // page used to type into their address bar).
+        const l = lastLesson()
+        const before = await screenLook()
+        if (l && pageAt && pageAt.id === l.id && pageAt.n === page && before && sameLook(before, pageAt.look)) {
+          pageLog(`already on page ${page}: not turned`)
+          return text(`Already on page ${page}. Take a screenshot of it before pointing at anything.`)
+        }
         pageTurnedByNova()
-        return text(await goToPage({ page: page ?? undefined, find: find ? String(find) : undefined }))
+        const r = await goToPage({ page })
+        if (!/^Now on /.test(r)) return text(r)
+        // Turned: did the screen really change? If not, it didn't go there (or it was already showing that page).
+        const after = await screenLook()
+        if (before && after && sameLook(before, after)) {
+          pageLog(`page ${page}: the screen didn't change after turning`)
+          pageAt = null
+          return text(`Their screen didn't change after turning to page ${page}: either it was already on it, or it didn't turn. Take a screenshot and compare it with page ${page}'s text from read_lesson. If it's page ${page}, carry on. If not, ask them in one short line to turn to page ${page}, and stop this stop there (draw nothing on the wrong page); carry on when they say they're there.`)
+        }
+        pageAt = l && after ? { id: l.id, n: page, look: after } : null
+        return text(r)
       }
     )
   ]
@@ -1190,6 +1212,8 @@ function chatDepth(said: string): { deep: boolean; effort: NovaEffort } {
 let teaching = false
 // Tutor mode: each drawing step's spoken line gets a number, unique while the app runs (the drawing waits for it).
 let lineSeq = 0
+// The page Nova last turned their PDF or deck to, and how the screen looked then (go_to_page doesn't turn to it again).
+let pageAt: { id: string; n: number; look: number[] } | null = null
 // Tutor mode: this lesson's deck has been read (its first request gets a line straight away while it's read).
 let tutorRead = false
 const pick = <T>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)]

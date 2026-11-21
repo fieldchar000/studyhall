@@ -500,6 +500,13 @@ export async function lessonFetch(input: string | URL | Request, init?: RequestI
 }
 
 // ---------- Turning pages ----------
+/** What each page turn did (nova-pages.log beside the timing log), so a turn that didn't work can be looked into. */
+const pageLines: string[] = []
+export function pageLog(line: string): void {
+  pageLines.push(`${new Date().toISOString().slice(0, 19).replace('T', ' ')} ${line}`)
+  if (pageLines.length > 200) pageLines.splice(0, pageLines.length - 200)
+  void writeFile(join(app.getPath('userData'), 'nova-pages.log'), pageLines.join('\n') + '\n').catch(() => {})
+}
 /** Go to a page or slide in the app it's open in, or find a bit of a web page (Ctrl+F). */
 export async function goToPage(o: { page?: number; find?: string; lessonId?: string }): Promise<string> {
   if (getPrefs().novaPages === false) return 'Turning pages is switched off ("Turn pages and scroll" on Nova’s page). Tell them which page to go to instead.'
@@ -517,10 +524,25 @@ export async function goToPage(o: { page?: number; find?: string; lessonId?: str
     const r = await ps(PPT_GOTO, { SH_TITLE: l.window, SH_PATH: l.source, SH_N: String(n) })
     if (!r.endsWith('ok')) return 'PowerPoint wouldn’t go to that slide.'
   } else if (l.window) {
-    const r = await ps(PDF_GOTO, { SH_TITLE: l.window, SH_NAME: l.title.replace(/\.pdf$/i, '').slice(0, 80), SH_N: String(n) }, 20_000)
-    const ask = `Ask them to turn to page ${n} themselves (one short line), then take_screenshot once they have.`
-    if (r.endsWith('nofocus')) return `Page ${n} was typed into the PDF's page box, but it may not have gone there. Take a screenshot to check; if it's not on page ${n}, ${ask.charAt(0).toLowerCase()}${ask.slice(1)}`
-    if (!r.endsWith('ok')) return `Couldn't turn the page in their PDF window (${r.endsWith('nowin') ? 'the window wasn’t found' : 'its page box wasn’t found'}). ${ask}`
+    // Edge hides its PDF viewer's page box from other programs: there, the page's address with #page=N, as 0.69 did
+    // (it worked). Opera and Chrome: their page box first (the address bar stays as it is), the address if that fails.
+    const edge = /edge/i.test(`${l.app} ${l.window}`)
+    let how = ''
+    if (!edge) {
+      const r = await ps(PDF_GOTO, { SH_TITLE: l.window, SH_NAME: l.title.replace(/\.pdf$/i, '').slice(0, 80), SH_N: String(n) }, 20_000)
+      if (r.endsWith('ok')) how = 'page box'
+      else pageLog(`page box: ${r.split('\n').pop()}`)
+    }
+    if (!how && l.url) {
+      const base = l.url.replace(/#.*$/, '')
+      const r = await ps(KEYS, { SH_TITLE: l.window, SH_KEYS: ['^l', 'sleep:200', literal(`${base}#page=${n}`), '{ENTER}'].join('\u0001') })
+      if (r.endsWith('ok')) {
+        how = 'address'
+        l.url = `${base}#page=${n}`
+      } else pageLog(`address: ${r.split('\n').pop() || 'no answer'}`)
+    }
+    if (!how) return `Couldn't turn their PDF to page ${n}. Ask them in one short line to turn to page ${n}, and stop this stop there (draw nothing on the page they're on now); carry on when they say they're there.`
+    pageLog(`turned to page ${n} by the ${how}`)
   } else return 'That PDF isn’t open in a window I can turn; show its page on a card instead.'
   l.current = n
   await new Promise((res) => setTimeout(res, 900)) // (the page draws)

@@ -770,6 +770,27 @@ setInterval(async () => {
 const mouseLike = (s: string): void => {
   if (OFFSCREEN) console.info('marks>', s)
 }
+/** The screen as a coarse grid of greys (160 by 90 points; Nova's own layer left out), for telling whether a page really
+ *  turned: compared before and after with sameLook. */
+export async function screenLook(): Promise<number[] | null> {
+  const layer = inkLayer()
+  if (!layer) return null
+  const t = await hiddenFromCaptures(() => screenThumb(layer)).catch(() => null)
+  if (!t) return null
+  const { width: iw, height: ih } = t.img.getSize()
+  const px = t.img.toBitmap() // BGRA
+  const out: number[] = []
+  for (let y = 0; y < 90; y++)
+    for (let x = 0; x < 160; x++) {
+      const i = (Math.floor(((y + 0.5) * ih) / 90) * iw + Math.floor(((x + 0.5) * iw) / 160)) * 4
+      out.push(px[i] * 0.11 + px[i + 1] * 0.59 + px[i + 2] * 0.3)
+    }
+  return out
+}
+/** Two screen looks are the same screen: fewer than 1.2 % of points clearly different (a changed address or the pointer
+ *  moving stays under that; another page doesn't). */
+export const sameLook = (a: number[], b: number[]): boolean => a.length === b.length && a.filter((v, i) => Math.abs(v - b[i]) > 40).length < a.length * 0.012
+
 /** Nova turned the page itself (go_to_page): what it marked on the old one goes. */
 export function pageTurnedByNova(): void {
   rt?.ink?.pageTurned?.('Nova turned the page')
