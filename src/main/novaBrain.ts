@@ -22,6 +22,8 @@ import { getPrefs } from './prefs'
 import { APP_NAMES, openApp, orbEmote, orbPanel, setInkPause, setSubject, showCards, showMarks, orbAgent } from './bauer'
 // The pause after each step of a drawing while teaching (seconds): the voice waits this long, and so does the drawing.
 const STEP_PAUSE = 0.7
+import { openLessonWindow, showLessonSlide, lessonHooks, lessonShown, lessonPage } from './lessonWindow'
+import { lessonPlan, planText } from './lessonPlan'
 import { goToPage, lastLesson, lessonQuizText, lessonText, pageLog, readLesson, warmPictures } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
 import { figureText } from './figures'
@@ -36,7 +38,7 @@ import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { claudeChat, draftWithConnectors } from './claude'
 import { voiceConfirm, voiceHush, voiceSay } from './voice'
-import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot, pageTurnedByNova, boardOnScreen, slideHasRoom, screenLook, sameLook } from './roamiesTools'
+import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot, pageTurnedByNova, boardOnScreen, slideHasRoom, screenLook, sameLook, clearLessonInk } from './roamiesTools'
 import { memoryOnEnd, noteExchange } from './novaMemory'
 import { get, getProfileId } from './db'
 import { briefText, startFocus, stopFocus } from './buddy'
@@ -718,6 +720,27 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   turnHooks.ask = (said) => {
     if (!wc.isDestroyed()) wc.send('nova:ask', said)
   }
+  // The lesson window's buttons. Next and Back cut this stop short (as the Next button did); Pause stops the voice and
+  // Resume carries on; End ends tutor mode; a slide picked from the strip is just shown (Nova hears about it).
+  lessonHooks.next = () => turnHooks.next()
+  lessonHooks.back = () => {
+    const tr = turnRef.current
+    if (tr) Object.assign(tr, { quiet: true, skipped: true, stopNudged: true })
+    voiceHush()
+    turnHooks.ask('(Tutor mode: they pressed Back. Go back to the stop before this one and go over it again, a little differently: briefly.)')
+  }
+  lessonHooks.pause = (on) => {
+    if (on) {
+      const tr = turnRef.current
+      if (tr) Object.assign(tr, { quiet: true, skipped: true, stopNudged: true })
+      voiceHush()
+    } else turnHooks.ask('(Tutor mode: they pressed Resume. Carry on the lesson from where you were: one short line to pick up the thread, then go on.)')
+  }
+  lessonHooks.end = () => {
+    if (tutorOn()) setTutor(false)
+  }
+  lessonHooks.went = (n) => turnHooks.ask(`(Tutor mode: they clicked back to slide or page ${n} in the lesson window, so it's showing now. Ask in one short line what they'd like to look at again there, and wait.)`)
+  lessonHooks.moved = () => clearLessonInk()
   turnHooks.lineDrawn = (id) => {
     if (!wc.isDestroyed()) wc.send('nova:lineDrawn', id)
   }
@@ -750,8 +773,27 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         if (typeof l === 'string') return text(l)
         if (tutorOn()) tutorTitle(l.title)
         if (tutorOn()) tutorRead = true
-        // Tutor mode, split screen: their slides window moves to the left for the lesson (back when it ends).
-        const split = tutorOn() && getPrefs().novaTutorLayout === 'split' && l.window ? await splitForLesson(l.window) : ''
+        // Tutor mode: the deck opens in Studyhall's lesson window (nothing in their browser or PowerPoint is touched), and
+        // Sonnet maps the lesson once (lessonPlan.ts) while Nova says it's getting ready.
+        if (tutorOn()) {
+          // Already open in the lesson window (read again mid-lesson): it stays on the slide it's on.
+          if (!again && lessonShown()?.id === l.id && readHere.has(l.id))
+            return text(`You already have "${l.title}" and its lesson plan, above. The lesson window is open on ${l.kind === 'slides' ? 'slide' : 'page'} ${lessonPage()}: carry on teaching from where you are.`)
+          openLessonWindow(l, 1)
+          orbAgent({ type: 'lesson', on: true })
+          const ready = lessonPlan(l)
+          const quick = await Promise.race([ready.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 2500))])
+          if (!quick && !wc.isDestroyed()) wc.send('nova:speak', { text: pick(["I've got your slides up. Give me a moment to plan the lesson. ", "Got them. Let me map out how to teach this, one moment. "]) })
+          const plan = await ready
+          readHere.set(l.id, Date.now())
+          const word = l.kind === 'slides' ? 'slide' : 'page'
+          return text(`${plan ? `${planText(plan, word)}
+
+` : ''}${lessonText(l, 1, l.count, 16_000)}
+
+(The lesson window is open on ${word} 1. Now: say the plan's first line${plan?.ask_order ? ', then ask once: slide by slide, or topic by topic, and wait' : ''}; then teach the first stop: show_slide its ${word}, then one draw call.)`)
+        }
+        const split = ''
         // Already read in this conversation (the last hour): its text and lesson map are above; don't pay for them twice.
         const seen = readHere.get(l.id)
         if (!again && !from && !to && !topic && seen && Date.now() - seen < 3_600_000)
@@ -825,6 +867,18 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     )
   ]
   // Tutor mode on and off (tutor.ts).
+  // Tutor mode's lesson window: the slide to teach (and an earlier one beside it, to link back to).
+  const slideTools = [
+    tool(
+      'show_slide',
+      "Tutor mode: show a slide or page in the lesson window (it turns at once). beside: an earlier one they have ALREADY seen, shown next to it for \"remember slide 4\" (never one they haven't reached). Then draw: rings and underlines go on the words of what's showing (at: {text: words exactly as on the slide}); cards go in the column beside it.",
+      { page: z.number().int().min(1), beside: z.number().int().min(1).optional() },
+      async ({ page, beside }) => {
+        clearLessonInk()
+        return text(await showLessonSlide(page, beside ?? null))
+      }
+    )
+  ]
   const tutorTools = [
     tool(
       'start_tutor',
@@ -850,8 +904,8 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   ]
   // (The lesson stage teaches from the whole document it read and shows the slides on the board: no screenshots, page
   // turning or window reading, which only led to extra steps. Split screen rings their own window, so it keeps them.)
-  const TUTOR_KEEP = new Set(['draw', 'see_photo', 'find_figure', 'find_illustrations', 'show_board', 'read_lesson', 'go_to_page', 'take_screenshot', 'read_window', 'tutor_done', 'school', 'school_file'])
-  const all = [...tools, ...lessonTools, ...figureTools, ...schoolTools, ...tutorTools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
+  const TUTOR_KEEP = new Set(['draw', 'see_photo', 'find_figure', 'find_illustrations', 'read_lesson', 'show_slide', 'tutor_done', 'school', 'school_file'])
+  const all = [...tools, ...lessonTools, ...slideTools, ...figureTools, ...schoolTools, ...tutorTools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
   // Every tool shows what it's doing beside the globe while it runs (Roamies' activity lines).
   for (const t of all) {
     const run = t.handler
@@ -861,16 +915,6 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       if (t.name === 'draw' && turnRef.current?.howTo) needsClick(args)
       // Tutor mode with the whole document read: looking at the screen only adds slow, costly steps (split screen and
       // a PDF that couldn't be got are when it's needed).
-      const layout = getPrefs().novaTutorLayout
-      if (tutorOn() && tutorRead && layout === 'stage' && ['read_window', 'take_screenshot', 'go_to_page'].includes(t.name)) return text('Not needed: you already have the whole document, every page, from read_lesson. Teach from it and show slides on the study board.')
-      if (tutorOn() && tutorRead && t.name === 'read_window') return text('Not needed: you already have the whole document, every page, from read_lesson. Teach from it.')
-      // On their own slides, a stop's drawing comes after a look at the slide (once per stop): without it the rings had
-      // nowhere to go and the cards landed on the slide's text.
-      const trNow = turnRef.current
-      if (tutorOn() && layout !== 'stage' && t.name === 'draw' && trNow && !trNow.tools.includes('take_screenshot') && !trNow.lookAsked) {
-        trNow.lookAsked = true
-        return text('Not drawn yet: take_screenshot of their slide first, so your rings land on its words and the cards go in its empty space. Then draw (the same drawing).')
-      }
       // A web address that didn't come up in any search or page: a guess. Search first instead.
       const urls = t.name === 'open' ? [String(args.target ?? '')] : t.name === 'studyhall_actions' ? ((args.actions as { type?: string; url?: string }[] | undefined) ?? []).filter((q) => q?.type === 'open_website').map((q) => String(q.url ?? '')) : []
       const guessed = urls.map(guessedSite).find(Boolean)
@@ -914,13 +958,6 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         said = out?.content?.find((c) => c.type === 'text')?.text ?? ''
         const missing = t.name === 'draw' && !failed ? stillMissing(tr, args) : ''
         if (missing && out?.content) out.content.push({ type: 'text', text: missing })
-        // Tutor mode on their own slides: a slide that fills the screen leaves no room for the cards, so their window
-        // moves to the left (once a lesson; back when it ends) and Nova looks again.
-        if (t.name === 'take_screenshot' && !failed && tutorOn() && (getPrefs().novaTutorLayout ?? 'live') === 'live' && slideHasRoom() === false) {
-          const w = lastLesson()?.window
-          const moved = w ? await splitForLesson(w) : ''
-          if (moved && out?.content) out.content.push({ type: 'text', text: "\n\nTheir slide filled the screen with no room for cards, so Studyhall has just moved their slides window to the left of the screen (it goes back after the lesson). Say so in one short line, then take_screenshot again before you draw." })
-        }
         return out as never
       } finally {
         timed()
@@ -1004,10 +1041,12 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
                       const input = hookInput as { stop_hook_active?: boolean; last_assistant_message?: string }
                       const tr = turnRef.current
                       if (!tr || input.stop_hook_active || tr.stopNudged || tr.tools.includes('draw')) return {}
-                      const taught = ['show_board', 'read_lesson', 'go_to_page', 'take_screenshot'].some((n) => tr.tools.includes(n)) || String(input.last_assistant_message ?? '').length > 300
+                      const taught = ['show_slide', 'read_lesson'].some((n) => tr.tools.includes(n)) || String(input.last_assistant_message ?? '').length > 300
                       if (!taught) return {}
+                      // (it asked them something and is waiting for the answer: what they know, slide or topic order, a check)
+                      if (/\?["'”’)]*\s*$/.test(String(input.last_assistant_message ?? '').trim())) return {}
                       tr.stopNudged = true
-                      return { decision: 'block' as const, reason: "Before this stop ends, show it: draw its 2 cards now (a short fact card, and a flow of the steps or a picture), with rings on the key words of their slide, and one short line while it draws. Don't repeat what you've said." }
+                      return { decision: 'block' as const, reason: "Before this stop ends, show it: draw its 2 cards now (a short fact card, and a flow of the steps or a picture), with rings on the key words of the slide showing, and one short line while it draws. Don't repeat what you've said." }
                     }
                   ]
                 }

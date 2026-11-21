@@ -43,6 +43,10 @@ https://github.com/KenKaiii/Roamies
   lays the study board out with your slide big and the linked ones small (click to swap), adds to a board that's up,
   shows what it says in Nova's bubble unless captions are on, and reports where its screen marks are. Since v0.71 the board numbers its notes and letters its links (short arrows between slides, lit one at a time) instead of long arrows, fills in slide pictures as they come, and shows every photo as it is (not as LED dots); a card that doesn't fit beside a board opens smaller. `agentrun.mjs`
   passes its unused callbacks so the build keeps Nova's own calls to them.
+- Studyhall changes since v0.73: in tutor mode the drawing goes over Studyhall's lesson window. `tools.mjs` finds words
+  on its slide from the file (`lessonWords`), keeps cards off the slides (`lessonArea`) and gives each spoken step its
+  line number; `ink.js` draws each step when the voice starts its line, at a slower hand's pace, with a small pen of its
+  own while the globe (the Nova that talks) glides beside what's being taught, clear of the slide and the cards.
 - `native/roamies-hands`: Roamies' Windows hands helper (Rust: UI Automation, Windows OCR, screenshots, clicking and
   typing), copied unchanged and built on GitHub Actions.
 - Nova's brain follows Roamies' design. It makes one fast Claude call with Nova's own tools and

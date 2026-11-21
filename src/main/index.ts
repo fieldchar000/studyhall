@@ -53,7 +53,8 @@ import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, sho
 import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
 import { conversationLine, convHooks, setConversation, toggleConversation } from './conversation'
 import { restoreAfterLesson } from './windowSplit'
-import { warmLesson } from './lessonReader'
+import { picture, warmLesson } from './lessonReader'
+import { configureLessonWindow } from './lessonWindow'
 import { setTutor, tutorOn, lessonRecording, listLessons, openLesson, serveLesson, showLessonsFolder, toggleTutor, tutorHooks } from './tutor'
 import { reportClicks, voiceAsk, voiceConversation, voiceRecord } from './voice'
 import { askBeside, reportPen, startKeys, stopKeys, talkKeyHooks, voiceHush, voiceAnswer, voiceConfirm, voiceSaid, voiceSay, voiceSayAndWait } from './voice'
@@ -380,7 +381,16 @@ if (!app.requestSingleInstanceLock()) {
     applyLoginItem(getPrefs().launchAtLogin)
 
     protocol.handle('app', serveApp)
-    protocol.handle('material', (r) => (new URL(r.url).host === 'lesson' ? serveLesson(r) : serveMaterial(r)))
+    protocol.handle('material', (r) => {
+      const host = new URL(r.url).host
+      if (host === 'lesson') return serveLesson(r)
+      // A slide or page of the deck being taught (tutor mode's lesson window): material://slide/<lesson>/<n>.jpg
+      if (host === 'slide') {
+        const m = /^\/([0-9a-f]{12})\/(\d+)\.jpg$/.exec(new URL(r.url).pathname)
+        return (m ? picture(m[1], Number(m[2])).catch(() => null) : Promise.resolve(null)).then((buf) => (buf ? new Response(new Uint8Array(buf), { headers: { 'content-type': 'image/jpeg', 'cache-control': 'max-age=3600' } }) : new Response('not found', { status: 404 })))
+      }
+      return serveMaterial(r)
+    })
 
     // Deny camera/mic/location/etc. by default (video calls get their own window later).
     const allowed = new Set(['clipboard-sanitized-write', 'fullscreen'])
@@ -689,6 +699,7 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
     configureBauer({ url: appUrl, webPreferences: SECURE_PREFS, startBrief: () => void startBrief() })
+    configureLessonWindow({ url: appUrl, webPreferences: SECURE_PREFS })
     // Started hidden in the tray (with Windows)? Bauer waits until Studyhall is opened.
     bauerAway(!mainWindow?.isVisible())
     // Tell every other window when data changes (e.g. quick capture -> inbox badge).

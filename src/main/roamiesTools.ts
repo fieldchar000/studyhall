@@ -20,6 +20,7 @@ import { agentsUi, hiddenFromCaptures, inkAskMarks, inkBoardPic, inkLayer, orbPa
 import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
 import { stageDone } from './novaStage'
 import { lessonFetch } from './lessonReader'
+import { lessonArea, wordsOnSlide } from './lessonWindow'
 import { illustration } from './illustrations'
 import { findOnPage, lastLessonId, picture as lessonPicture, pictureReady } from './lessonReader'
 
@@ -270,6 +271,9 @@ export function roamies(): Promise<Any> {
     const { createTools } = await import('./roamies/tools.mjs')
     rt = createTools({
       aroundShot: hiddenFromCaptures,
+      // Tutor mode's lesson window: words on its slide are found from the file, and cards keep off the slides.
+      lessonWords: (words: string) => wordsOnSlide(words),
+      lessonArea: () => lessonArea(),
       onBusy: (busy: number[][], area: number[]) => {
         room = hasRoom(busy, area)
       },

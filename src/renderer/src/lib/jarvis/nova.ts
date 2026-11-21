@@ -342,14 +342,23 @@ async function boot(opts: {
         R.sfx?.play(live ? 'expand' : 'poof')
         R.wake?.()
         break
+      case 'lesson':
+        lessonOn = !!e.on
+        ;(R.ink as { lessonMode?: (on: boolean) => void } | undefined)?.lessonMode?.(lessonOn)
+        if (!lessonOn) R.speakerNear(null, [])
+        break
       case 'lineSaid':
         ;(R.ink as { lineSaid?: (id: number) => void } | undefined)?.lineSaid?.(Number(e.id))
         break
       case 'hat':
         hat = !!e.on
         R.sfx?.play(hat ? 'expand' : 'poof')
-        // (the lesson's "Next ›" button, for moving on without saying so)
-        ;(R.ink as { tutorBar?: (on: boolean) => void } | undefined)?.tutorBar?.(hat)
+        // (tutor mode over: the lesson window's two Novas go back to one)
+        if (!hat && lessonOn) {
+          lessonOn = false
+          ;(R.ink as { lessonMode?: (on: boolean) => void } | undefined)?.lessonMode?.(false)
+          R.speakerNear(null, [])
+        }
         R.wake?.()
         break
       case 'done':
@@ -406,23 +415,78 @@ async function boot(opts: {
     trace(`study board up: globe waits beside it at ${Math.round(spot[0])},${Math.round(spot[1])} (globe at ${Math.round(c.mover.x)},${Math.round(c.mover.y)}; mode ${c.mover.mode})`)
     returning = { x: spot[0], y: spot[1] }
   }
+  // Tutor mode's lesson window: the globe is the Nova that talks (a small pen draws). It glides, slowly, to a free spot
+  // beside what's being taught (ink.js says where), never over a card, an arrow, a ring or the words, with room for its
+  // speech bubble above it. null: the lesson is over.
+  let lessonOn = false
+  R.speakerNear = (f: number[] | null, avoid: number[][]): void => {
+    if (!f) {
+      if (aside?.part === 'lesson') {
+        aside = null
+        if (home) returning = { x: home.x, y: home.y }
+      }
+      return
+    }
+    const W = innerWidth
+    const H = innerHeight
+    const RR = 70 // the globe's room (it's about 64 across the middle)
+    const hits = (r: number[]): boolean => avoid.some((q) => r[0] < q[0] + q[2] && r[0] + r[2] > q[0] && r[1] < q[1] + q[3] && r[1] + r[3] > q[1])
+    const free = (x: number, y: number): boolean => {
+      const globe = [x - RR, y - RR, RR * 2, RR * 2]
+      const bubble = [x - 170, y - RR - 110, 340, 110]
+      return x - RR >= 8 && x + RR <= W - 8 && y - RR - 110 >= 8 && y + RR <= H - 8 && !hits(globe) && !hits(bubble)
+    }
+    const cx = f[0] + f[2] / 2
+    const cy = f[1] + f[3] / 2
+    const spots: number[][] = []
+    for (const d of [24, 60, 120, 200])
+      for (const [x, y] of [
+        [f[0] + f[2] + d + RR, cy],
+        [f[0] - d - RR, cy],
+        [cx, f[1] + f[3] + d + RR],
+        [cx, f[1] - d - RR],
+        [f[0] + f[2] + d + RR, f[1] + RR],
+        [f[0] + f[2] + d + RR, f[1] + f[3] - RR],
+        [f[0] - d - RR, f[1] + RR],
+        [f[0] - d - RR, f[1] + f[3] - RR]
+      ])
+        spots.push([x, y])
+    const near = spots.filter(([x, y]) => free(x, y)).sort((a, b) => Math.hypot(a[0] - cx, a[1] - cy) - Math.hypot(b[0] - cx, b[1] - cy))[0]
+    // Nowhere free near it: the nearest free spot along the screen's edges, else where it is.
+    let to = near
+    if (!to) {
+      const rim: number[][] = []
+      for (let x = RR + 12; x < W - RR - 12; x += 60) rim.push([x, H - RR - 16], [x, RR + 126])
+      for (let y = RR + 126; y < H - RR - 16; y += 60) rim.push([RR + 12, y], [W - RR - 12, y])
+      to = rim.filter(([x, y]) => free(x, y)).sort((a, b) => Math.hypot(a[0] - cx, a[1] - cy) - Math.hypot(b[0] - cx, b[1] - cy))[0]
+    }
+    if (!to) return
+    if (aside && Math.hypot(aside.x - to[0], aside.y - to[1]) < 30) return
+    aside = { x: to[0], y: to[1], part: 'lesson' }
+    returning = { x: to[0], y: to[1] }
+    agent?.settle?.(to[0], to[1]) // (settled there: no longer beside the cursor)
+    trace(`lesson: the talking globe heads beside what's taught, to ${Math.round(to[0])},${Math.round(to[1])}`)
+    R.wake?.()
+  }
   let wasFollowing = false
   setInterval(() => {
     const now = performance.now()
     const following = !!agent?.following?.()
     if (following !== wasFollowing) trace(`globe ${following ? 'STARTS' : 'stops'} following the cursor`)
     wasFollowing = following
+    // (a lesson: the talking globe stays beside what's taught, not by the cursor, while a request is answered)
+    if (lessonOn && aside && following && !c.mover.dragging) agent?.settle?.(aside.x, aside.y)
     if (responding || listen?.open || drawing() || now - voice.at < 1500 || c.mover.dragging) busyAt = now
     // On its way back: a little idle act can pause the glide part-way, so it's sent on again until it's there.
     if (aside && c.mover.dragging) aside = null // (they put it somewhere themselves: it stays there)
     // (it goes once the drawing is done: settled at the spot beside the board, and kept there)
-    if (aside && !returning && !drawing() && !following && Math.hypot(c.mover.x - aside.x, c.mover.y - aside.y) > 40) {
+    if (aside && !returning && (!drawing() || lessonOn) && !following && Math.hypot(c.mover.x - aside.x, c.mover.y - aside.y) > 40) {
       trace(`globe steps aside to ${Math.round(aside.x)},${Math.round(aside.y)}`)
       agent?.settle?.(aside.x, aside.y)
       returning = { x: aside.x, y: aside.y }
       R.wake?.()
     }
-    if (returning && !drawing()) {
+    if (returning && (!drawing() || lessonOn)) {
       const mv = c.mover
       if (following || mv.dragging || mv.flung) returning = null
       else if (Math.hypot(mv.x - returning.x, mv.y - returning.y) < 12) returning = null

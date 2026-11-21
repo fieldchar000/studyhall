@@ -337,7 +337,46 @@
 
   // ---------------------------------------------------------------- the cursor: the real Sidekick in cursor form
   const agent = () => R.tiles?.find((t) => t.creature?.agent)?.creature?.agent ?? null;
-  const penApi = () => agent()?.pen ?? null;
+  // Studyhall (tutor mode's lesson window): two Novas. This small pen draws the rings and arrows, while the globe stays
+  // itself, talks, and glides near what's being taught (it no longer turns into the pen and darts about).
+  let miniPen = null;
+  const penApi = () => miniPen ?? agent()?.pen ?? null;
+  function makeMiniPen() {
+    const p = { held: false, speed: 1, tip: [W * 0.7, H * 0.55], shown: 0, at: 0 };
+    const glide = (to, sec) => new Promise((res) => {
+      const from = p.tip.slice(), t0 = now(), d = Math.max(0.05, sec);
+      const step = () => { const u = ease(clamp((now() - t0) / d, 0, 1)); p.tip = [lerp(from[0], to[0], u), lerp(from[1], to[1], u)]; p.at = now(); touch(0.2); if (u >= 1) return res(); requestAnimationFrame(step); };
+      step();
+    });
+    const far = (to) => Math.hypot(to[0] - p.tip[0], to[1] - p.tip[1]);
+    Object.assign(p, {
+      async take() { p.held = true; p.at = now(); touch(); },
+      release() { p.held = false; p.at = now(); touch(1); },
+      set(x, y) { p.tip = [x, y]; p.at = now(); touch(0.2); },
+      move(x, y) { return glide([x, y], clamp(far([x, y]) / 700, 0.25, 0.8)); },
+      rest(x, y) { return glide([x, y], clamp(far([x, y]) / 700, 0.2, 0.6)); },
+      async tap(x, y) { await glide([x, y], clamp(far([x, y]) / 700, 0.2, 0.6)); },
+      park() {},
+      async trace(pts, dur, onP) {
+        if (!pts?.length) { onP(1); return; }
+        await glide(pts[0], clamp(far(pts[0]) / 700, 0.2, 0.7));
+        const t0 = now(), d = Math.max(0.05, dur / (p.speed || 1));
+        await new Promise((res) => { const step = () => { const u = clamp((now() - t0) / d, 0, 1); p.tip = at(pts, u); p.at = now(); onP(u); if (u >= 1) return res(); requestAnimationFrame(step); }; step(); });
+      },
+    });
+    // The nib: a small bright point with a soft ring, there while it draws, fading a moment after.
+    add({ z: 9, kind: 'nib', local: true, pinned: true, box: () => [p.tip[0] - 16, p.tip[1] - 16, 32, 32], live: () => !!miniPen && (p.held || now() - p.at < 1.6),
+      draw(b, l) {
+        const vis = p.held ? 1 : clamp(1 - (now() - p.at - 0.8) / 0.6, 0, 1);
+        if (vis <= 0) return;
+        const [x, y] = p.tip;
+        l.save(); l.globalAlpha *= vis;
+        l.shadowColor = rgba(ACC, 0.9); l.shadowBlur = 12; l.fillStyle = HOT; l.beginPath(); l.arc(x, y, 4.5, 0, Math.PI * 2); l.fill();
+        l.shadowBlur = 0; l.strokeStyle = rgba(ACC, 0.7); l.lineWidth = 1.5; l.beginPath(); l.arc(x, y, 9, 0, Math.PI * 2); l.stroke();
+        l.restore();
+      } });
+    return p;
+  }
   const tipNow = () => penApi()?.held ? penApi().tip : [W * 0.8, H * 0.8];
   const take = async () => { try { await penApi()?.take(); } catch (e) { console.error('ink pen', e); } };
   const fly = (x, y) => penApi()?.move(x, y) ?? Promise.resolve();
@@ -605,7 +644,7 @@
   // Beside the front window (sent as global bounds), else on the screen, filling from the left: the first card goes in the
   // leftmost free column and each next one just right of those already up (top to bottom in each column, columns left
   // to right); never on another card or a screen mark.
-  let winRect = null;
+  let winRect = null, preferRect = null, lessonAvoid = [];
   function place(w, h, part, strict = false) {
     // Game mode (sidebar.js): cards stack in the panel at the screen's right edge, below the Roamie.
     const side = R.sidebar?.on ? R.sidebar : null;
@@ -627,7 +666,7 @@
       for (let y = top; y + h <= bot; y += 16) for (let x = S[0] + 8; x + w <= S[2] - 8; x += 16) {
         const r = [x, y, w, h];
         if (taken.some((q) => overlap(r, q) > 0)) continue;
-        const cost = busyRects.reduce((a, q) => a + overlap(r, q), 0) / (w * h) + (x - S[0] + y - top) * 0.00002;
+        const cost = busyRects.reduce((a, q) => a + overlap(r, q), 0) / (w * h) + (x - S[0] + y - top) * 0.00002 + (preferRect && overlap(r, preferRect) < w * h * 0.8 ? 0.1 : 0);
         if (cost < bestCost) { bestCost = cost; best = r; }
       }
       if (best && bestCost < 0.3) return best;
@@ -2260,6 +2299,12 @@
     if (SCREEN_MARKS[m.kind] && m.at && !onScreen(rectOf(m))) { console.warn('ink: off this screen', m.kind); return null; }
     return f(m, ctx);
   }
+  // Studyhall (the lesson window): everything on screen the talking globe must keep clear of, and where it goes.
+  const alive = () => [...marks.filter((m) => m.alive && !m.leaving && m.kind !== 'nib' && m.kind !== 'tutornext').map(markBox), ...lessonAvoid];
+  function speakerNear(made) {
+    const boxes = made.flat().filter((m) => m && m.alive !== false && (m.box || m.pts)).map(markBox);
+    if (boxes.length) R.speakerNear?.(boxes.reduce(union), alive());
+  }
   async function runBeat(b, e, clock, gen) {
     // Studyhall (tutor mode): a beat with a line number draws when the voice really starts that line (it tells us), so
     // its ring and card come as Nova starts talking about them and nothing new comes until the next line; drawn at a
@@ -2282,6 +2327,8 @@
     await until_(t0, gen);
     if (gen !== G.gen) return;
     caption.show(b.caption);
+    // (the lesson window: the talking globe heads for where this step will be drawn, before the pen starts)
+    if (miniPen) { const to = b.marks.map((m) => m.at?.rect).filter(Boolean).map((r) => locRect(r)); if (to.length) R.speakerNear?.(to.reduce(union), alive()); }
     upcoming = b.marks.filter((m) => m.at?.rect && SCREEN_MARKS[m.kind]).map((m) => grow(rectOf(m), 4));
     const ctx = { num: 0 }, made = [];
     for (const [i, m] of b.marks.entries()) {
@@ -2295,6 +2342,8 @@
       if (gen !== G.gen) { if (m.part) fadeOut(marks.filter((q) => q.alive && q.part === m.part), 0.2); return; }
     }
     upcoming = [];
+    // (Studyhall, the lesson window: the talking globe glides over near what this step drew, clear of all of it)
+    if (miniPen) speakerNear(made);
     // (Studyhall, tutor mode: this step is drawn, so the voice may go on to the next step's line; it waits till then)
     if (b.line != null) R.ink.send?.({ type: 'line_drawn', id: b.line });
     await until_(t0 + dur, gen);
@@ -2342,6 +2391,8 @@
     if (e.fade) for (const b of e.beats ?? []) for (const m of b.marks) if (m.part) drawnBy.set(m.part, e.id);
     if (e.deep) for (const b of e.beats ?? []) for (const m of b.marks) if (m.part) deepParts.add(m.part);
     if (e.win) winRect = locRect(e.win);
+    preferRect = e.prefer ? locRect(e.prefer) : e.seg ? preferRect : null; // (Studyhall: the lesson window's card column)
+    lessonAvoid = e.avoid ? e.avoid.map(locRect) : e.seg ? lessonAvoid : []; // (and the slide's words: the talking globe keeps off them)
     if (e.busy?.length) busyRects = e.busy.map(locRect);
     else if (!e.seg) busyRects = []; // (Studyhall: a new drawing doesn't go by an old screen)
     for (const ed of e.edits ?? []) { if (gen !== G.gen) return; if (ed.do !== 'clear') { await take(); G.held = true; } await edit(ed); }
@@ -2683,6 +2734,11 @@
     },
     // Studyhall: tutor mode's "Next ›" button, bottom right (clear of the captions and of a window's status bar), for
     // the whole lesson. A click stops what Nova is saying and drawing, and the lesson goes on to its next stop.
+    // Studyhall: tutor mode's lesson window is up (two Novas: the small pen draws, the globe talks), or it's closed.
+    lessonMode(on) {
+      if (on && !miniPen) miniPen = makeMiniPen();
+      if (!on && miniPen) { for (const m of marks) if (m.kind === 'nib') m.alive = false; miniPen = null; touch(); }
+    },
     lineSaid(id) { heardLines.add(id); if (heardLines.size > 400) heardLines.delete(heardLines.values().next().value); },
     tutorBar(on) {
       for (const m of marks) if (m.kind === 'tutornext' && m.alive) { m.alive = false; touch(); }

@@ -39,8 +39,12 @@ if (screenPart === '#cards') {
   window.addEventListener('blur', () => setHot(false))
 }
 
+// Tutor mode's lesson window (main/lessonWindow.ts).
+const isLesson = location.hash === '#lesson'
+const LessonWindow = lazy(async () => ({ default: (await import('@/pages/Lesson')).LessonWindow }))
+
 // The main window reads PDFs for Nova's lesson reader (main/lessonReader.ts), with Studyhall's own PDF library.
-if (!screenPart && !isVoice && !isCapture)
+if (!screenPart && !isVoice && !isCapture && !isLesson)
   window.api.lesson?.onPdf(async (req) => {
     const { lessonPdfPage, lessonPdfText } = await import('./lib/bauer/pdfLesson')
     return req.op === 'text' ? lessonPdfText(req.data) : lessonPdfPage(req.data, req.n ?? 1, req.width ?? 1280, req.key)
@@ -58,6 +62,10 @@ createRoot(document.getElementById('root')!).render(
       </Suspense>
     ) : isCapture ? (
       <QuickCapture />
+    ) : isLesson ? (
+      <Suspense fallback={null}>
+        <LessonWindow />
+      </Suspense>
     ) : (
       <App />
     )}

@@ -187,17 +187,6 @@ function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | 
           onChange={(v) => save({ novaTutorBrain: v })}
         />
       </Row>
-      <Row title="Lesson layout" hint="On my slides: Nova turns your own slides and rings them, with its cards beside them (if a slide fills the screen, your window moves to the left by itself to make room, and back after). Split screen: your window moves to the left from the start. Study board: your slides shown on Nova's board instead.">
-        <Seg
-          value={prefs?.novaTutorLayout === 'split' ? 'split' : prefs?.novaTutorLayout === 'stage' ? 'stage' : 'live'}
-          options={[
-            ['live', 'On my slides'],
-            ['split', 'Split screen'],
-            ['stage', 'Study board']
-          ]}
-          onChange={(v) => save({ novaTutorLayout: v })}
-        />
-      </Row>
       <Row title="Record lessons" hint="Each tutor lesson is saved as a video (your screen and its voice) in Documents\Nova Lessons, to watch again any time without using your Claude plan.">
         <input type="checkbox" checked={prefs?.novaRecord !== false} onChange={(e) => save({ novaRecord: e.target.checked })} aria-label="Record lessons" />
       </Row>

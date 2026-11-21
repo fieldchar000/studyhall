@@ -231,7 +231,7 @@ export function sideSearchFor(route) {
 // Every request and redirect hop of web_fetch goes through safety.mjs, by name and by the addresses it resolves to.
 export const guardFetch = async (url) => { const v = await checkFetch(url); return v.level === BLOCK ? `Blocked for safety: ${v.reason}` : null; };
 
-export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null, shotBusy = null, iconFetch = null, boardFetch = null, aroundShot = null, onBusy = null }) {
+export function createTools({ allowActions, ui, ask, openUrl, onCommitments, focus = null, firedReminders = () => [], showList, fmtWhen, commitmentsText, userName, onPlan = () => {}, speak = () => false, onHandoff = () => {}, watchClicks = () => {}, onInkGone = () => {}, askShell = async () => ({ ok: false, error: 'Roamies isn\'t running.' }), workdir = HOME, own = null, sideSearch = async () => null, pointScale = () => 'pixels', skipAllow = () => false, hostShot = null, photoFetch = null, shotBusy = null, iconFetch = null, boardFetch = null, aroundShot = null, onBusy = null, lessonWords = null, lessonArea = null }) {
   // Relative paths (and run_command) start in workdir: the home folder for the chat, its own folder for an agent.
   const at = (p) => { const s = String(p ?? ''); return /^~(?=$|\/|\\)/.test(s) || path.isAbsolute(s) || /^[a-z]:[\\/]/i.test(s) ? s : path.join(workdir, s); };
   const where = workdir === HOME ? "the user's home folder" : `its working folder (${workdir})`;
@@ -503,6 +503,9 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
       // Text read off the screen: words inside paragraphs, text in images and canvases, single characters (case
       // matters). Exact boxes; [] when it isn't there (or without the helper).
       async textAll(find) {
+        const onSlide = lessonWords?.(String(find));
+        if (onSlide) return [{ bounds: onSlide, text: String(find), role: 'text' }];
+        if (lessonArea?.()) return [];
         if (!HANDS) return [];
         // The window the latest screenshot showed, when there's one from this request: the front app can change
         // between looking and drawing.
@@ -510,6 +513,10 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
         return (await hands('ocr-find', where, String(find), 'all').catch(() => null))?.matches ?? [];
       },
       async findText(find) {
+        // (Studyhall: tutor mode's lesson window knows where each word of its slide is, from the file itself)
+        const onSlide = lessonWords?.(String(find));
+        if (onSlide) return { bounds: onSlide, text: String(find), role: 'text' };
+        if (lessonArea?.()) throw new Error(`"${find}" isn't on the slide showing. Use the words exactly as they're written on it (a few words from one line), or show_slide the page they're on first.`);
         if (!HANDS) throw new Error('Finding words on screen needs the Roamies app; take a screenshot and give x, y instead.');
         // Text read off the screen: one match, or where each of several is, so the right one can be picked with within.
         const readOne = async () => {
@@ -653,8 +660,10 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
     const stopped = () => { if (ctx?.signal?.aborted) clearAllInk(); return 'Stopped.'; };
     // Where there's room for cards: the screen minus the front window; and what's on it, so names avoid covering words.
     const hasCards = beats.some((b) => b.marks.some((m) => CARDS.includes(m.kind)));
-    const win = hasCards && HANDS ? (await hands('locate', 'front').catch(() => null))?.window?.bounds ?? null : null;
-    const busy = lastRead?.turn === turn ? lastRead.controls.filter((c) => !c.offscreen && c.bounds).slice(0, 300).map((c) => c.bounds) : lastShot?.turn === turn && lastShot.busy ? lastShot.busy : [];
+    // (Studyhall: in the lesson window, cards go beside the slides, never on them or on its buttons)
+    const area = lessonArea?.() ?? null;
+    const win = area ? area.win : hasCards && HANDS ? (await hands('locate', 'front').catch(() => null))?.window?.bounds ?? null : null;
+    const busy = area ? area.busy : lastRead?.turn === turn ? lastRead.controls.filter((c) => !c.offscreen && c.bounds).slice(0, 300).map((c) => c.bounds) : lastShot?.turn === turn && lastShot.busy ? lastShot.busy : [];
     ink.active++;
     // Lookups are shared until a click or hover (then the screen may have changed, and words are retried a moment).
     let look = null;
@@ -687,7 +696,7 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
         // (Studyhall: speak gives a line number in tutor mode: the overlay draws that beat when the voice starts its line)
         const out = seg.map((b, j) => { const v = speak(b.say); return { ...b, n: sg.from + j + 1, caption: plain(b.say), voiced: !!v, ...(typeof v === 'number' ? { line: v } : {}) }; });
         said.push(...out.map((b) => b.caption));
-        ui({ kind: 'agent', e: { type: 'draw', id, seg: k, beats: out, edits: k ? [] : edits, last: k === segs.length - 1, win, busy: k ? [] : busy, ...(opts.fade ? { fade: opts.fade } : {}), ...(args.deep ? { deep: true } : {}) } });
+        ui({ kind: 'agent', e: { type: 'draw', id, seg: k, beats: out, edits: k ? [] : edits, last: k === segs.length - 1, win, busy: k ? [] : busy, ...(area?.column ? { prefer: area.column, lesson: true, avoid: area.busy } : {}), ...(opts.fade ? { fade: opts.fade } : {}), ...(args.deep ? { deep: true } : {}) } });
         // The first beat must show; later ones queue behind it on the overlay without holding this up.
         if (!k) {
           // (Studyhall: 45 s, not 15: a second drawing in one answer waits its turn behind the first one's narration.)

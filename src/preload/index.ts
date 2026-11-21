@@ -295,7 +295,15 @@ const api: Api = {
       }
       ipcRenderer.on('lesson:pdf', l)
       return () => ipcRenderer.removeListener('lesson:pdf', l)
-    }
+    },
+    onState: (cb) => {
+      const l = (_e: unknown, s: unknown): void => cb(s as never)
+      ipcRenderer.on('lesson:state', l)
+      ipcRenderer.send('lesson:hello') // (listening now: what's showing, in case it was sent before this page was ready)
+      return () => ipcRenderer.removeListener('lesson:state', l)
+    },
+    layout: (m) => ipcRenderer.send('lesson:layout', m),
+    cmd: (m) => ipcRenderer.send('lesson:cmd', m)
   },
   nova: {
     turn: (said, studyhall) => ipcRenderer.invoke('nova:turn', said, studyhall),

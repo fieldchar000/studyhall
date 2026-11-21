@@ -953,6 +953,9 @@ export type NovaName = 'Nova' | 'Atlas' | 'Onyx' | 'Bauer'
 export type NovaBrain = 'auto' | 'haiku' | 'sonnet' | 'opus'
 export type NovaEffort = 'low' | 'medium' | 'high'
 /** What a request is for, so Auto can pick the right model. */
+/** Tutor mode's lesson window (main/lessonWindow.ts). */
+export type LessonWindowState = { id: string; title: string; kind: 'slides' | 'pdf'; count: number; page: number; beside: number | null; seen: number[]; paused: boolean }
+
 export type AiPurpose = 'act' | 'chat' | 'explain' | 'look'
 
 /** Nova's Claude connection (Anthropic's own Claude Code program, signed in with your Claude plan). */
@@ -1257,6 +1260,12 @@ export interface Api {
   /** The main window reads PDFs for Nova's lesson reader. */
   lesson: {
     onPdf(cb: (req: { op: 'text' | 'page'; data: Uint8Array; n?: number; width?: number; key?: string }) => Promise<string>): () => void
+    /** Tutor mode's lesson window: the deck and where the lesson is (null: no lesson). */
+    onState(cb: (s: LessonWindowState | null) => void): () => void
+    /** Where the slides are drawn in the lesson window (CSS px in the window): for Nova's rings and cards. */
+    layout(m: { page: number; slide: number[] | null; side: number[] | null; column: number[] | null; bars?: number[][] }): void
+    /** The lesson window's buttons. */
+    cmd(m: { do: 'next' | 'back' | 'pause' | 'end' | 'goto'; n?: number }): void
   }
   nova: {
     /** One request. Speech arrives meanwhile through onSpeak / onBeat; tools that live in this window through onTool. */

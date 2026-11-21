@@ -14,9 +14,10 @@ import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { getPrefs } from './prefs'
+import { tutorOn } from './tutor'
 import { handsHelper } from './roamiesTools'
 
 const OFFSCREEN = process.env.STUDYHALL_OFFSCREEN === '1'
@@ -122,6 +123,31 @@ if (-not $done -and $env:SH_PATH -and (Test-Path -LiteralPath $env:SH_PATH)) {
 }
 if ($done) { 'ok' } else { 'fail' }
 `
+// A deck named by its file (tutor mode, the lesson window): read from PowerPoint without showing it. If it's open in
+// PowerPoint already, that copy is read; else it's opened read-only with no window and closed again (and PowerPoint
+// too, if it wasn't running). The file itself is never changed.
+const PPT_OPEN = `
+$made = $false
+try { $a = [Runtime.InteropServices.Marshal]::GetActiveObject('PowerPoint.Application') } catch { try { $a = New-Object -ComObject PowerPoint.Application; $made = $true } catch { '{"error":"PowerPoint isn''t installed, so this deck can''t be read."}'; exit } }
+$p = $null; $mine = $false
+foreach ($x in $a.Presentations) { try { if ($x.FullName -eq $env:SH_PATH) { $p = $x } } catch {} }
+if (-not $p) { try { $p = $a.Presentations.Open($env:SH_PATH, -1, 0, 0); $mine = $true } catch { '{"error":"PowerPoint couldn''t open that deck."}'; if ($made) { $a.Quit() }; exit } }
+$pick = [pscustomobject]@{ p = $p; prot = $false }
+`
+const PPT_SHUT = `
+if ($mine) { try { $p.Close() } catch {} }
+if ($made) { try { if ($a.Presentations.Count -eq 0) { $a.Quit() } } catch {} }
+`
+const PPT_FILE_READ = `${PPT_OPEN}
+${PPT_READ.slice(PPT_READ.indexOf('$cur = 0'))}
+${PPT_SHUT}`
+// Every slide as a picture (into the lesson's folder), for the lesson window: the ones not made yet.
+const PPT_FILE_PICTURES = `${PPT_OPEN}
+$w = [int]$env:SH_W; $h = [int]$env:SH_H
+foreach ($s in $p.Slides) { $f = Join-Path $env:SH_OUT ([string]$s.SlideIndex + '.jpg'); if (-not (Test-Path -LiteralPath $f)) { try { $s.Export($f, 'JPG', $w, $h) } catch {} } }
+${PPT_SHUT}
+'ok'`
+
 // Go to a slide in the open deck (a slide show, the normal view; Protected View has no "go to", so: the arrow keys).
 const PPT_GOTO = `${PPT_FIND}
 $pick = Pick; $n = [int]$env:SH_N
@@ -189,7 +215,7 @@ const idOf = (s: string): string => createHash('sha1').update(s).digest('hex').s
 const isPdfUrl = (u: string): boolean => /\.pdf(?:$|[?#])/i.test(u)
 
 async function readSlides(title: string, path = ''): Promise<Lesson | string> {
-  const raw = await ps(PPT_READ, { SH_TITLE: title, SH_PATH: path }, 90_000)
+  const raw = await ps(path ? PPT_FILE_READ : PPT_READ, { SH_TITLE: title, SH_PATH: path }, 120_000)
   let j: { error?: string; path: string; name: string; count: number; current: number; protected: boolean; ratio: number; slides: LessonPage[] | LessonPage }
   try {
     j = JSON.parse(raw)
@@ -202,7 +228,21 @@ async function readSlides(title: string, path = ''): Promise<Lesson | string> {
   const pages = (Array.isArray(j.slides) ? j.slides : [j.slides]).map((s) => ({ n: Number(s.n), text: String(s.text ?? '').trim(), notes: String(s.notes ?? '').trim(), pictures: Number(s.pictures) || 0, shapes: Number(s.shapes) || 0, boxes: Array.isArray(s.boxes) ? (s.boxes as unknown[]).filter((b): b is TextBox => Array.isArray(b) && b.length === 5) : [] }))
   const lesson: Lesson = { id, kind: 'slides', title: j.name.replace(/\.(pptx?|ppsx?|pptm)$/i, ''), source: j.path, count: j.count, current: j.current, pages, app: 'PowerPoint', window: title, protectedView: j.protected }
   ;(lesson as Lesson & { ratio?: number }).ratio = j.ratio || 0.5625
+  // A deck named by its file: all its slides as pictures now, in the background (the lesson window shows them).
+  if (path) slidePictures(lesson)
   return lesson
+}
+// The decks whose slide pictures are being made, all at once (a picture asked for meanwhile waits for them).
+const making = new Map<string, Promise<unknown>>()
+function slidePictures(l: Lesson): void {
+  if (making.has(l.id)) return
+  const ratio = (l as Lesson & { ratio?: number }).ratio ?? 0.5625
+  const out = join(cacheDir(), l.id)
+  const p = mkdir(out, { recursive: true })
+    .then(() => ps(PPT_FILE_PICTURES, { SH_PATH: l.source, SH_OUT: out, SH_W: '1280', SH_H: String(Math.round(1280 * ratio)) }, 300_000))
+    .catch(() => null)
+    .finally(() => making.delete(l.id))
+  making.set(l.id, p)
 }
 
 async function pdfFrom(source: string): Promise<Uint8Array | string> {
@@ -247,7 +287,8 @@ async function readPdf(source: string, fr: Front | null): Promise<Lesson | strin
 export async function readLesson(target = 'front'): Promise<Lesson | string> {
   const t = String(target || 'front').trim()
   if (t !== 'front') {
-    if (/\.(pptx?|ppsx?|pptm)$/i.test(t)) return remember(await readSlides('', t))
+    // (PowerPoint wants a full Windows path, C:\Users\…, not C:/Users/…)
+    if (/\.(pptx?|ppsx?|pptm)$/i.test(t)) return remember(await readSlides('', resolvePath(t.replace(/^file:\/+/i, ''))))
     if (/\.pdf$/i.test(t) || isPdfUrl(t) || /^file:/i.test(t)) return remember(await readPdf(t, null))
     return 'Give a .pptx or .pdf file (or a PDF’s web address), or leave it out for what you have open.'
   }
@@ -291,7 +332,7 @@ async function readFront(fr: NonNullable<Awaited<ReturnType<typeof front>>>): Pr
     const prev = lastLesson()
     if (prev && prev.window === fr.title) return prev
     if (pdfish || /\bpdf\b/i.test(fr.title))
-      return `Couldn't get the PDF file itself (${why.replace(/\.$/, '') || 'it needs a login'}), and there's no copy with that name in their Downloads, Desktop, Documents or OneDrive. Before going on, tell them: you can read it from their screen instead, page by page, which is slower and uses more of their plan, or they can save it to Downloads and you'll read the whole thing at once. Ask which. If they say go ahead: read_window for each page's text, take_screenshot for its diagrams, go_to_page to turn the page.`
+      return `Couldn't get the PDF file itself (${why.replace(/\.$/, '') || 'it needs a login'}), and there's no copy with that name in their Downloads, Desktop, Documents or OneDrive. ${tutorOn() ? "Tell them in one or two short lines: save it to Downloads (the browser's download button) and say \"teach me this\" again, and you'll read the whole thing at once." : "Before going on, tell them: you can read it from their screen instead, page by page, which is slower and uses more of their plan, or they can save it to Downloads and you'll read the whole thing at once. Ask which. If they say go ahead: read_window for each page's text, take_screenshot for its diagrams, go_to_page to turn the page."}`
   }
   if (fr.url) return `That's a web page (${fr.app}), not a PDF or slide deck: read it with read_window instead (it gives the whole page).`
   return `${fr.app} isn't a slide deck or a PDF I can read. Open the deck in PowerPoint, or the PDF in Edge, Opera GX or Chrome.`
@@ -476,6 +517,11 @@ async function pictureNow(id: string, n: number): Promise<Buffer | null> {
   if (existsSync(file)) return readFile(file)
   await mkdir(join(cacheDir(), id), { recursive: true })
   if (l.kind === 'slides') {
+    // (all of this deck's pictures are being made: this one comes with them)
+    if (making.has(id)) {
+      await making.get(id)
+      if (existsSync(file)) return readFile(file)
+    }
     const ratio = (l as Lesson & { ratio?: number }).ratio ?? 0.5625
     const r = await ps(PPT_EXPORT, { SH_TITLE: l.window, SH_PATH: l.source, SH_N: String(n), SH_OUT: file, SH_W: '1280', SH_H: String(Math.round(1280 * ratio)) }, 90_000)
     return r.endsWith('ok') && existsSync(file) ? readFile(file) : null
