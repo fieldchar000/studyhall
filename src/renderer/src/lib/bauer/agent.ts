@@ -575,7 +575,7 @@ function studyhallState(ctx: BriefContext, now: Date): string {
 }
 
 let sayListener = false
-async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; quiet: boolean; followUp: boolean; asking: boolean } | null> {
+async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; quiet: boolean; followUp: boolean; asking: boolean; patient?: boolean } | null> {
   if (!sayListener) {
     sayListener = true
     api.nova.onSay((t) => say(t)) // a walkthrough finishing later
@@ -642,9 +642,11 @@ async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: M
     // the answer after every reply until it's over (the score is given) or ten minutes pass.
     if (r.tools.includes('quiz_me')) quizUntil = Date.now() + 10 * 60_000
     if (quizUntil && /\b(?:final score|you got \d+ out of|that's the end of the quiz|quiz is over)\b/i.test(reply)) quizUntil = 0
-    const asking = Date.now() < quizUntil || /\?["'”’)]*\s*$/.test(reply.trim())
+    // (a lesson's check question: it waits longer for a spoken answer, with longer pauses while they think)
+    const patient = r.tools.includes('check')
+    const asking = patient || Date.now() < quizUntil || /\?["'”’)]*\s*$/.test(reply.trim())
     if (asking) markAsked()
-    return { reply, actions, logId, quiet: true, followUp, asking }
+    return { reply, actions, logId, quiet: true, followUp, asking, patient }
   } finally {
     for (const off of offs) off()
   }
@@ -730,14 +732,14 @@ export function markAsked(): void {
 /** Nova is waiting on an answer from them right now (it asked something in the last two minutes, or a quiz is on). */
 export const waitingOnThem = (): boolean => Date.now() < quizUntil || Date.now() - askedAt < 120_000
 
-export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean; asking?: boolean }> {
+export async function handleSpeech(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean; asking?: boolean; patient?: boolean }> {
   paused = null
   intro = ''
   const r = await handleSpeechInner(raw, source, mode)
   if (intro && !r.ignored) return { ...r, reply: `${intro} ${r.reply}`.trim(), quiet: false }
   return r
 }
-async function handleSpeechInner(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean; asking?: boolean }> {
+async function handleSpeechInner(raw: string, source: 'voice' | 'typed' | 'pad', mode: Mode): Promise<{ reply: string; actions: BriefAction[]; logId: string | null; ignored?: boolean; quiet?: boolean; followUp?: boolean; asking?: boolean; patient?: boolean }> {
   const text = stripWake(raw)
   // Small talk, one word, half a sentence: say nothing, do nothing, log nothing.
   const nothing = { reply: source === 'typed' ? 'I didn’t find anything to do in that.' : '', actions: [] as BriefAction[], logId: null, ignored: true }

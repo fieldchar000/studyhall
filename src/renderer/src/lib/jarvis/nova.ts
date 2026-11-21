@@ -347,6 +347,18 @@ async function boot(opts: {
         ;(R.ink as { lessonMode?: (on: boolean) => void } | undefined)?.lessonMode?.(lessonOn)
         if (!lessonOn) R.speakerNear(null, [])
         break
+      case 'lessonArea': {
+        // (the lesson window laid out: the globe moves off the slide if it's on it, or beside the new check card)
+        if (!lessonOn || !Array.isArray(e.focus) || !Array.isArray(e.avoid)) break
+        const ox = R.origin?.x ?? 0
+        const oy = R.origin?.y ?? 0
+        const loc = (r: number[]): number[] => [r[0] - ox, r[1] - oy, r[2], r[3]]
+        const avoid = (e.avoid as number[][]).map(loc)
+        const mv = c.mover
+        const onIt = avoid.some((q) => mv.x > q[0] - 60 && mv.x < q[0] + q[2] + 60 && mv.y > q[1] - 60 && mv.y < q[1] + q[3] + 60)
+        if (onIt || !aside || e.check !== undefined) R.speakerNear(loc(e.focus as number[]), avoid)
+        break
+      }
       case 'lineSaid':
         ;(R.ink as { lineSaid?: (id: number) => void } | undefined)?.lineSaid?.(Number(e.id))
         break

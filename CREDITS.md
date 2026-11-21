@@ -47,6 +47,8 @@ https://github.com/KenKaiii/Roamies
   on its slide from the file (`lessonWords`), keeps cards off the slides (`lessonArea`) and gives each spoken step its
   line number; `ink.js` draws each step when the voice starts its line, at a slower hand's pace, with a small pen of its
   own while the globe (the Nova that talks) glides beside what's being taught, clear of the slide and the cards.
+  Since v0.75 a card's tie in the lesson window runs under the ringed words to the gap beside the slide, cards are no
+  wider than the card column there, and the Clear all chip isn't shown in it.
 - `native/roamies-hands`: Roamies' Windows hands helper (Rust: UI Automation, Windows OCR, screenshots, clicking and
   typing), copied unchanged and built on GitHub Actions.
 - Nova's brain follows Roamies' design. It makes one fast Claude call with Nova's own tools and

@@ -22,6 +22,7 @@ export function LessonWindow(): React.JSX.Element {
   const main = useRef<HTMLImageElement>(null)
   const side = useRef<HTMLImageElement>(null)
   const column = useRef<HTMLDivElement>(null)
+  const checkCard = useRef<HTMLDivElement>(null)
   const top = useRef<HTMLDivElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const [missing, setMissing] = useState(false)
@@ -43,7 +44,14 @@ export function LessonWindow(): React.JSX.Element {
     if (!slide) return
     const sideRect = s.beside ? drawnRect(side.current) : null
     if (s.beside && !sideRect) return
-    window.api.lesson.layout({ page: s.page, slide, side: sideRect, column: box(column.current), bars: [box(top.current), box(bottom.current)].filter((r): r is number[] => !!r) })
+    window.api.lesson.layout({
+      page: s.page,
+      slide,
+      side: sideRect,
+      column: box(column.current),
+      bars: [box(top.current), box(bottom.current), box(checkCard.current)].filter((r): r is number[] => !!r),
+      check: box(checkCard.current)
+    })
   }, [s])
   useLayoutEffect(() => {
     report()
@@ -58,7 +66,8 @@ export function LessonWindow(): React.JSX.Element {
     }
   }, [report])
 
-  const cmd = (d: 'next' | 'back' | 'pause' | 'end' | 'goto', n?: number): void => window.api.lesson.cmd({ do: d, n })
+  const cmd = (d: 'next' | 'back' | 'pause' | 'end' | 'goto' | 'answer', n?: number): void => window.api.lesson.cmd({ do: d, n })
+  const c = s?.check ?? null
   const word = s?.kind === 'slides' ? 'Slide' : 'Page'
 
   return (
@@ -112,7 +121,42 @@ export function LessonWindow(): React.JSX.Element {
           </div>
         </div>
         {/* where Nova's cards go (drawn on its layer over this window) */}
-        <div ref={column} className="shrink-0 border-l border-[#a8c8ff]/10 bg-[#a8c8ff]/[0.025]" style={{ width: COLUMN }} />
+        <div ref={column} className="relative flex shrink-0 flex-col justify-end border-l border-[#a8c8ff]/10 bg-[#a8c8ff]/[0.025] p-4" style={{ width: COLUMN }}>
+          {/* a check question: tap an option, or say the answer (Nova is listening) */}
+          {c && (
+            <div ref={checkCard} className="rounded-xl border border-[#a8c8ff]/30 bg-[#081633]/90 p-4 shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-[#8aa4cc]">Quick check</div>
+              <div className="text-[15px] leading-snug text-[#e4eeff]">{c.question}</div>
+              {c.kind === 'choice' ? (
+                <div className="mt-3 flex flex-col gap-2">
+                  {c.options.map((o, i) => {
+                    const done = c.picked != null
+                    const right = done && i === c.right
+                    const wrong = done && i === c.picked && c.picked !== c.right
+                    return (
+                      <button
+                        key={i}
+                        disabled={done}
+                        onClick={() => cmd('answer', i)}
+                        className={`rounded-lg border px-3 py-2 text-left text-sm transition ${right ? 'border-[#7ad8a0] bg-[#7ad8a0]/15 text-[#c9f5d9]' : wrong ? 'border-[#ff8a7a] bg-[#ff8a7a]/12 text-[#ffc4bb]' : done ? 'border-[#a8c8ff]/10 text-[#8aa4cc]' : 'border-[#a8c8ff]/25 text-[#dce8ff] hover:border-[#a8c8ff]/60 hover:bg-[#a8c8ff]/10'}`}
+                      >
+                        <span className="mr-2 text-[#8aa4cc]">{String.fromCharCode(65 + i)}</span>
+                        {o}
+                        {right && <span className="float-right">✓</span>}
+                        {wrong && <span className="float-right">✗</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="mt-3 flex items-center gap-2 text-sm text-[#a8c8ff]">
+                  <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-[#a8c8ff]" />
+                  Say your answer out loud: Nova is listening
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* the lesson's buttons, and the slides seen so far */}

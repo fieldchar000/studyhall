@@ -21,6 +21,7 @@ import { reportClicks, voiceBusy, voiceConfirm, voiceSay } from './voice'
 import { stageDone } from './novaStage'
 import { lessonFetch } from './lessonReader'
 import { lessonArea, wordsOnSlide } from './lessonWindow'
+import { noteClear, noteDraw } from './lessonRecord'
 import { illustration } from './illustrations'
 import { findOnPage, lastLessonId, picture as lessonPicture, pictureReady } from './lessonReader'
 
@@ -188,6 +189,30 @@ export function roamiesClick(): void {
 /** Tutor mode ended: the lesson's board, cards and rings go (pinned cards stay). */
 export function clearLessonInk(): void {
   rt?.ink.clear()
+  forgetLessonInk()
+}
+// Tutor mode: the lesson drawings still playing (each step waits for its spoken line). A new slide waits for them, or
+// it would clear a stop's drawing before it was seen.
+const lessonDrawing = new Set<string>()
+const idleWaiters: (() => void)[] = []
+/** The drawings were stopped (Next, Back, Pause, a clear): nothing is left to wait for. */
+export function forgetLessonInk(): void {
+  lessonDrawing.clear()
+  for (const w of idleWaiters.splice(0)) w()
+}
+/** Resolves once the lesson's drawings have all played (or after maxMs). */
+export function lessonInkIdle(maxMs = 45_000): Promise<void> {
+  if (!lessonDrawing.size) return Promise.resolve()
+  return new Promise((res) => {
+    const t = setTimeout(() => {
+      lessonDrawing.clear()
+      res()
+    }, maxMs)
+    idleWaiters.push(() => {
+      clearTimeout(t)
+      res()
+    })
+  })
 }
 /** Esc anywhere: stop drawing (and the drawing goes), as Roamies does. */
 export function roamiesEsc(): void {
@@ -201,6 +226,10 @@ inkHooks.event = (msg) => {
   if (!rt) return
   const t = String(msg.type ?? '')
   if (t === 'draw_started') rt.ink.started(msg.id, msg.seg)
+  else if (t === 'draw_done') {
+    lessonDrawing.delete(String(msg.id))
+    if (!lessonDrawing.size) for (const w of idleWaiters.splice(0)) w()
+  }
   else if (t === 'draw_wait_done') rt.ink.waitDone(msg.id, msg.beat, msg.result)
   else if (t === 'ink_closed') {
     rt.ink.closed(msg.part)
@@ -292,7 +321,14 @@ export function roamies(): Promise<Any> {
             const first = (e.beats ?? []).flatMap((b: Any) => b.marks ?? []).find((x: Any) => x.at?.rect)
             const near = first ? { x: first.at.rect[0] + first.at.rect[2] / 2, y: first.at.rect[1] + first.at.rect[3] / 2 } : Array.isArray(e.win) ? { x: e.win[0] + e.win[2] / 2, y: e.win[1] + e.win[3] / 2 } : null
             inkPlay(e, near)
-          } else if (e.type === 'ink_clear') inkClear({ screen: !!e.screen, stop: !!e.stop })
+            if (e.lesson) {
+              noteDraw(e) // (tutor mode: kept for the lesson's Replay)
+              lessonDrawing.add(String(e.id))
+            }
+          } else if (e.type === 'ink_clear') {
+            inkClear({ screen: !!e.screen, stop: !!e.stop })
+            noteClear()
+          }
           else if (e.type === 'ink_stale') inkStale()
         }
       },

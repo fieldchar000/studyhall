@@ -669,3 +669,8 @@ export function closeVoice(): void {
 }
 
 if (process.env.STUDYHALL_OFFSCREEN === '1') (globalThis as unknown as { __voiceKey: unknown }).__voiceKey = (e: string) => onKey(e)
+
+/** Stop listening without acting on it (tutor mode: they tapped an answer while the mic was open for a spoken one). */
+export function voiceCancel(): void {
+  if (win && !win.isDestroyed()) send({ type: 'cancel' })
+}

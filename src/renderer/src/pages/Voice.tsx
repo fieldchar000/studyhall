@@ -164,7 +164,7 @@ export default function VoicePanel(): React.JSX.Element {
           woke.current = false
           setHeard(false)
           if (conv.current) markAsked() // (in a conversation, whatever they say next is for Nova)
-          await engine.listen(false, conv.current ? 25 : 6, false, conv.current).catch(() => (followUp.current = false))
+          await engine.listen(false, conv.current ? 25 : r.patient ? 20 : 6, false, conv.current || !!r.patient).catch(() => (followUp.current = false))
           if (followUp.current) {
             setPhase('listening')
             youSaid('')

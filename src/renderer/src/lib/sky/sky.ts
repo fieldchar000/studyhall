@@ -81,6 +81,7 @@ export class Sky {
   private gl: WebGLRenderingContext | null = null
   private prog: { p: WebGLProgram; u: Record<string, WebGLUniformLocation | null> } | null = null
   private trail = document.createElement('canvas')
+  private fadeN = 0 // (frames, for the trails' stronger fade now and then)
   private tctx = this.trail.getContext('2d')!
   private stars = document.createElement('canvas')
   private sctx = this.stars.getContext('2d')!
@@ -247,6 +248,12 @@ export class Sky {
     tctx.globalCompositeOperation = 'destination-out'
     tctx.fillStyle = 'rgba(0,0,0,.028)'
     tctx.fillRect(0, 0, W, H)
+    // A faint trail never quite went: 2.8 % of a very faint pixel rounds to nothing, so it stayed as a grey line for
+    // good. Every third of a second a stronger fade clears what's left (bright trails still fade as smoothly as before).
+    if (++this.fadeN % 20 === 0) {
+      tctx.fillStyle = 'rgba(0,0,0,.1)'
+      tctx.fillRect(0, 0, W, H)
+    }
     tctx.globalCompositeOperation = 'lighter'
     const pal = PAL[this.mode].map((c) => c.map((v) => Math.round(Math.min(255, v * 255 + 70))))
     const gold = [255, 214, 160]

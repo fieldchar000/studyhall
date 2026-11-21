@@ -15,6 +15,8 @@ let lesson: Lesson | null = null
 let page = 1
 let beside: number | null = null
 let paused = false
+// The check question on the lesson window's answer card (tap an option, or say the answer), and how it went.
+let check: { question: string; kind: 'choice' | 'say'; options: string[]; picked: number | null; right: number | null } | null = null
 const seen = new Set<number>()
 // Where the slides are on the screen (DIP), as the window last laid them out; null while it lays them out again.
 let layout: { page: number; slide: Rect | null; side: Rect | null; column: Rect | null; bars: Rect[]; win: Rect } | null = null
@@ -26,8 +28,12 @@ export const lessonHooks = {
   back: (): void => {},
   pause: (_on: boolean): void => {},
   end: (): void => {},
+  /** They tapped an option on the answer card (its number). */
+  answer: (_i: number): void => {},
   /** They clicked a slide they've seen before (in the strip): it's showing now. */
   went: (_n: number): void => {},
+  /** Laid out (a slide shown, a check card up, the window resized): where the talking globe can wait (screen DIP). */
+  laidOut: (_a: { column: Rect | null; check: Rect | null; avoid: Rect[] }): void => {},
   /** The window moved or changed size: what's drawn over it no longer lines up. */
   moved: (): void => {}
 }
@@ -52,6 +58,8 @@ export function configureLessonWindow(o: { url: (hash: string) => string; webPre
       win: [o.x, o.y, b.width, b.height]
     }
     for (const w of layoutWaiters.splice(0)) w(true)
+    const l = layout
+    lessonHooks.laidOut({ column: l.column, check: at(m.check), avoid: [l.slide, l.side, ...l.bars].filter((r): r is Rect => !!r) })
   })
   // The page is listening: what's showing now (the first state can arrive before it is).
   ipcMain.on('lesson:hello', (e) => {
@@ -67,6 +75,7 @@ export function configureLessonWindow(o: { url: (hash: string) => string; webPre
       send()
       lessonHooks.pause(paused)
     } else if (d === 'end') lessonHooks.end()
+    else if (d === 'answer' && check && check.picked == null && Number.isInteger(Number(m.n)) && Number(m.n) >= 0 && Number(m.n) < check.options.length) lessonHooks.answer(Number(m.n))
     else if (d === 'goto' && seen.has(Number(m.n))) {
       page = Number(m.n)
       beside = null
@@ -78,7 +87,7 @@ export function configureLessonWindow(o: { url: (hash: string) => string; webPre
 }
 
 const state = (): Record<string, unknown> | null =>
-  lesson ? { id: lesson.id, title: lesson.title, kind: lesson.kind, count: lesson.count, page, beside, seen: [...seen].sort((a, b) => a - b), paused } : null
+  lesson ? { id: lesson.id, title: lesson.title, kind: lesson.kind, count: lesson.count, page, beside, seen: [...seen].sort((a, b) => a - b), paused, check } : null
 function send(): void {
   if (win && !win.isDestroyed()) win.webContents.send('lesson:state', state())
 }
@@ -156,6 +165,7 @@ export async function showLessonSlide(n: number, besideN?: number | null): Promi
   if (besideN != null && !seen.has(besideN))
     return `Not shown: they haven't seen ${kind} ${besideN} yet (seen so far: ${lessonSeen().join(', ') || 'none'}). Link back only to ${kind}s you've already taught.`
   page = n
+  check = null
   seen.add(n)
   beside = besideN != null && besideN !== n ? besideN : null
   layout = null
@@ -200,3 +210,17 @@ export function lessonArea(): { win: Rect; busy: Rect[]; column: Rect | null; te
   if (!layout || !lessonWindowOpen()) return null
   return { win: layout.win, busy: [layout.slide, layout.side, ...layout.bars].filter((r): r is Rect => !!r), column: layout.column, text: [...textOnScreen(), ...layout.bars] }
 }
+
+/** Put a check question on the lesson window's answer card (null: take it away). */
+export function showCheck(c: { question: string; kind: 'choice' | 'say'; options?: string[] } | null): void {
+  check = c ? { question: c.question, kind: c.kind, options: c.kind === 'choice' ? (c.options ?? []).slice(0, 4) : [], picked: null, right: null } : null
+  layout = null
+  send()
+}
+/** How the answer went: the option they picked, and the right one (shown on the card). */
+export function markCheck(picked: number | null, right: number | null): void {
+  if (!check) return
+  check = { ...check, picked, right }
+  send()
+}
+export const checkUp = (): typeof check => check

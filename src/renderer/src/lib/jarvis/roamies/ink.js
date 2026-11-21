@@ -781,7 +781,16 @@
     await tween(0.45, (u) => { const e = ease(u); c.cw = w * e; c.ch = h * e; penApi()?.set?.(x + c.cw * k, y + c.ch * k); });
     c.p = 1; c.done = now(); touch(1.5); syncClearAll();
     if (m.card_size === 'full' && !c.full) await toggleFull(c);
-    if (m.tie?.rect) { const T = locRect(m.tie.rect), C = [x, y, w, h], tc = [T[0] + T[2] / 2, T[1] + T[3] / 2]; await arrow(m.part, edgeToward(T, [x + w / 2, y + h / 2], 6), edgeToward(C, tc, 6), { bend: -0.2, screen: false }); }
+    if (m.tie?.rect) {
+      const T = locRect(m.tie.rect), C = [x, y, w, h], tc = [T[0] + T[2] / 2, T[1] + T[3] / 2];
+      // (Studyhall, the lesson window: the line runs just under the ringed words to the gap beside the slide, then over to
+      // the card, instead of straight across the slide's text)
+      const slide = miniPen && preferRect ? busyRects.find((q) => tc[0] >= q[0] && tc[0] <= q[0] + q[2] && tc[1] >= q[1] && tc[1] <= q[1] + q[3]) : null;
+      if (slide && x >= slide[0] + slide[2]) {
+        const gx = Math.min(x - 14, slide[0] + slide[2] + 12), yy = T[1] + T[3] + 5, cy = clamp(y + 18, y, y + h - 8);
+        await arrow(m.part, [T[0] + T[2] - 6, yy], [x - 3, cy], { via: [[T[0] + T[2] - 6, yy], [slide[0] + slide[2] - 4, yy], [gx, yy + (cy - yy) * 0.35], [gx + (x - gx) * 0.5, cy], [x - 3, cy]], screen: false });
+      } else await arrow(m.part, edgeToward(T, [x + w / 2, y + h / 2], 6), edgeToward(C, tc, 6), { bend: -0.2, screen: false });
+    }
     return c;
   }
   const BODY = `400 13px ${MONO}`, SMALL = `400 11px ${MONO}`;
@@ -1330,7 +1339,7 @@
   // them; and motion: a piece that travels to dock somewhere (once, or again and again), a pulse, dots flowing along
   // an arrow. The drawings are shown as they are, in their own colours.
   async function drawScene(m) {
-    const S = scr(), W = Math.min(S[2] - S[0] - 48, 560), H = 320, SZ = { small: 56, medium: 86, large: 124 };
+    const S = scr(), W = Math.min(S[2] - S[0] - 48, 560, preferRect ? preferRect[2] - 24 : Infinity), H = 320, SZ = { small: 56, medium: 86, large: 124 };
     const pieces = await Promise.all((m.pieces ?? []).map((p) => new Promise((res) => {
       const base = { ...p, s: SZ[p.size ?? 'medium'] ?? 86, img: null };
       if (!p.src || p.missing) return res(base);
@@ -1715,7 +1724,7 @@
     nd.rows.forEach((r, k) => typed(b, r, x + w / 2, y + 19 + k * 15, NODEF, TEXT, (age - 0.05) / 0.25, { anchor: 'middle' }));
   }
   async function drawFlow(m) {
-    const S = scr(), maxW = Math.min(S[2] - S[0] - 48, 860), maxH = maxCardH() - 26, first = m.dir === 'right';
+    const S = scr(), maxW = Math.min(S[2] - S[0] - 48, 860, preferRect ? preferRect[2] - 24 : Infinity), maxH = maxCardH() - 26, first = m.dir === 'right'; // (Studyhall: the lesson window's column)
     // The way it was asked for; turned the other way, or with narrower nodes, when that fits the screen and this doesn't.
     const tries = [[first, 124], [!first, 124], [first, 92], [!first, 92]].map(([r, ww]) => layoutFlow(m, r, ww));
     const L = tries.find((q) => q.W <= maxW && q.H <= maxH) ?? tries.find((q) => q.W <= maxW) ?? tries.reduce((a, q) => (q.W < a.W ? q : a));
@@ -2214,7 +2223,7 @@
   let clearAll = null;
   function syncClearAll() {
     const n = new Set(marks.filter((m) => m.alive && m.card && !m.leaving && !m.pinned).map((m) => m.part)).size;
-    if (n >= 2) {
+    if (n >= 2 && !miniPen) {
       const str = `Clear all · ${n}`, k = 1, w = Math.round(textW(str, CHIP(k)) + 26), h = 26;
       if (clearAll?.alive && clearAll.str === str) return;
       if (clearAll) clearAll.alive = false;

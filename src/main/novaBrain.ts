@@ -22,7 +22,8 @@ import { getPrefs } from './prefs'
 import { APP_NAMES, openApp, orbEmote, orbPanel, setInkPause, setSubject, showCards, showMarks, orbAgent } from './bauer'
 // The pause after each step of a drawing while teaching (seconds): the voice waits this long, and so does the drawing.
 const STEP_PAUSE = 0.7
-import { openLessonWindow, showLessonSlide, lessonHooks, lessonShown, lessonPage } from './lessonWindow'
+import { openLessonWindow, showLessonSlide, lessonHooks, lessonShown, lessonPage, lessonWindowOpen, showCheck, markCheck, checkUp } from './lessonWindow'
+import { noteAnswer, noteCheck, noteLine, noteSaid, noteSlide, noteYou, openCheck, startRun } from './lessonRecord'
 import { lessonPlan, planText } from './lessonPlan'
 import { goToPage, lastLesson, lessonQuizText, lessonText, pageLog, readLesson, warmPictures } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
@@ -37,8 +38,8 @@ import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, t
 import { doOnScreen } from './hands'
 import { teach } from './teach'
 import { claudeChat, draftWithConnectors } from './claude'
-import { voiceConfirm, voiceHush, voiceSay } from './voice'
-import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot, pageTurnedByNova, boardOnScreen, slideHasRoom, screenLook, sameLook, clearLessonInk } from './roamiesTools'
+import { voiceCancel, voiceConfirm, voiceHush, voiceSay } from './voice'
+import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot, pageTurnedByNova, boardOnScreen, slideHasRoom, screenLook, sameLook, clearLessonInk, forgetLessonInk, lessonInkIdle } from './roamiesTools'
 import { memoryOnEnd, noteExchange } from './novaMemory'
 import { get, getProfileId } from './db'
 import { briefText, startFocus, stopFocus } from './buddy'
@@ -714,6 +715,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     // comes until the next line (they used to run ahead of the voice on a guessed clock).
     if (tutorOn() && !line.trim()) return false // (a step with nothing to say draws straight after the one before)
     const id = tutorOn() ? ++lineSeq : 0
+    if (id) noteLine(id, line)
     wc.send('nova:speak', { text: `${id ? `\u2063s${id}\u2063` : ''}${teaching ? `${line} \u2063p\u2063 ` : `${line} `}` })
     return id || true
   }
@@ -722,8 +724,12 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   }
   // The lesson window's buttons. Next and Back cut this stop short (as the Next button did); Pause stops the voice and
   // Resume carries on; End ends tutor mode; a slide picked from the strip is just shown (Nova hears about it).
-  lessonHooks.next = () => turnHooks.next()
+  lessonHooks.next = () => {
+    forgetLessonInk()
+    turnHooks.next()
+  }
   lessonHooks.back = () => {
+    forgetLessonInk()
     const tr = turnRef.current
     if (tr) Object.assign(tr, { quiet: true, skipped: true, stopNudged: true })
     voiceHush()
@@ -733,6 +739,8 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     if (on) {
       const tr = turnRef.current
       if (tr) Object.assign(tr, { quiet: true, skipped: true, stopNudged: true })
+      forgetLessonInk()
+      clearLessonInk()
       voiceHush()
     } else turnHooks.ask('(Tutor mode: they pressed Resume. Carry on the lesson from where you were: one short line to pick up the thread, then go on.)')
   }
@@ -741,6 +749,28 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   }
   lessonHooks.went = (n) => turnHooks.ask(`(Tutor mode: they clicked back to slide or page ${n} in the lesson window, so it's showing now. Ask in one short line what they'd like to look at again there, and wait.)`)
   lessonHooks.moved = () => clearLessonInk()
+  // The talking globe never waits on the slide: beside the check card when one is up, else in the card column.
+  lessonHooks.laidOut = (a) => {
+    const focus = a.check ?? (a.column ? [a.column[0], a.column[1] + a.column[3] * 0.45, a.column[2], 40] : null)
+    if (focus) orbAgent({ type: 'lessonArea', focus, avoid: a.avoid })
+  }
+  // They tapped an option on the answer card: marked right or wrong at once (on the card and in the lesson record), and
+  // Nova carries on from it (why it's right, or the part that didn't land, explained again a different way).
+  lessonHooks.answer = (i) => {
+    const c = openCheck()
+    const up = checkUp()
+    if (!c || !up) return
+    const same = (a: string, b: string): boolean => a.toLowerCase().replace(/^[a-d][).:]\s*/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim() === b.toLowerCase().replace(/^[a-d][).:]\s*/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+    const opt = up.options[i] ?? ''
+    const right = up.options.findIndex((o) => same(o, c.answer))
+    const ok = right >= 0 ? right === i : same(opt, c.answer)
+    noteAnswer(opt, ok)
+    markCheck(i, right >= 0 ? right : ok ? i : null)
+    voiceCancel()
+    turnHooks.ask(
+      `(Tutor mode: they tapped "${opt}" for the check "${c.question}". ${ok ? "That's right. Say why it's right in one line, then go on." : `That's not it (say so gently first; never start with "right"): the answer is "${c.answer}".${c.wrongIdea ? ` The likely mix-up: ${c.wrongIdea}.` : ''} Explain only the part that didn't land, a different way (a new comparison), then a quick second check (check again).`})`
+    )
+  }
   turnHooks.lineDrawn = (id) => {
     if (!wc.isDestroyed()) wc.send('nova:lineDrawn', id)
   }
@@ -786,6 +816,9 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
           if (!quick && !wc.isDestroyed()) wc.send('nova:speak', { text: pick(["I've got your slides up. Give me a moment to plan the lesson. ", "Got them. Let me map out how to teach this, one moment. "]) })
           const plan = await ready
           readHere.set(l.id, Date.now())
+          // (the lesson record: its checks, answers, shaky ideas and what was said and drawn, for Nova's page and Replay)
+          startRun(l, (plan?.stops ?? []).map((st) => ({ n: st.n, topic: st.topic, idea: st.idea, slides: st.slides })))
+          noteSlide(1, null)
           const word = l.kind === 'slides' ? 'slide' : 'page'
           return text(`${plan ? `${planText(plan, word)}
 
@@ -874,8 +907,42 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       "Tutor mode: show a slide or page in the lesson window (it turns at once). beside: an earlier one they have ALREADY seen, shown next to it for \"remember slide 4\" (never one they haven't reached). Then draw: rings and underlines go on the words of what's showing (at: {text: words exactly as on the slide}); cards go in the column beside it.",
       { page: z.number().int().min(1), beside: z.number().int().min(1).optional() },
       async ({ page, beside }) => {
+        // (the drawings for the slide showing play first: each waits for its spoken line)
+        await lessonInkIdle()
+        if (turnRef.current?.skipped) return text('They pressed Next, so this stop is over: stop here and say nothing more.')
         clearLessonInk()
-        return text(await showLessonSlide(page, beside ?? null))
+        const r = await showLessonSlide(page, beside ?? null)
+        if (/^Showing /.test(r)) noteSlide(page, beside ?? null)
+        return text(r)
+      }
+    ),
+    tool(
+      'check',
+      'Tutor mode: a check question on the answer card in the lesson window, after a key idea (and at the start of a topic, to see what they know). choice: 3 or 4 short options they tap (or say); say: they explain in a sentence, out loud. answer: the right option exactly as written in options (choice), or the key points a good answer has (say). wrong_idea: the misunderstanding behind the likely wrong answer. Then ask it in one short line (don\'t read the options out) and stop: wait for their answer.',
+      {
+        question: z.string().max(200),
+        kind: z.enum(['choice', 'say']),
+        options: z.array(z.string().max(90)).min(2).max(4).optional(),
+        answer: z.string().max(300),
+        wrong_idea: z.string().max(200).optional(),
+        topic: z.string().max(80).optional()
+      },
+      async ({ question, kind, options, answer, wrong_idea, topic }) => {
+        if (!lessonWindowOpen()) return text('The lesson window isn\'t open: ask the question out loud instead.')
+        const k = kind === 'choice' && options && options.length >= 2 ? 'choice' : 'say'
+        showCheck({ question, kind: k, options })
+        noteCheck({ stop: null, topic: topic ?? '', question, kind: k, options, answer, wrongIdea: wrong_idea })
+        return text(k === 'choice' ? 'The card is up with the options. Ask it in one short line and stop: they tap or say an answer.' : 'The card is up. Ask it in one short line and stop: they answer out loud.')
+      }
+    ),
+    tool(
+      'note_answer',
+      'Tutor mode: after they ANSWER a check out loud (not for a tapped option: that\'s noted already), record how it went. correct: the key idea is there; missed: what was missing or wrong, in a few words (it goes on their shaky list).',
+      { correct: z.boolean(), missed: z.string().max(160).optional(), said: z.string().max(300).optional().describe('their answer, in short') },
+      async ({ correct, missed, said }) => {
+        const c = noteAnswer(said ?? '', correct, missed)
+        if (c && checkUp()) markCheck(null, null)
+        return text(c ? (correct ? 'Noted: right. Say why it\'s right in a line, then go on.' : 'Noted on their shaky list. Explain only the part that was missing, a different way, then a quick second check.') : 'There was no check waiting for an answer.')
       }
     )
   ]
@@ -904,7 +971,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
   ]
   // (The lesson stage teaches from the whole document it read and shows the slides on the board: no screenshots, page
   // turning or window reading, which only led to extra steps. Split screen rings their own window, so it keeps them.)
-  const TUTOR_KEEP = new Set(['draw', 'see_photo', 'find_figure', 'find_illustrations', 'read_lesson', 'show_slide', 'tutor_done', 'school', 'school_file'])
+  const TUTOR_KEEP = new Set(['draw', 'see_photo', 'find_figure', 'find_illustrations', 'read_lesson', 'show_slide', 'check', 'note_answer', 'tutor_done', 'school', 'school_file'])
   const all = [...tools, ...lessonTools, ...slideTools, ...figureTools, ...schoolTools, ...tutorTools, ...(await roamiesSdkTools(tool, new Set(['web_search']), (name) => (name === 'web_search' || name === 'act_in_app' || name === 'take_screenshot' ? slow() : undefined)))]
   // Every tool shows what it's doing beside the globe while it runs (Roamies' activity lines).
   for (const t of all) {
@@ -1474,6 +1541,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   // A heart-to-heart: Sonnet for this chat (same conversation, no restart), at chat effort; else back to the usual.
   const chat = tutorOn() ? { deep: false, effort: want } : chatDepth(said)
   noteHosts(said)
+  if (tutorOn()) noteYou(said)
   // A long chat (conversation mode, or a heart-to-heart) goes on a card beside the globe as well, both sides, so a long
   // rant or reply can be read back instead of being cut off in the bubble. It goes when the chat moves on.
   heart = chat.deep
@@ -1534,6 +1602,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
       beatDone = true
       if (!wc.isDestroyed()) wc.send('nova:speak', { text: t })
       if (chatCard && !turn.research) orbPanel('append', t)
+      if (tutorOn()) noteSaid(t.replace(MARKER, ''))
     },
     (t) => {
       // The research card: once the answer turns into points or cites sources, all of it streams onto the card.
