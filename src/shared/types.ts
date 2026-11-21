@@ -987,9 +987,10 @@ export type LessonDetail = Omit<LessonSummary, 'pack'> & {
   transcript: { who: 'nova' | 'you'; text: string; at: number }[]
   pack: LessonTestPack | null
 }
+export type PracticeQ = { q: string; topic: string; idea: string; points: string[]; model: string; lessonId: string }
 export type LessonMapData = {
-  modules: { name: string; topics: { topic: string; status: 'solid' | 'shaky' | 'taught' | 'new'; lessons: { id: string; title: string }[]; noteId?: string; mindmapId?: string; deck?: string }[] }[]
-  due: { tests: { id: string; title: string }[]; shaky: { id: string; title: string; topic: string; idea: string }[] }
+  modules: { name: string; examIn?: number; topics: { topic: string; status: 'solid' | 'shaky' | 'taught' | 'new'; lessons: { id: string; title: string }[]; noteId?: string; mindmapId?: string; deck?: string }[] }[]
+  due: { tests: { id: string; title: string }[]; shaky: { id: string; title: string; topic: string; idea: string }[]; later: number }
 }
 
 /** Tutor mode's lesson window (main/lessonWindow.ts). */
@@ -1318,6 +1319,12 @@ export interface Api {
     remove(id: string): Promise<void>
     makePack(id: string): Promise<boolean>
     teach(path: string, carryOn?: string): Promise<string>
+    /** New practice cases (on what's due, a topic, or a module). */
+    practice(o: { due?: boolean; topic?: string; module?: string; lessonId?: string }): Promise<PracticeQ[]>
+    markPractice(q: PracticeQ, answer: string): Promise<{ correct: boolean; hit: boolean[]; feedback: string } | null>
+    savePractice(results: { q: PracticeQ; correct: boolean }[]): Promise<void>
+    /** Exam practice for a module: from its lessons' tests, weighted to what's shaky. */
+    exam(module: string): Promise<{ mcq: (LessonTestPack['test']['mcq'][number] & { lessonId: string })[]; saq: (LessonTestPack['test']['saq'][number] & { lessonId: string })[] }>
   }
   nova: {
     /** One request. Speech arrives meanwhile through onSpeak / onBeat; tools that live in this window through onTool. */

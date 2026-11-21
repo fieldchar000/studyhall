@@ -315,7 +315,11 @@ const api: Api = {
     replay: (id) => ipcRenderer.invoke('lessons:replay', id),
     remove: (id) => ipcRenderer.invoke('lessons:remove', id),
     makePack: (id) => ipcRenderer.invoke('lessons:makePack', id),
-    teach: (path, carryOn) => ipcRenderer.invoke('lessons:teach', path, carryOn)
+    teach: (path, carryOn) => ipcRenderer.invoke('lessons:teach', path, carryOn),
+    practice: (o) => ipcRenderer.invoke('practice:make', o),
+    markPractice: (q, answer) => ipcRenderer.invoke('practice:mark', q, answer),
+    savePractice: (results) => ipcRenderer.invoke('practice:save', results),
+    exam: (module) => ipcRenderer.invoke('practice:exam', module)
   },
   nova: {
     turn: (said, studyhall) => ipcRenderer.invoke('nova:turn', said, studyhall),

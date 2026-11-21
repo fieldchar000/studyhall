@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { deleteRun, getRun, listRuns, type LessonRun } from './lessonRecord'
 import { makePack, markSaq, saveTest, type LessonPack } from './lessonPack'
 import { startReplay } from './lessonReplay'
+import { dueChecks, examSet, examsSoon, makePractice, markPractice, practiceHistory, savePractice, startPracticeNudges, type PracticeQ } from './lessonPractice'
 import { setTutor, tutorOn, tutorHooks } from './tutor'
 
 export type LessonSummary = {
@@ -25,7 +26,10 @@ export type LessonSummary = {
   replay: boolean
 }
 export type MapTopic = { topic: string; status: 'solid' | 'shaky' | 'taught' | 'new'; lessons: { id: string; title: string }[]; noteId?: string; mindmapId?: string; deck?: string }
-export type LessonMap = { modules: { name: string; topics: MapTopic[] }[]; due: { tests: { id: string; title: string }[]; shaky: { id: string; title: string; topic: string; idea: string }[] } }
+export type LessonMap = {
+  modules: { name: string; topics: MapTopic[]; examIn?: number }[]
+  due: { tests: { id: string; title: string }[]; shaky: { id: string; title: string; topic: string; idea: string }[]; later: number }
+}
 
 const packOf = (r: LessonRun): LessonPack | null => (r.pack?.made ? (r.pack as unknown as LessonPack) : null)
 
@@ -62,7 +66,6 @@ async function lessonMap(): Promise<LessonMap> {
   const mods = new Map<string, Map<string, MapTopic>>()
   const rank = { new: 0, taught: 1, solid: 2, shaky: 3 }
   const tests: LessonMap['due']['tests'] = []
-  const shaky: LessonMap['due']['shaky'] = []
   // Oldest first, so a later lesson's result on a topic wins (except shaky, which stays until it's put right).
   for (const r of [...runs].reverse()) {
     const p = packOf(r)
@@ -89,14 +92,23 @@ async function lessonMap(): Promise<LessonMap> {
       topics.set(key, { topic: was?.topic ?? name, status: next, lessons, noteId: p?.noteId ?? was?.noteId, mindmapId: p?.mindmapId ?? was?.mindmapId, deck: p?.deck ?? was?.deck })
     }
     if (p && !p.taken && p.test.mcq.length) tests.push({ id: r.id, title: r.title })
-    for (const x of r.shaky) if (!x.fixed) shaky.push({ id: r.id, title: r.title, topic: x.topic, idea: x.idea })
   }
+  // Practice: the latest result on a topic decides it (right: solid, unless a shaky idea on it is still open; wrong: shaky).
+  for (const p of await practiceHistory()) {
+    const t = mods.get(p.module)?.get(p.topic.toLowerCase()) ?? [...(mods.get(p.module)?.values() ?? [])].find((x) => same(x.topic, p.topic))
+    if (!t) continue
+    const open = runs.some((r) => r.shaky.some((x) => !x.fixed && same(x.topic, t.topic)))
+    t.status = p.correct ? (open ? 'shaky' : 'solid') : 'shaky'
+  }
+  const soon = examsSoon()
+  const dueNow = await dueChecks().catch(() => [])
+  const open = runs.flatMap((r) => r.shaky.filter((x) => !x.fixed)).length
   return {
     modules: [...mods.entries()]
-      .map(([name, t]) => ({ name, topics: [...t.values()] }))
+      .map(([name, t]) => ({ name, topics: [...t.values()], ...(soon[name] != null ? { examIn: soon[name] } : {}) }))
       .filter((m) => m.topics.length)
       .sort((a, b) => (a.name === 'Other' ? 1 : b.name === 'Other' ? -1 : a.name.localeCompare(b.name))),
-    due: { tests: tests.reverse().slice(0, 6), shaky: shaky.reverse().slice(0, 12) }
+    due: { tests: tests.reverse().slice(0, 6), shaky: dueNow.map((d) => ({ id: d.lessonId, title: d.title, topic: d.topic, idea: d.fix })), later: Math.max(0, open - dueNow.length) }
   }
 }
 
@@ -119,12 +131,18 @@ async function suggestions(): Promise<{ path: string; name: string; at: number; 
 }
 
 export function registerLessonsIpc(notify: (title: string, body: string) => void): void {
+  startPracticeNudges(notify)
   ipcMain.handle('lessons:list', async () => (await listRuns()).map(summary))
   ipcMain.handle('lessons:get', async (_e, id: string) => {
     const r = await getRun(String(id))
     return r ? { ...summary(r), stopsList: r.stops, checksList: r.checks, shakyList: r.shaky, transcript: r.transcript, pack: packOf(r) } : null
   })
   ipcMain.handle('lessons:map', () => lessonMap())
+  // Practice (Map tab): new cases on what's due, a topic or a module; marked one by one; results kept.
+  ipcMain.handle('practice:make', (_e, o: { due?: boolean; topic?: string; module?: string; lessonId?: string }) => makePractice(o ?? {}))
+  ipcMain.handle('practice:mark', (_e, q: PracticeQ, answer: string) => markPractice(q, String(answer ?? '')))
+  ipcMain.handle('practice:save', (_e, results: { q: PracticeQ; correct: boolean }[]) => savePractice(Array.isArray(results) ? results : []))
+  ipcMain.handle('practice:exam', (_e, module: string) => examSet(String(module ?? '')))
   ipcMain.handle('lessons:suggest', () => suggestions())
   ipcMain.handle('lessons:markSaq', (_e, id: string, i: number, answer: string) => markSaq(String(id), Number(i), String(answer ?? '')))
   ipcMain.handle('lessons:saveTest', (_e, id: string, taken: { mcq: (number | null)[]; saq: { answer: string; hit: boolean[]; feedback: string }[] }) => saveTest(String(id), taken))
