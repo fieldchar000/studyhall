@@ -44,7 +44,7 @@ let booting: Promise<Any> | null = null
 // What the current request is (set by the conversation for each turn).
 export const turnHooks = {
   /** Speak a drawing's line now (in order with the reply); false when nothing can be said. */
-  speak: (_text: string): boolean => false,
+  speak: (_text: string): boolean | number => false,
   /** A drawn button was pressed that asks Nova something ("Quiz me on this"): a new request with these words. */
   ask: (_text: string): void => {},
   /** Something to hand to a background agent (a drawing's handoff). */
@@ -54,7 +54,9 @@ export const turnHooks = {
   /** Can Nova take a request now (its conversation is set up)? */
   ready: (): boolean => false,
   /** Tutor mode's "Next ›" button: this stop ends here and the lesson goes on. */
-  next: (): void => {}
+  next: (): void => {},
+  /** Tutor mode: a drawing step (by its line number) has finished drawing, so the voice can say the next one. */
+  lineDrawn: (_id: number): void => {}
 }
 
 // Notes for the next request (a quiz answered on a drawn card, the drawing cleared), told to Nova once.
@@ -207,6 +209,7 @@ inkHooks.event = (msg) => {
     notes.push('The study board had been closed, so those rings weren\'t drawn. Show the board again with show_board (all of it) if it still helps.')
   }
   else if (t === 'tutor_next') turnHooks.next()
+  else if (t === 'line_drawn') turnHooks.lineDrawn(Number(msg.id))
   else if (t === 'ink_pinned') rt.ink.pinned(msg.part, !!msg.on)
   else if (t === 'ink_cleared') {
     rt.ink.cleared()

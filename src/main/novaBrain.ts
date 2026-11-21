@@ -707,11 +707,19 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     if (turnRef.current?.quiet || wc.isDestroyed()) return false
     explainSaid(`${line} `)
     // Teaching: a short pause after each step's line (⁣p⁣, never said or shown), so its card or ring lands first.
-    wc.send('nova:speak', { text: teaching ? `${line} \u2063p\u2063 ` : `${line} ` })
-    return true
+    // Tutor mode: the line carries its number (sN between invisible marks, never said or shown), and the voice tells the
+    // drawing when it starts playing: each step's ring and card appear as Nova starts talking about them, and nothing new
+    // comes until the next line (they used to run ahead of the voice on a guessed clock).
+    if (tutorOn() && !line.trim()) return false // (a step with nothing to say draws straight after the one before)
+    const id = tutorOn() ? ++lineSeq : 0
+    wc.send('nova:speak', { text: `${id ? `\u2063s${id}\u2063` : ''}${teaching ? `${line} \u2063p\u2063 ` : `${line} `}` })
+    return id || true
   }
   turnHooks.ask = (said) => {
     if (!wc.isDestroyed()) wc.send('nova:ask', said)
+  }
+  turnHooks.lineDrawn = (id) => {
+    if (!wc.isDestroyed()) wc.send('nova:lineDrawn', id)
   }
   // Tutor mode's "Next ›" button: Nova stops talking, the rest of this stop is skipped quietly (its drawing already
   // stopped on screen), and the next stop is asked for (it starts as soon as this one has wound down).
@@ -1180,6 +1188,8 @@ function chatDepth(said: string): { deep: boolean; effort: NovaEffort } {
 
 /** This request is explaining or teaching (or tutor mode): its voice uses the teaching speed. */
 let teaching = false
+// Tutor mode: each drawing step's spoken line gets a number, unique while the app runs (the drawing waits for it).
+let lineSeq = 0
 // Tutor mode: this lesson's deck has been read (its first request gets a line straight away while it's read).
 let tutorRead = false
 const pick = <T>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)]

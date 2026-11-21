@@ -13,7 +13,7 @@ import { isPhoneApp } from '@/lib/platform'
 import { explainTopic, explainTopicFrom } from './explain'
 import { grounded, isChitChat, stripWake } from './heard'
 import { readCheckin } from '@/lib/brief'
-import { speak, speechStream, warmBeats } from '@/lib/voice/speak'
+import { lineDrawn, speak, speechStream, warmBeats } from '@/lib/voice/speak'
 
 /** Cards, circling and apps exist only on the PC. */
 const onPc = (): boolean => !isPhoneApp()
@@ -579,6 +579,7 @@ async function converse(text: string, source: 'voice' | 'typed' | 'pad', mode: M
   if (!sayListener) {
     sayListener = true
     api.nova.onSay((t) => say(t)) // a walkthrough finishing later
+    api.nova.onLineDrawn((id) => lineDrawn(id)) // (tutor mode: a drawing step is drawn, so its next line may be said)
   }
   const now = new Date()
   const ctx = await loadBriefContext()

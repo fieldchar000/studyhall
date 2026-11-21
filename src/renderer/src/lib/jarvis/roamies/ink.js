@@ -346,7 +346,8 @@
   const park = (kind, x, y) => penApi()?.park(kind, x, y);
   // Draw along points at a hand's pace; the cursor's tip leads the stroke.
   // A hand's pace, a little brisk: about 900 px a second, never a blink, never a crawl.
-  const penDur = (pts) => clamp(len(pts) / 900, 0.25, 1.0);
+  // (Studyhall: tutor mode's lines draw at a hand's pace, about three times slower)
+  const penDur = (pts) => (G.slowPen ? clamp(len(pts) / 420, 0.6, 1.8) : clamp(len(pts) / 900, 0.25, 1.0));
   async function trace(pts, dur, onP) {
     const p = penApi();
     if (reduced() || !p?.held) { onP(1); touch(); return; }
@@ -563,7 +564,7 @@
         if (this.hp) pen(bb, l, this, head, this.hp, this.color, { key: 'h' });
         if (o.flow && this.hp >= 1) { const gap = L / Math.max(1, Math.round(L / 46)), d0 = reduced() ? gap / 2 : (t * 60) % gap; l.fillStyle = HOT; for (let d = d0; d < L; d += gap) { const [px, py] = at(curve, d / L); l.fillRect(Math.round(px) - 2, Math.round(py) - 2, 4, 4); } }
       } });
-    await drawStroke(s); await trace(head, 0.22, (e) => (s.hp = e)); await rest(end[0], end[1]);
+    await drawStroke(s); await trace(head, G.slowPen ? 0.45 : 0.22, (e) => (s.hp = e)); await rest(end[0], end[1]);
     return s;
   }
 
@@ -2222,6 +2223,22 @@
   // Spoken lines: the marks are released across the line from when its audio starts (voice-out.js learns how many
   // characters a second the voice says); text only, about 2.6 words a second.
   const cps = () => R.voiceOut?.cps?.() ?? 15;
+  // Studyhall: the drawing lines the voice has started (tutor mode), and waiting for one (true: heard; false: timed out).
+  const heardLines = new Set();
+  // It keeps waiting while Nova is still talking (a long lead-in before the line); it gives up once the voice has been
+  // quiet for a few seconds without saying it (the voice is off, or that line was cut), or after maxS.
+  function lineHeard(id, gen, maxS) {
+    return new Promise((res) => {
+      const t0 = now(); let talked = t0;
+      const tick = () => {
+        if (heardLines.has(id)) return res(true);
+        if (R.voiceOut?.playing?.()) talked = now();
+        if (gen !== G.gen || now() - t0 > maxS || now() - talked > 5) return res(false);
+        setTimeout(tick, 40);
+      };
+      tick();
+    });
+  }
   async function voiceStart() {
     const t0 = now();
     while (now() - t0 < 2.5) { if (R.voiceOut?.playing()) return now(); await sleep(50); }
@@ -2244,13 +2261,24 @@
     return f(m, ctx);
   }
   async function runBeat(b, e, clock, gen) {
-    const voiced = b.voiced && clock.T != null, chars = String(b.caption ?? '').length;
+    // Studyhall (tutor mode): a beat with a line number draws when the voice really starts that line (it tells us), so
+    // its ring and card come as Nova starts talking about them and nothing new comes until the next line; drawn at a
+    // hand's pace. If the voice never says (it's off), the drawing goes back to the clock.
+    const lined = b.line != null && !clock.deaf;
+    if (lined) {
+      const heard = await lineHeard(b.line, gen, 90);
+      if (gen !== G.gen) return;
+      if (heard) clock.heardOnce = true;
+      else if (!clock.heardOnce) clock.deaf = true;
+    }
+    G.slowPen = b.line != null;
+    const voiced = !lined && b.voiced && clock.T != null, chars = String(b.caption ?? '').length;
     const t0 = voiced ? Math.max(now(), clock.T + clock.before / cps()) : now();
-    const dur = voiced ? Math.max(1.2, chars / cps()) : Math.max(1.6, String(b.caption ?? '').split(/\s+/).filter(Boolean).length / 2.6);
+    const dur = voiced || lined ? Math.max(1.2, chars / cps()) : Math.max(1.6, String(b.caption ?? '').split(/\s+/).filter(Boolean).length / 2.6);
     clock.before += chars + 1 + (voiced && e.pause ? e.pause * cps() : 0); // (Studyhall: the voice's pause after each step)
     // Behind the voice (the previous beat's marks took longer than its line): draw this one faster to catch up.
     const late = now() - t0;
-    if (penApi()) penApi().speed = late > 0.4 ? clamp(1 + late / 2, 1, 2.5) : 1;
+    if (penApi()) penApi().speed = !lined && late > 0.4 ? clamp(1 + late / 2, 1, 2.5) : 1;
     await until_(t0, gen);
     if (gen !== G.gen) return;
     caption.show(b.caption);
@@ -2267,6 +2295,8 @@
       if (gen !== G.gen) { if (m.part) fadeOut(marks.filter((q) => q.alive && q.part === m.part), 0.2); return; }
     }
     upcoming = [];
+    // (Studyhall, tutor mode: this step is drawn, so the voice may go on to the next step's line; it waits till then)
+    if (b.line != null) R.ink.send?.({ type: 'line_drawn', id: b.line });
     await until_(t0 + dur, gen);
     if (gen !== G.gen || !b.wait) return;
     const result = await waitFor(b, made, gen);
@@ -2340,7 +2370,7 @@
           if (!G.q.length && gen === G.gen) { caption.hide(); if (G.held) { G.held = false; await penApi()?.release(); } }
         } else if (!G.q.length) caption.hide();
       }
-    } finally { G.playing = false; if (!G.q.length) for (const f of G.idle.splice(0)) f(); }
+    } finally { G.playing = false; G.slowPen = false; if (!G.q.length) for (const f of G.idle.splice(0)) f(); }
   }
   // A drawing that goes by itself (the welcome tour): faded `sec` after it finishes, waiting while the pointer rests
   // on one of its pieces (they may be about to click a button).
@@ -2653,6 +2683,7 @@
     },
     // Studyhall: tutor mode's "Next ›" button, bottom right (clear of the captions and of a window's status bar), for
     // the whole lesson. A click stops what Nova is saying and drawing, and the lesson goes on to its next stop.
+    lineSaid(id) { heardLines.add(id); if (heardLines.size > 400) heardLines.delete(heardLines.values().next().value); },
     tutorBar(on) {
       for (const m of marks) if (m.kind === 'tutornext' && m.alive) { m.alive = false; touch(); }
       if (!on) return;

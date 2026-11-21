@@ -229,6 +229,14 @@ export async function warmBeats(): Promise<void> {
   }
 }
 
+// Tutor mode: the drawing steps that have finished drawing (by their line number). A step's line waits for the step
+// before it to be drawn, so Nova never talks on to the next card while the last one is still being drawn.
+const drawnLines = new Set<number>()
+export function lineDrawn(id: number): void {
+  drawnLines.add(id)
+  if (drawnLines.size > 400) drawnLines.delete(drawnLines.values().next().value as number)
+}
+
 export interface SpeechStream {
   push(text: string): void
   /** Something slow is starting and nothing has been said yet. */
@@ -260,11 +268,16 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
   // "⁣p⁣" after a step's line while teaching: a short silence there, so the card or ring it's about lands first.
   const pauses: boolean[] = []
   let pauseNext = false
+  // Tutor mode: "⁣sN⁣" at the start of a drawing step's line: as the piece holding it starts playing, step N draws.
+  const lines: number[][] = []
+  let lineNext: number[] = []
   const enqueue = (piece: string): void => {
     for (const m of piece.matchAll(/⁣(\d)⁣/g)) lookNext.push(Number(m[1]))
+    for (const m of piece.matchAll(/⁣s(\d+)⁣/g)) lineNext.push(Number(m[1]))
     const at = piece.indexOf('⁣p⁣')
     const p = piece
       .replace(/⁣p⁣/g, ' ')
+      .replace(/⁣s\d+⁣/g, ' ')
       .replace(/⁣\d⁣/g, ' ')
       .replace(/[*_#`>]+/g, ' ')
       .replace(/\s+/g, ' ')
@@ -279,6 +292,8 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
     pauseNext = at >= piece.length / 2
     looks[texts.length] = lookNext
     lookNext = []
+    lines[texts.length] = lineNext
+    lineNext = []
     texts.push(p)
     queue.push(voiceOk.then((ok) => (ok && gen === generation ? api.mouth.speak(p).catch(() => null) : null)))
     wake?.()
@@ -313,10 +328,19 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
     setSpeaking(true)
     let i = 0
     let shown = 0
+    let lastLine: number | null = null // the last drawing step's line said
+    let drawWait = true // (stops waiting if a step never reports being drawn: no drawing to wait for)
     try {
       for (;;) {
         if (gen !== generation) return
         if (i < queue.length) {
+          const line = lines[i]?.[0]
+          if (line != null && lastLine != null && drawWait && !drawnLines.has(lastLine)) {
+            const t0 = Date.now()
+            while (!drawnLines.has(lastLine) && Date.now() - t0 < 8000 && gen === generation) await new Promise((r) => setTimeout(r, 50))
+            if (!drawnLines.has(lastLine)) drawWait = false
+          }
+          if (line != null) lastLine = line
           if (pauses[i] && shown > 0) await new Promise((r) => setTimeout(r, 700))
           if (gen !== generation) return
           const audio = await queue[i++]
@@ -326,6 +350,13 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
               api.bauer.lookMark(n)
             } catch {
               /* no floating globe here */
+            }
+          }
+          for (const n of lines[i - 1] ?? []) {
+            try {
+              api.bauer.lineSaid(n)
+            } catch {
+              /* no drawing here */
             }
           }
           if (audio) await play(audio.samples, audio.sampleRate, gen, texts[i - 1], shown++ > 0)
@@ -346,7 +377,7 @@ export function speechStream(fallback: (text: string) => void): SpeechStream {
     push(t) {
       if (gen !== generation) return
       buf += t
-      all += t.replace(/⁣p⁣/g, '')
+      all += t.replace(/⁣p⁣/g, '').replace(/⁣s\d+⁣/g, '')
       cut(false)
     },
     beat() {

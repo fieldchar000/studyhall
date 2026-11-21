@@ -342,6 +342,9 @@ async function boot(opts: {
         R.sfx?.play(live ? 'expand' : 'poof')
         R.wake?.()
         break
+      case 'lineSaid':
+        ;(R.ink as { lineSaid?: (id: number) => void } | undefined)?.lineSaid?.(Number(e.id))
+        break
       case 'hat':
         hat = !!e.on
         R.sfx?.play(hat ? 'expand' : 'poof')

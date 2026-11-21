@@ -83,6 +83,8 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
     }
     else if (msg.type === 'pointReady' && from === pointWin && pointWin) pointWin.webContents.send('bauer:point', lastPoint)
     else if (msg.type === 'lookMark' && Number.isInteger(Number(msg.n))) lookAtMark(Number(msg.n))
+    // Tutor mode: a drawing step's line has started playing, so its ring and card appear now (not on a guessed clock).
+    else if (msg.type === 'lineSaid' && Number.isInteger(Number(msg.id))) orbAgent({ type: 'lineSaid', id: Number(msg.id) })
     // Speech bubbles beside the globe: your words under it, Nova's above it.
     else if (msg.type === 'bubble' && (msg.who === 'you' || msg.who === 'nova')) {
       orbWin?.webContents.send('bauer:bubble', { who: msg.who, text: String(msg.text ?? '').slice(0, 2000), append: !!msg.append, done: !!msg.done })

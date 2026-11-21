@@ -323,6 +323,11 @@ const api: Api = {
       ipcRenderer.on('nova:beat', l)
       return () => ipcRenderer.removeListener('nova:beat', l)
     },
+    onLineDrawn: (cb) => {
+      const l = (_e: unknown, id: number): void => cb(Number(id))
+      ipcRenderer.on('nova:lineDrawn', l)
+      return () => ipcRenderer.removeListener('nova:lineDrawn', l)
+    },
     onSay: (cb) => {
       const l = (_e: unknown, text: string): void => cb(String(text ?? ''))
       ipcRenderer.on('nova:say', l)
@@ -464,6 +469,7 @@ const api: Api = {
     penDone: (rect) => ipcRenderer.send('bauer:window', { type: 'penDone', rect }),
     penCancel: () => ipcRenderer.send('bauer:window', { type: 'penCancel' }),
     lookMark: (n) => ipcRenderer.send('bauer:window', { type: 'lookMark', n }),
+    lineSaid: (id) => ipcRenderer.send('bauer:window', { type: 'lineSaid', id }),
     cardAt: (r) => ipcRenderer.send('bauer:window', { type: 'cardAt', x: r.x, y: r.y, w: r.width, h: r.height }),
     onOrbGo: (cb) => {
       const l = (_e: unknown, s: Parameters<typeof cb>[0]): void => cb(s)

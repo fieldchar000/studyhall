@@ -684,7 +684,8 @@ export function createTools({ allowActions, ui, ask, openUrl, onCommitments, foc
         else for (const p of parts.trimCards(args.deep ? 1 : LIMITS.cardsShown, (q) => loose.has(q) || pinned.has(q))) { shut.push(p); buttons.delete(p); }
         for (const b of seg) for (const m of b.marks) if (m.action && m.part) buttons.set(m.part, m.action);
         for (const b of seg) for (const m of b.marks) if (m.kind === 'quiz' && m.part) quizzes.set(m.part, m);
-        const out = seg.map((b, j) => ({ ...b, n: sg.from + j + 1, caption: plain(b.say), voiced: !!speak(b.say) }));
+        // (Studyhall: speak gives a line number in tutor mode: the overlay draws that beat when the voice starts its line)
+        const out = seg.map((b, j) => { const v = speak(b.say); return { ...b, n: sg.from + j + 1, caption: plain(b.say), voiced: !!v, ...(typeof v === 'number' ? { line: v } : {}) }; });
         said.push(...out.map((b) => b.caption));
         ui({ kind: 'agent', e: { type: 'draw', id, seg: k, beats: out, edits: k ? [] : edits, last: k === segs.length - 1, win, busy: k ? [] : busy, ...(opts.fade ? { fade: opts.fade } : {}), ...(args.deep ? { deep: true } : {}) } });
         // The first beat must show; later ones queue behind it on the overlay without holding this up.

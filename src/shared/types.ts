@@ -1283,6 +1283,8 @@ export interface Api {
     forgetFact(id: string): Promise<{ id: string; text: string; at: string }[]>
     onSpeak(cb: (text: string) => void): () => void
     onBeat(cb: () => void): () => void
+    /** Tutor mode: a drawing step has finished drawing (its line number), so the next line can be said. */
+    onLineDrawn(cb: (id: number) => void): () => void
     /** Something to say later (a walkthrough finished). */
     onSay(cb: (text: string) => void): () => void
     onTool(cb: (call: { id: number; name: string; input: unknown }) => void): () => void
@@ -1353,6 +1355,8 @@ export interface Api {
     penCancel(): void
     /** Nova is talking about mark n on your screen now: the globe floats beside it */
     lookMark(n: number): void
+    /** Tutor mode: the voice has just started saying a drawing step's line (its number), so that step draws now. */
+    lineSaid(id: number): void
     /** (cards window) what the cards are arranged around (window coordinates), or null */
     onSubject(cb: (r: { x: number; y: number; width: number; height: number } | null) => void): () => void
     /** (cards window) where the card Nova is talking about is, in the window */
