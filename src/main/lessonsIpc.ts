@@ -9,6 +9,15 @@ import { makePack, markSaq, saveTest, type LessonPack } from './lessonPack'
 import { startReplay } from './lessonReplay'
 import { dueChecks, examSet, examsSoon, makePractice, markPractice, practiceHistory, savePractice, startPracticeNudges, type PracticeQ } from './lessonPractice'
 import { setTutor, tutorOn, tutorHooks } from './tutor'
+import { clearClaudeActivity } from './claude'
+import {
+  createManualQuiz,
+  deleteSavedQuiz,
+  getSavedQuiz,
+  listSavedQuizzes,
+  reviewQuizQuestion,
+  updateQuizQuestionNote
+} from './politeQuizStore'
 
 export type LessonSummary = {
   id: string
@@ -132,6 +141,17 @@ async function suggestions(): Promise<{ path: string; name: string; at: number; 
 
 export function registerLessonsIpc(notify: (title: string, body: string) => void): void {
   startPracticeNudges(notify)
+  ipcMain.handle('claude:clearActivity', () => clearClaudeActivity())
+  ipcMain.handle('quizzes:list', () => listSavedQuizzes())
+  ipcMain.handle('quizzes:get', (_e, id: string) => getSavedQuiz(String(id ?? '')))
+  ipcMain.handle('quizzes:review', (_e, qz: string, q: string, g: 1 | 3 | 4 | 5) =>
+    reviewQuizQuestion(String(qz ?? ''), String(q ?? ''), g)
+  )
+  ipcMain.handle('quizzes:updateNote', (_e, qz: string, q: string, n: string) =>
+    updateQuizQuestionNote(String(qz ?? ''), String(q ?? ''), String(n ?? ''))
+  )
+  ipcMain.handle('quizzes:remove', (_e, id: string) => deleteSavedQuiz(String(id ?? '')))
+  ipcMain.handle('quizzes:addManual', (_e, input) => createManualQuiz(input))
   ipcMain.handle('lessons:list', async () => (await listRuns()).map(summary))
   ipcMain.handle('lessons:get', async (_e, id: string) => {
     const r = await getRun(String(id))

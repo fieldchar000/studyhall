@@ -12,6 +12,8 @@ import { VoiceCard } from '@/components/VoiceCard'
 import { onSpeaking, speak, voiceLevelRef } from '@/lib/voice/speak'
 import { NovaOrb } from '@/components/NovaOrb'
 import { LessonsTab, MapTab, ShortcutsCard } from './NovaLessons'
+import { QuizzesTab } from './NovaQuizzes'
+import { isDue } from '@/lib/sm2'
 
 const NAMES: { n: NovaName; hint: string }[] = [
   { n: 'Nova', hint: 'Default · clear, 2 syllables' },
@@ -232,7 +234,7 @@ function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | 
   )
 }
 
-type NovaTab = 'lessons' | 'map' | 'nova' | 'settings'
+type NovaTab = 'lessons' | 'quizzes' | 'map' | 'nova' | 'settings'
 
 /** Settings search: shows only the setting cards that mention what you type (their words, or the hidden keywords). */
 function SettingsSearch(): React.JSX.Element {
@@ -560,12 +562,120 @@ const resetIn = (iso: string | null | undefined): string => {
   return h < 1 ? 'resets within the hour' : h < 48 ? `resets in ${h} h` : `resets in ${Math.round(h / 24)} days`
 }
 
+function agoShort(iso: string): string {
+  const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000))
+  if (s < 60) return 'just now'
+  const m = Math.round(s / 60)
+  if (m < 60) return m + 'm ago'
+  const h = Math.round(m / 60)
+  if (h < 48) return h + 'h ago'
+  return Math.round(h / 24) + 'd ago'
+}
+
+function fmtPct(measured: number | null, est: number): { text: string; measured: boolean } {
+  if (measured != null && measured > 0) {
+    return { text: (measured % 1 === 0 ? measured : measured.toFixed(1)) + '%', measured: true }
+  }
+  if (est >= 0.1) return { text: '~' + est.toFixed(1) + '%', measured: false }
+  return { text: '<0.1%', measured: false }
+}
+
+const KIND_LABEL: Record<string, string> = {
+  quiz: 'Quiz',
+  tutor: 'Tutor',
+  explain: 'Explain',
+  search: 'Search',
+  pack: 'Pack',
+  chat: 'Chat',
+  other: 'Task'
+}
+
+function UsageBreakdownCard({ claude }: { claude: ClaudeStatus | null }): React.JSX.Element {
+  const [refreshing, setRefreshing] = useState(false)
+  const items = claude?.activities ?? []
+  const five = claude?.usage?.fiveHour
+  const week = claude?.usage?.sevenDay
+  const ses5 = (claude?.sessionFiveHourPct ?? 0) > 0
+    ? claude!.sessionFiveHourPct + '%'
+    : (claude?.sessionEstFiveHourPct ?? 0) >= 0.1
+      ? '~' + claude!.sessionEstFiveHourPct!.toFixed(1) + '%'
+      : '0%'
+  return (
+    <section className="card rounded-2xl p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="font-semibold">What used your Claude</h2>
+          <p className="mt-0.5 text-xs text-muted">
+            5h window: <b className="text-ink">{pct(five)}</b> {'\u00b7'} Week:{' '}
+            <b className="text-ink">{pct(week)}</b> {'\u00b7'} This session:{' '}
+            <b className="text-ink">{ses5}</b> of 5h
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            className="text-xs text-muted underline hover:text-ink"
+            disabled={refreshing}
+            onClick={() => {
+              setRefreshing(true)
+              void api.claude.refreshUsage().finally(() => setRefreshing(false))
+            }}
+          >
+            {refreshing ? 'Refreshing...' : 'Refresh %'}
+          </button>
+          {items.length > 0 && (
+            <button
+              className="text-xs text-muted underline hover:text-ink"
+              onClick={() => void api.claude.clearActivity?.()}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+      <ul className="mt-3 flex flex-col">
+        {items.slice(0, 15).map((a) => {
+          const p5 = fmtPct(a.fiveHourPct, a.estFiveHourPct)
+          const p7 = fmtPct(a.sevenDayPct, a.estSevenDayPct)
+          return (
+            <li key={a.id} className="flex items-start justify-between gap-3 border-t border-line py-2.5 text-[13px] first:border-t-0">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="nova-tag">{KIND_LABEL[a.kind] ?? 'Task'}</span>
+                  <span className="truncate font-medium">{a.label}</span>
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-muted">
+                  {a.model} {'\u00b7'} {a.effort}
+                  {a.turns > 1 ? ' \u00b7 ' + a.turns + ' turns' : ''} {'\u00b7'} {agoShort(a.at)}
+                </div>
+              </div>
+              <div className="shrink-0 text-right tabular-nums">
+                <div className={'text-[13px] font-semibold ' + (p5.measured ? 'text-[#7ee2b8]' : 'text-ink')}>
+                  {p5.text} <span className="text-[11px] font-normal text-muted">of 5h</span>
+                </div>
+                <div className="text-[11px] text-muted">{p7.text} of wk</div>
+              </div>
+            </li>
+          )
+        })}
+        {items.length === 0 && (
+          <li className="py-2 text-sm text-muted">
+            Nothing logged yet. Quizzes, tutor lessons, and requests will appear here with the % of your Claude plan they used.
+          </li>
+        )}
+      </ul>
+      <p className="mt-2 text-[11px] text-muted">
+        Green = measured directly from Claude's meter; ~ = estimated for turns under 1%.
+      </p>
+    </section>
+  )
+}
+
 export function NovaPage(): React.JSX.Element {
   // (the tab: Lessons by default; the one you were on, next time)
   const [tab, setTab] = useState<NovaTab>(() => {
     try {
       const t = localStorage.getItem('nova.tab')
-      return t === 'map' || t === 'nova' || t === 'settings' ? t : 'lessons'
+      return t === 'quizzes' || t === 'map' || t === 'nova' || t === 'settings' ? t : 'lessons'
     } catch {
       return 'lessons'
     }
@@ -607,6 +717,20 @@ export function NovaPage(): React.JSX.Element {
   const planKey = plan ?? (claude?.plan === 'max' ? 'max5' : 'pro')
   const planUsd = PLANS.find((p) => p.key === planKey)?.usd ?? 20
   const [busy, setBusy] = useState(false)
+  const [quizDue, setQuizDue] = useState(0)
+  useEffect(() => {
+    const refreshDue = (): void => {
+      void api.quizzes
+        ?.list()
+        .then((list) =>
+          setQuizDue(list.reduce((s, qz) => s + qz.questions.filter((q) => isDue(q)).length, 0))
+        )
+        .catch(() => {})
+    }
+    refreshDue()
+    const off = api.quizzes?.onChanged?.(refreshDue)
+    return () => off?.()
+  }, [])
   const [cap, setCap] = useState<number | null>(null)
   const [confirm, setConfirm] = useState<'disconnect' | 'remove' | null>(null)
   const [connectors, setConnectors] = useState<string[] | null>(null)
@@ -661,6 +785,21 @@ export function NovaPage(): React.JSX.Element {
             <span className="nova-chip">
               Brain <b>{brain === 'auto' ? 'Auto' : `${brain[0].toUpperCase()}${brain.slice(1)} · ${effort}`}</b>
             </span>
+            {claude?.signedIn && (
+              <button
+                type="button"
+                className="nova-chip cursor-pointer hover:brightness-110"
+                title="Click to see what used your Claude %"
+                onClick={() => pickTab('nova')}
+              >
+                Claude 5h <b>{pct(claude.usage?.fiveHour)}</b> {'\u00b7'} Wk <b>{pct(claude.usage?.sevenDay)}</b>
+                {(claude.sessionFiveHourPct ?? 0) > 0 ? (
+                  <span className="text-[#7ee2b8]"> (+{claude.sessionFiveHourPct}% session)</span>
+                ) : (claude.sessionEstFiveHourPct ?? 0) >= 0.1 ? (
+                  <span className="text-muted"> (~{claude.sessionEstFiveHourPct!.toFixed(1)}% session)</span>
+                ) : null}
+              </button>
+            )}
             {claude?.last && (
               <span className="nova-chip">
                 Last answer <b>{(claude.last.ms / 1000).toFixed(1)} s</b> on {claude.last.model} · {claude.last.effort}
@@ -737,6 +876,7 @@ export function NovaPage(): React.JSX.Element {
         {(
           [
             ['lessons', 'Lessons'],
+            ['quizzes', quizDue ? 'Quizzes (' + quizDue + ')' : 'Quizzes'],
             ['map', 'Map'],
             ['nova', name],
             ['settings', 'Settings']
@@ -749,9 +889,11 @@ export function NovaPage(): React.JSX.Element {
       </div>
 
       {tab === 'lessons' && <LessonsTab name={name} />}
+      {tab === 'quizzes' && <QuizzesTab onDueChange={setQuizDue} />}
       {tab === 'map' && <MapTab />}
       {tab === 'nova' && (
         <div className="grid items-start gap-4 lg:grid-cols-2">
+            {!phone && <UsageBreakdownCard claude={claude} />}
             <section className="card rounded-2xl p-5">
               <h2 className="font-semibold">Recently</h2>
               <ul className="mt-2 flex flex-col">

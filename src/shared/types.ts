@@ -1012,7 +1012,56 @@ export interface ClaudeStatus {
   paused: string | null // why Nova isn't using Claude right now (limit reached, extra usage, …)
   last: { model: string; effort: string; ms: number; costUsd: number; at: string } | null
   monthCostUsd: number // what Nova's Claude use this month would cost at API prices (a guide to how heavy it is)
+  sessionCostUsd?: number
+  sessionFiveHourPct?: number
+  sessionSevenDayPct?: number
+  sessionEstFiveHourPct?: number
+  sessionEstSevenDayPct?: number
+  activities?: ClaudeActivity[]
   error: string | null
+}
+
+export interface ClaudeActivity {
+  id: string
+  label: string
+  kind: 'quiz' | 'tutor' | 'explain' | 'chat' | 'search' | 'pack' | 'other'
+  groupKey?: string
+  model: string
+  effort: string
+  turns: number
+  ms: number
+  at: string
+  fiveHourPct: number | null
+  sevenDayPct: number | null
+  estFiveHourPct: number
+  estSevenDayPct: number
+  costUsd: number
+}
+
+export interface SavedQuizQuestion {
+  id: string
+  prompt: string
+  kind: 'radio' | 'checkbox' | 'text' | 'select' | 'richtext'
+  options: string[]
+  chosen: string[]
+  images: string[]
+  note: string
+  ease: number
+  repetitions: number
+  interval_days: number
+  due_at: string
+  last_reviewed_at?: string
+}
+
+export interface SavedQuiz {
+  id: string
+  title: string
+  course: string
+  url: string
+  startedAt: string
+  submittedAt?: string
+  score?: string
+  questions: SavedQuizQuestion[]
 }
 
 export interface Prefs {
@@ -1367,11 +1416,38 @@ export interface Api {
     signOut(): Promise<ClaudeStatus>
     remove(): Promise<ClaudeStatus>
     refreshUsage(): Promise<ClaudeStatus>
+    clearActivity?(): Promise<ClaudeStatus>
     onStatus(cb: (s: ClaudeStatus) => void): () => void
     /** Draft something with your claude.ai connectors (asks before each connector action). */
     draft(text: string): Promise<string>
     /** Which connectors your Claude account has (nothing is used). */
     connectors(): Promise<string[]>
+  }
+  quizzes?: {
+    list(): Promise<SavedQuiz[]>
+    get(id: string): Promise<SavedQuiz | null>
+    review(
+      quizId: string,
+      questionId: string,
+      grade: 1 | 3 | 4 | 5
+    ): Promise<SavedQuiz | null>
+    updateNote(
+      quizId: string,
+      questionId: string,
+      note: string
+    ): Promise<SavedQuiz | null>
+    remove(id: string): Promise<boolean>
+    addManual(input: {
+      title: string
+      course: string
+      questions: {
+        prompt: string
+        options?: string[]
+        chosen?: string[]
+        note?: string
+      }[]
+    }): Promise<SavedQuiz>
+    onChanged(cb: () => void): () => void
   }
   /** Bauer's local AI (PC only; on the pad these reject). */
   ai: {

@@ -48,6 +48,47 @@ function numeral(raw: string): string {
 
 const GREEK: Record<string, string> = { α: 'alpha', β: 'beta', γ: 'gamma', δ: 'delta', ε: 'epsilon', θ: 'theta', κ: 'kappa', λ: 'lambda', μ: 'micro', π: 'pi', σ: 'sigma', τ: 'tau', φ: 'phi', χ: 'chi', ψ: 'psi', ω: 'omega', Δ: 'delta', Σ: 'sigma', Ω: 'omega' }
 
+const KEEP_UPPER = new Set([
+  'AM', 'AN', 'AS', 'AT', 'BE', 'BY', 'DO', 'GO', 'HE', 'HI', 'IF', 'IN', 'IS', 'IT',
+  'ME', 'MY', 'NO', 'OF', 'OH', 'OK', 'ON', 'OR', 'SO', 'TO', 'UP', 'US', 'WE',
+  'ALL', 'AND', 'ARE', 'BUT', 'CAN', 'DID', 'FOR', 'GET', 'GOT', 'HAD', 'HAS', 'HER',
+  'HIM', 'HIS', 'HOW', 'ITS', 'LET', 'MAY', 'NEW', 'NOT', 'NOW', 'OFF', 'OLD', 'ONE',
+  'OUR', 'OUT', 'OWN', 'RUN', 'SAY', 'SEE', 'SET', 'SHE', 'THE', 'TOO', 'TRY', 'TWO',
+  'USE', 'WAY', 'WHO', 'WHY', 'YES', 'YET', 'YOU', 'PIN', 'RAM', 'ROM', 'SIM',
+  'AIDS', 'ASAP', 'BACK', 'BEST', 'BOTH', 'CARD', 'CODE', 'COPY', 'DATA', 'DAYS',
+  'DONE', 'EACH', 'EDIT', 'EXAM', 'FAST', 'FILE', 'FREE', 'FROM', 'FULL', 'GERD',
+  'GIVE', 'GOOD', 'HELP', 'HIDE', 'HIGH', 'HOUR', 'HUGE', 'INTO', 'JUST', 'KEEP',
+  'LIKE', 'LINK', 'LIST', 'LOOK', 'MAKE', 'MERS', 'MORE', 'MOST', 'MUCH', 'MUTE',
+  'NASA', 'NEED', 'NEXT', 'NONE', 'NOTE', 'NOVA', 'ONLY', 'OPEN', 'OVER', 'PAGE',
+  'PART', 'PLAY', 'PLUS', 'QUIZ', 'RAAS', 'READ', 'REAL', 'SARS', 'SAVE', 'SEND',
+  'SHOW', 'SKIP', 'SLOW', 'SOME', 'STEP', 'STOP', 'TAKE', 'TEST', 'TEXT', 'THAT',
+  'THIS', 'TIME', 'TRUE', 'VERY', 'VIEW', 'WAIT', 'WEEK', 'WIFI', 'WITH', 'WORD',
+  'WORK', 'YEAR', 'AUTO', 'COVID', 'FALSE', 'START', 'CHECK', 'RIGHT', 'WRONG', 'ISOBAR'
+])
+
+const PRONOUNCE: [RegExp, string][] = [
+  [/\bC\+\+(?=\s|[.,!?;:)\]]|$)/g, 'C plus plus'],
+  [/\bSpO2\b/g, 'S P O 2'],
+  [/\bHbA1c\b/g, 'H B A 1 C'],
+  [/\bH2O\b/g, 'H 2 O'],
+  [/\bCO2\b/g, 'C O 2'],
+  [/\bO2\b/g, 'O 2'],
+  [/\bCa2\+(?=\s|[.,!?;:)\]]|$)/g, 'calcium 2 plus'],
+  [/\bMg2\+(?=\s|[.,!?;:)\]]|$)/g, 'magnesium 2 plus'],
+  [/\bNa\+(?=\s|[.,!?;:)\]]|$)/g, 'sodium plus'],
+  [/\bK\+(?=\s|[.,!?;:)\]]|$)/g, 'potassium plus'],
+  [/\bCl-(?=\s|[.,!?;:)\]]|$)/g, 'chloride minus'],
+  [/\bH\+(?=\s|[.,!?;:)\]]|$)/g, 'H plus'],
+  [/\bpH\b/g, 'P H'],
+  [/\bmRNA\b/g, 'M R N A'],
+  [/\btRNA\b/g, 'T R N A'],
+  [/\brRNA\b/g, 'R R N A'],
+  [/\bNSAIDs\b/g, 'N saids'],
+  [/\bantidiuretic\b/gi, 'anti diuretic'],
+  [/\bokey-?dokie\b/gi, 'okay'],
+  [/\bdokie\b/gi, 'okay']
+]
+
 /** Text the voice can say in full. */
 export function speakable(text: string): string {
   let t = text
@@ -58,6 +99,13 @@ export function speakable(text: string): string {
     .replace(/(\w)['‘’)\]}]+(?=\s|[.,!?;:]|$)/g, '$1')
     // Greek letters, with a number straight after ("β1" → "beta 1", then the number in words)
     .replace(/[αβγδεθκλμπστφχψωΔΣΩ]/g, (g) => ` ${GREEK[g]} `)
+  for (const [re, rep] of PRONOUNCE) t = t.replace(re, rep)
+  t = t
+    // grades, blood types, and ions with stuck +/- (A+, B-, O-, AB+, 10+)
+    .replace(/\b([A-Za-z]+|\d+)\+(?=\s|[.,!?;:)\]]|$)/g, '$1 plus')
+    .replace(/\b(AB|[A-DFO])-(?=\s|[.,!?;:)\]]|$)/g, '$1 minus')
+    // letter+digit codes (T3, T4, B12, Q1 -> T 3, B 12, Q 1)
+    .replace(/\b([A-Z]{1,3})(\d+)\b/g, (_m, a: string, b: string) => `${a.split('').join(' ')} ${b}`)
   t = t
     // times: 4:30 → four thirty, 9:05 → nine oh five, 10:00 → ten o'clock
     .replace(/\b(\d{1,2}):(\d{2})\b/g, (_m, h, m) => `${numberWords(Number(h))} ${m === '00' ? "o'clock" : Number(m) < 10 ? `oh ${ONES[Number(m)]}` : numberWords(Number(m))}`)
@@ -83,5 +131,14 @@ export function speakable(text: string): string {
     .replace(/\s?[↓]\s?/g, ' down ')
     .replace(/~\s?/g, 'about ')
     .replace(/\s×\s/g, ' times ')
+  t = t
+    // slash-separated terms (D/calcium, T3/T4, and/or) and underscores
+    .replace(/\band\s*\/\s*or\b/gi, 'and or')
+    .replace(/([A-Za-z]+)\s*\/\s*([A-Za-z]+)/g, '$1 or $2')
+    .replace(/([A-Za-z]+)\s*\/\s*([A-Za-z]+)/g, '$1 or $2')
+    .replace(/(^|\s)\/+(?=[A-Za-z0-9])/g, '$1')
+    .replace(/_+/g, ' ')
+    // spell out 2-5 letter ALL-CAPS acronyms Kokoro's lexicon doesn't know (TSH, PTH, ACTH, ADH, HBS, GX)
+    .replace(/\b([A-Z]{2,5})\b/g, (w) => (KEEP_UPPER.has(w) ? w : w.split('').join(' ')))
   return t.replace(/\s+([.,!?;:])/g, '$1').replace(/\s+/g, ' ').trim()
 }

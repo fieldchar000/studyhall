@@ -89,7 +89,7 @@ export async function youtubeSearch(query: string, playlists: boolean): Promise<
 export async function webSearch(query: string): Promise<string> {
   const started = Date.now()
   const r = await claudeWebSearch(query, { ...claudeBase(), model: claudeModelId('haiku') })
-  recordClaudeCost('haiku', 'low', Date.now() - started, r.cost)
+  recordClaudeCost('haiku', 'low', Date.now() - started, r.cost, { kind: 'search', label: 'Web search: ' + query.slice(0, 50) })
   return r.text
 }
 setMainSearch(webSearch)

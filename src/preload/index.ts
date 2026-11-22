@@ -369,6 +369,17 @@ const api: Api = {
     },
     toolResult: (id, result) => ipcRenderer.send('nova:toolResult', id, result)
   },
+  quizzes: {
+    list: () => ipcRenderer.invoke('quizzes:list'),
+    get: (id) => ipcRenderer.invoke('quizzes:get', id),
+    review: (quizId, questionId, grade) =>
+      ipcRenderer.invoke('quizzes:review', quizId, questionId, grade),
+    updateNote: (quizId, questionId, note) =>
+      ipcRenderer.invoke('quizzes:updateNote', quizId, questionId, note),
+    remove: (id) => ipcRenderer.invoke('quizzes:remove', id),
+    addManual: (input) => ipcRenderer.invoke('quizzes:addManual', input),
+    onChanged: (cb) => on('quizzes:changed', cb)
+  },
   claude: {
     status: () => ipcRenderer.invoke('claude:status'),
     install: () => ipcRenderer.invoke('claude:install'),
@@ -376,6 +387,7 @@ const api: Api = {
     signOut: () => ipcRenderer.invoke('claude:signOut'),
     remove: () => ipcRenderer.invoke('claude:remove'),
     refreshUsage: () => ipcRenderer.invoke('claude:refreshUsage'),
+    clearActivity: () => ipcRenderer.invoke('claude:clearActivity'),
     draft: (text) => ipcRenderer.invoke('claude:draft', text),
     connectors: () => ipcRenderer.invoke('claude:connectors'),
     onStatus: (cb) => {

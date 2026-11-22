@@ -28,7 +28,7 @@ import { lessonPlan, planText } from './lessonPlan'
 import { replaying } from './lessonReplay'
 import { goToPage, lastLesson, lessonQuizText, lessonText, pageLog, readLesson, warmPictures } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
-import { answerPoliteQuiz, isPoliteQuizActive, openPoliteQuiz, seeStudyhall, submitPoliteQuiz, type QuizResult } from './politeQuiz'
+import { answerPoliteQuiz, currentPoliteQuizLabel, isPoliteQuizActive, openPoliteQuiz, seeStudyhall, submitPoliteQuiz, type QuizResult } from './politeQuiz'
 import { figureText } from './figures'
 import { splitForLesson } from './windowSplit'
 import { conversationOn, setConversation } from './conversation'
@@ -1893,7 +1893,28 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   if (chatCard && !turn.research) orbPanel('append', '\n\n')
   // Read-on-screen lines go on a card beside the globe.
   if (turn.research) orbPanel('end', turn.fromWeb ? 'From the web' : /\n\s*>/.test(`\n${written}`) ? 'Draft' : 'Answer')
-  recordClaudeCost(c.liveModel ?? model, c.liveEffort ?? effort, Date.now() - started, cost)
+  const quizHit = !!turn.quizRun || turn.tools.some((t) => t.startsWith('polite_quiz_'))
+  const qLabel = quizHit ? currentPoliteQuizLabel() : null
+  const cleanSaid = said.replace(/\s+/g, ' ').trim()
+  const actLabel = quizHit
+    ? 'Quiz: ' + (qLabel || cleanSaid.slice(0, 60) || 'PoliteMall')
+    : tutorOn()
+      ? (cleanSaid.startsWith('(') ? 'Tutor lesson' : 'Tutor: ' + cleanSaid.slice(0, 60))
+      : teaching
+        ? 'Explain: ' + cleanSaid.slice(0, 60)
+        : cleanSaid.slice(0, 64) || 'Chat'
+  const actKind = quizHit ? 'quiz' : tutorOn() ? 'tutor' : teaching ? 'explain' : 'chat'
+  const groupKey = quizHit
+    ? 'quiz:' + (qLabel || 'active')
+    : tutorOn()
+      ? 'tutor:session'
+      : undefined
+  recordClaudeCost(c.liveModel ?? model, c.liveEffort ?? effort, Date.now() - started, cost, {
+    label: actLabel,
+    kind: actKind,
+    groupKey,
+    refresh: quizHit || cost >= 0.05
+  })
   explainEnd()
   console.info(`Nova turn: ${c.liveModel ?? model}/${c.liveEffort ?? effort} in ${Date.now() - started} ms, cost $${cost.toFixed(5)}, tools: ${turn.tools.join(', ') || 'none'}`)
   logTiming(`${c.liveModel ?? model}/${c.liveEffort ?? effort}: first words ${times.first != null ? `${(times.first / 1000).toFixed(1)} s` : 'none'}, done ${((Date.now() - started) / 1000).toFixed(1)} s, $${cost.toFixed(4)}; ${times.tools.join(', ') || 'no tools'}`)

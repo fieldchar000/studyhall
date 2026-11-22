@@ -1,8 +1,12 @@
 import { BrowserWindow, type WebContents, type WebFrameMain } from 'electron'
 import { findCourse, LMS, lockDown, PART, schoolData, type SchoolCourse } from './politemall'
+import type { SavedQuiz } from '@shared/types'
 import { politeView, politeViewVisible } from './politePage'
+import { upsertSavedQuiz } from './politeQuizStore'
 
 let quizWin: BrowserWindow | null = null
+let activeRecord: SavedQuiz | null = null
+let lastScraped: ScrapedQuestion[] = []
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
@@ -46,6 +50,10 @@ function activeQuizWc(): WebContents | null {
 }
 
 /** True while a PoliteMall quiz attempt is open (keeps Nova locked to Sonnet + High effort). */
+export function currentPoliteQuizLabel(): string | null {
+  return activeRecord?.title ?? null
+}
+
 export function isPoliteQuizActive(): boolean {
   const pv = politeView()
   if (pv && !pv.webContents.isDestroyed() && pv.webContents.getURL().includes('/d2l/lms/quizzing/user/attempt/')) {
@@ -502,19 +510,95 @@ function formatPage(title: string, page: Awaited<ReturnType<typeof readQuizPage>
   return parts.join('\n\n')
 }
 
+function recordPageQuestions(questions: ScrapedQuestion[], images: QuizImage[]): void {
+  lastScraped = questions
+  if (!activeRecord) return
+  const now = new Date().toISOString()
+  for (const q of questions) {
+    const key = norm(q.prompt).slice(0, 140)
+    if (!key) continue
+    const opts = (q.options ?? []).map((o) => o.label).filter(Boolean)
+    const qImgs = images
+      .filter((img) => img.label.includes(q.qid))
+      .slice(0, 2)
+      .map((img) => `data:image/jpeg;base64,${img.data}`)
+    const existing = activeRecord.questions.find(
+      (item) => norm(item.prompt).slice(0, 140) === key
+    )
+    if (existing) {
+      if (!existing.options.length && opts.length) existing.options = opts
+      if (!existing.images.length && qImgs.length) existing.images = qImgs
+    } else {
+      activeRecord.questions.push({
+        id: `item_${activeRecord.questions.length + 1}_${Math.random().toString(36).slice(2, 6)}`,
+        prompt: q.prompt,
+        kind: q.kind,
+        options: opts,
+        chosen: [],
+        images: qImgs,
+        note: '',
+        ease: 2.5,
+        repetitions: 0,
+        interval_days: 0,
+        due_at: now
+      })
+    }
+  }
+  void upsertSavedQuiz(activeRecord).catch(() => {})
+}
+
+function recordAppliedAnswers(answers: { target_id: string; text?: string }[]): void {
+  if (!activeRecord || !lastScraped.length) return
+  for (const a of answers) {
+    for (const q of lastScraped) {
+      let val: string | null = null
+      if (q.kind === 'radio' || q.kind === 'checkbox') {
+        const opt = q.options?.find((o) => o.id === a.target_id)
+        if (opt) val = opt.label || a.target_id
+      } else if (q.kind === 'select' && a.target_id === `${q.qid}_s0`) {
+        const opt = q.options?.find((o) => o.id === (a.text ?? ''))
+        val = opt?.label || a.text || ''
+      } else if (a.target_id === `${q.qid}_t0` || a.target_id === `${q.qid}_r0`) {
+        val = a.text ?? ''
+      }
+      if (val === null) continue
+      const key = norm(q.prompt).slice(0, 140)
+      const saved = activeRecord.questions.find(
+        (item) => norm(item.prompt).slice(0, 140) === key
+      )
+      if (!saved) continue
+      if (q.kind === 'checkbox') {
+        if (val && !saved.chosen.includes(val)) saved.chosen.push(val)
+      } else {
+        saved.chosen = val ? [val] : []
+      }
+      break
+    }
+  }
+  void upsertSavedQuiz(activeRecord).catch(() => {})
+}
+
 export async function openPoliteQuiz(courseQuery?: string, quizQuery?: string): Promise<QuizResult> {
   let wc: WebContents
   let title = 'Current Quiz'
+  let courseName = 'PoliteMall'
 
   const existing = activeQuizWc()
   if (!courseQuery && !quizQuery && existing) {
     wc = existing
+    const dt = await wc.mainFrame
+      .executeJavaScript('document.title', true)
+      .catch(() => '')
+    if (typeof dt === 'string' && dt.trim()) {
+      title = dt.replace(/\s*-\s*PoliteMall.*$/i, '').trim()
+    }
   } else {
     const hit = findQuiz(courseQuery, quizQuery)
     if (!hit) {
       return { text: `Couldn't find a matching quiz${quizQuery ? ` for "${quizQuery}"` : ''}. Call school first to check the exact course and quiz name.` }
     }
-    title = `${hit.quiz.name} (${hit.course.code || hit.course.name})`
+    courseName = hit.course.code || hit.course.name || 'PoliteMall'
+    title = `${hit.quiz.name} (${courseName})`
     const w = getQuizWin()
     w.show()
     w.focus()
@@ -541,6 +625,17 @@ export async function openPoliteQuiz(courseQuery?: string, quizQuery?: string): 
   }
 
   const images = await captureDiagrams(wc, page.questions)
+  if (!activeRecord || activeRecord.url !== page.url) {
+    activeRecord = {
+      id: `q_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      title,
+      course: courseName,
+      url: page.url,
+      startedAt: new Date().toISOString(),
+      questions: []
+    }
+  }
+  recordPageQuestions(page.questions, images)
   const capturedIds = new Set(page.questions.filter((q) => q.hasImage).slice(0, images.length).map((q) => q.qid))
   return { text: formatPage(title, page, capturedIds), images }
 }
@@ -600,6 +695,7 @@ export async function answerPoliteQuiz(
     await sleep(600 + Math.floor(Math.random() * 600))
   }
 
+  recordAppliedAnswers(answers)
   await sleep(1200)
 
   if (nextPage) {
@@ -608,6 +704,7 @@ export async function answerPoliteQuiz(
       await sleep(2000)
       const next = await waitForQuestions(wc, 8000)
       const images = await captureDiagrams(wc, next.questions)
+      recordPageQuestions(next.questions, images)
       const capturedIds = new Set(next.questions.filter((q) => q.hasImage).slice(0, images.length).map((q) => q.qid))
       return {
         text: `Saved ${applied.length}/${answers.length} answers and moved to the next page.\n\n${formatPage('Next Page', next, capturedIds)}`,
@@ -638,6 +735,12 @@ export async function submitPoliteQuiz(): Promise<{ ok: boolean; text: string }>
     () => `(() => (document.body?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 800))()`
   )
   const pageText = summary.map((s) => s.result).filter(Boolean).join('\n').slice(0, 800)
+  if (activeRecord) {
+    activeRecord.submittedAt = new Date().toISOString()
+    const m = /(\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*%)/.exec(pageText)
+    if (m) activeRecord.score = m[1].replace(/\s+/g, ' ').trim()
+    await upsertSavedQuiz(activeRecord).catch(() => {})
+  }
   return confirm
     ? { ok: true, text: `Quiz submitted (confirmed "${confirm}"). Page says:\n${pageText}` }
     : { ok: false, text: `Clicked "${first}", but did not see a second confirmation button. Page says:\n${pageText}` }

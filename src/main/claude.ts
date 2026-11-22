@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { AiMessage, AiPurpose, ClaudeStatus, NovaEffort, Prefs } from '@shared/types'
+import type { AiMessage, AiPurpose, ClaudeActivity, ClaudeStatus, NovaEffort, Prefs } from '@shared/types'
 import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
 
@@ -83,9 +83,147 @@ let state: ClaudeStatus = {
   paused: null,
   last: null,
   monthCostUsd: 0,
+  sessionCostUsd: 0,
+  sessionFiveHourPct: 0,
+  sessionSevenDayPct: 0,
+  sessionEstFiveHourPct: 0,
+  sessionEstSevenDayPct: 0,
+  activities: [],
   error: null
 }
+let sessionCost = 0
+let lastKnown5h: number | null = null
+let lastKnown7d: number | null = null
+let session5h = 0
+let session7d = 0
+let sessionEst5h = 0
+let sessionEst7d = 0
+let lastRefreshAt = 0
 let signInUrl: string | null = null
+
+export interface ActivityMeta {
+  label?: string
+  kind?: ClaudeActivity['kind']
+  groupKey?: string
+  refresh?: boolean
+}
+
+function loadActivities(): ClaudeActivity[] {
+  const raw = getSetting<ClaudeActivity[]>('nova_activity')
+  return Array.isArray(raw) ? raw.slice(0, 40) : []
+}
+
+function saveActivities(list: ClaudeActivity[]): void {
+  setSetting('nova_activity', list.slice(0, 40))
+}
+
+function estimatePct(costUsd: number): { est5: number; est7: number } {
+  const isMax = (state.plan ?? '').toLowerCase().startsWith('max')
+  const budget5h = isMax ? 25 : 5
+  const budget7d = isMax ? 175 : 35
+  return {
+    est5: Math.round((costUsd / budget5h) * 1000) / 10,
+    est7: Math.round((costUsd / budget7d) * 10000) / 100
+  }
+}
+
+function syncMeasuredUsage(u: ClaudeStatus['usage']): void {
+  if (!u) return
+  const d5 =
+    u.fiveHour != null && lastKnown5h != null && u.fiveHour > lastKnown5h
+      ? Math.round((u.fiveHour - lastKnown5h) * 10) / 10
+      : 0
+  const d7 =
+    u.sevenDay != null && lastKnown7d != null && u.sevenDay > lastKnown7d
+      ? Math.round((u.sevenDay - lastKnown7d) * 10) / 10
+      : 0
+  if (u.fiveHour != null) lastKnown5h = u.fiveHour
+  if (u.sevenDay != null) lastKnown7d = u.sevenDay
+  if (d5 > 0 || d7 > 0) {
+    session5h = Math.round((session5h + d5) * 10) / 10
+    session7d = Math.round((session7d + d7) * 10) / 10
+    const list = loadActivities()
+    const head = list[0]
+    if (head && Date.now() - Date.parse(head.at) < 10 * 60_000) {
+      head.fiveHourPct = Math.round(((head.fiveHourPct ?? 0) + d5) * 10) / 10
+      head.sevenDayPct = Math.round(((head.sevenDayPct ?? 0) + d7) * 10) / 10
+      saveActivities(list)
+      state = { ...state, activities: list, sessionFiveHourPct: session5h, sessionSevenDayPct: session7d }
+    } else {
+      state = { ...state, sessionFiveHourPct: session5h, sessionSevenDayPct: session7d }
+    }
+  }
+}
+
+function logActivity(
+  model: ModelKey,
+  effort: NovaEffort,
+  ms: number,
+  cost: number,
+  meta?: ActivityMeta
+): ClaudeActivity[] {
+  const { est5, est7 } = estimatePct(cost)
+  sessionEst5h = Math.round((sessionEst5h + est5) * 10) / 10
+  sessionEst7d = Math.round((sessionEst7d + est7) * 100) / 100
+  const list = loadActivities()
+  const nowIso = new Date().toISOString()
+  const kind = meta?.kind ?? 'chat'
+  const label = (meta?.label || 'Nova turn').replace(/\s+/g, ' ').trim().slice(0, 80)
+  const gKey = meta?.groupKey
+  const head = list[0]
+  const canMerge =
+    !!gKey && head && head.groupKey === gKey && Date.now() - Date.parse(head.at) < 45 * 60_000
+  if (canMerge) {
+    head.turns += 1
+    head.ms += ms
+    head.costUsd += cost
+    head.estFiveHourPct = Math.round((head.estFiveHourPct + est5) * 10) / 10
+    head.estSevenDayPct = Math.round((head.estSevenDayPct + est7) * 100) / 100
+    head.model = model
+    head.effort = effort
+    head.label = label
+    head.at = nowIso
+  } else {
+    list.unshift({
+      id: 'act_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+      label,
+      kind,
+      groupKey: gKey,
+      model,
+      effort,
+      turns: 1,
+      ms,
+      at: nowIso,
+      fiveHourPct: null,
+      sevenDayPct: null,
+      estFiveHourPct: est5,
+      estSevenDayPct: est7,
+      costUsd: cost
+    })
+  }
+  const trimmed = list.slice(0, 40)
+  saveActivities(trimmed)
+  if ((meta?.refresh || cost >= 0.05) && Date.now() - lastRefreshAt > 6000) {
+    lastRefreshAt = Date.now()
+    void refreshClaudeUsage(getPrefs()).catch(() => {})
+  }
+  return trimmed
+}
+
+export function clearClaudeActivity(): ClaudeStatus {
+  saveActivities([])
+  session5h = 0
+  session7d = 0
+  sessionEst5h = 0
+  sessionEst7d = 0
+  return set({
+    activities: [],
+    sessionFiveHourPct: 0,
+    sessionSevenDayPct: 0,
+    sessionEstFiveHourPct: 0,
+    sessionEstSevenDayPct: 0
+  })
+}
 
 function push(): void {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('claude:status', state)
@@ -140,6 +278,13 @@ export async function claudeStatus(): Promise<ClaudeStatus> {
   state.installed = installed
   state.monthCostUsd = getSetting<number>(monthKey()) ?? 0
   state.usage = getSetting<ClaudeStatus['usage']>('nova_usage') ?? null
+  if (lastKnown5h == null && state.usage?.fiveHour != null) lastKnown5h = state.usage.fiveHour
+  if (lastKnown7d == null && state.usage?.sevenDay != null) lastKnown7d = state.usage.sevenDay
+  state.activities = loadActivities()
+  state.sessionFiveHourPct = session5h
+  state.sessionSevenDayPct = session7d
+  state.sessionEstFiveHourPct = sessionEst5h
+  state.sessionEstSevenDayPct = sessionEst7d
   if (installed && !state.signingIn) await checkAuth()
   return state
 }
@@ -480,9 +625,23 @@ export async function claudeChat(messages: AiMessage[], schema: object | undefin
     closeSession(w) // one request per session: nothing carries over to the next one
     refill(model, effort, schema) // and the next one is already starting
   }
+  sessionCost += cost
   const month = (getSetting<number>(monthKey()) ?? 0) + cost
   setSetting(monthKey(), month)
-  set({ last: { model, effort, ms: Date.now() - started, costUsd: cost, at: new Date().toISOString() }, monthCostUsd: month, error: null })
+  const actLabel = purpose === 'look' ? 'Screen / vision' : purpose === 'explain' ? 'Explain / study helper' : 'Background helper'
+  const actKind: ClaudeActivity['kind'] = purpose === 'look' || purpose === 'explain' ? 'explain' : 'other'
+  const activities = logActivity(model, effort, Date.now() - started, cost, { kind: actKind, label: actLabel })
+  set({
+    last: { model, effort, ms: Date.now() - started, costUsd: cost, at: new Date().toISOString() },
+    monthCostUsd: month,
+    sessionCostUsd: sessionCost,
+    sessionFiveHourPct: session5h,
+    sessionSevenDayPct: session7d,
+    sessionEstFiveHourPct: sessionEst5h,
+    sessionEstSevenDayPct: sessionEst7d,
+    activities,
+    error: null
+  })
   console.info(`Nova: ${model}/${effort} ${purpose} in ${Date.now() - started} ms (${wasWarm ? 'warm' : 'cold'})`)
   return structured !== undefined ? JSON.stringify(structured) : text
 }
@@ -510,6 +669,7 @@ function noteLimit(info: LimitInfo, prefs: Prefs): void {
   if (info.status === 'rejected') paused = 'your Claude usage limit was reached'
   else if ((info.isUsingOverage || info.overageInUse) && prefs.novaNoExtra !== false) paused = 'your plan is used up and only paid extra usage is left'
   if (paused) pausedUntil = resets ? Date.parse(resets) : Date.now() + 60 * 60_000
+  syncMeasuredUsage(u)
   set({ usage: { ...u }, paused })
 }
 
@@ -531,6 +691,7 @@ export async function refreshClaudeUsage(prefs: Prefs): Promise<ClaudeStatus> {
       at: new Date().toISOString()
     }
     setSetting('nova_usage', u)
+    syncMeasuredUsage(u)
     set({ usage: u, plan: r.subscription_type ?? state.plan })
     void prefs
   } catch (e) {
@@ -590,9 +751,11 @@ export async function draftWithConnectors(goal: string, prefs: Prefs, confirm: (
       text = m.subtype === 'success' ? m.result : `I couldn’t finish that (${m.subtype}).`
     }
   }
+  sessionCost += cost
   const month = (getSetting<number>(monthKey()) ?? 0) + cost
   setSetting(monthKey(), month)
-  set({ monthCostUsd: month })
+  const activities = logActivity(pickModel(prefs, 'explain').model, pickModel(prefs, 'explain').effort, Date.now() - started, cost, { kind: 'other', label: 'Draft: ' + goal.slice(0, 55), refresh: true })
+  set({ monthCostUsd: month, sessionCostUsd: sessionCost, sessionFiveHourPct: session5h, sessionSevenDayPct: session7d, sessionEstFiveHourPct: sessionEst5h, sessionEstSevenDayPct: sessionEst7d, activities })
   console.info(`Nova: draft in ${Date.now() - started} ms`)
   return text.trim()
 }
@@ -649,10 +812,22 @@ export function noteClaudeMessage(m: SdkMessage, prefs: Prefs): void {
   }
 }
 /** Add a request's cost to this month's total and show it as the last request on the Nova page. */
-export function recordClaudeCost(model: ModelKey, effort: NovaEffort, ms: number, cost: number): void {
+export function recordClaudeCost(model: ModelKey, effort: NovaEffort, ms: number, cost: number, meta?: ActivityMeta): void {
   const month = (getSetting<number>(monthKey()) ?? 0) + cost
   setSetting(monthKey(), month)
-  set({ last: { model, effort, ms, costUsd: cost, at: new Date().toISOString() }, monthCostUsd: month, error: null })
+  sessionCost += cost
+  const activities = logActivity(model, effort, ms, cost, meta)
+  set({
+    last: { model, effort, ms, costUsd: cost, at: new Date().toISOString() },
+    monthCostUsd: month,
+    sessionCostUsd: sessionCost,
+    sessionFiveHourPct: session5h,
+    sessionSevenDayPct: session7d,
+    sessionEstFiveHourPct: sessionEst5h,
+    sessionEstSevenDayPct: sessionEst7d,
+    activities,
+    error: null
+  })
 }
 
 // Automated tests only: pretend this week's usage is at some level (to check what Nova says when Claude is paused).
