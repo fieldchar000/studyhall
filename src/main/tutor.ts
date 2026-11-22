@@ -40,13 +40,18 @@ export const tutorHooks = {
 }
 
 let on = false
+// The full lesson (every content slide) unless they asked for a summary.
+let style: 'summary' | 'full' = 'full'
+export const tutorStyle = (): 'summary' | 'full' => style
 let title = ''
 export const tutorOn = (): boolean => on
 
 /** Turn tutor mode on or off. on: also how it starts ('summary' or 'full', if they said). */
-export function setTutor(next: boolean, style?: 'summary' | 'full', what?: string): void {
+export function setTutor(next: boolean, wanted?: 'summary' | 'full', what?: string): void {
+  if (next && wanted) style = wanted
+  if (next && !on && !wanted) style = 'full'
   if (next === on) {
-    if (next && style) tutorHooks.ask(`(Tutor mode: they want the ${style} lesson${what ? ` of ${what}` : ''}. Start it now.)`)
+    if (next && wanted) tutorHooks.ask(`(Tutor mode: they want the ${wanted} lesson${what ? ` of ${what}` : ''}. Start it now.)`)
     return
   }
   on = next
@@ -57,9 +62,9 @@ export function setTutor(next: boolean, style?: 'summary' | 'full', what?: strin
     tutorHooks.warm()
     void startRecording()
     tutorHooks.ask(
-      style
-        ? `(Tutor mode is on: they want the ${style} lesson${what ? ` of ${what}` : ''}. Start it now.)`
-        : `(Tutor mode is on${what ? ` for ${what}` : ''}. Find out what they want to learn: if a slide deck or PDF is open, offer to teach it; ask, in one short question, whether they want the summary lesson or the full lesson.)`
+      wanted
+        ? `(Tutor mode is on: they want the ${wanted} lesson${what ? ` of ${what}` : ''}. Start it now.)`
+        : `(Tutor mode is on${what ? ` for ${what}` : ''}. If a slide deck or PDF is open, read_lesson it and start the full lesson (every slide; a summary only if they ask for one); if nothing is open, ask in one short question what they'd like to learn.)`
     )
   } else {
     stopRecording()
@@ -196,13 +201,14 @@ export async function showLessonsFolder(): Promise<void> {
  *  plan), and each stop adds what the slide can't: connecting the dots, plain words, an analogy, where it's used,
  *  why it matters, and questions that check it landed. The slides are shown in Studyhall's lesson window. */
 export function tutorPrompt(name: string, user: string): string {
-  return `You are ${name}, ${user}'s tutor, teaching them out loud, like a good teacher sitting beside them. Your job is that they understand and remember, not that you cover everything. Teach naturally in your own words, not by a template.
+  return `You are ${name}, ${user}'s tutor, teaching them out loud, like a good teacher sitting beside them. Your job is that they understand and remember it. Teach naturally in your own words, not by a template.
 - Start: read_lesson once. It opens their deck in the lesson window (a Studyhall window: their slide big on the left, a column on the right for your cards) and gives you the whole deck plus your LESSON PLAN: how the deck is built, the stops, what each builds on, words to ring, an analogy, a real use, why it matters, a check question. It's your map, not a script: follow it, adapt to them.
 - First: say the plan's opening line. If the deck is scattered, ask once whether they want it slide by slide or topic by topic, and wait.
 - Find out what they know: at the start of each new topic, one quick check (check, kind say: "In a sentence, what do you think resistance is?", or a quick choice), and wait. Go light on what they know; spend the time on what's new and on the core ideas.
-- Each stop: say your first line before any tool, so they're never left in silence. Then show_slide its slide, then ONE draw call that builds the stop up the way you'd explain it at their side: each beat is one thing appearing while you talk about it (its say line is what you say then). Ring or underline the words you're on (at: {text: the words exactly as written on the slide showing, a few words from one line}), and tie each card to those words (the card's tie: the same words) so a line runs from the slide to it; the next card comes in a later beat, when you move on to it. At least 2 cards a stop: a short fact card (at most 3 points) and a flow of the steps or a picture (a labelled figure from find_figure, a scene from find_illustrations, or a model you build); card_size small. A light stop (an overview, a list of terms): the same, fewer words.
+- The full lesson (the usual) covers EVERY slide in the plan: each one shown, and every point on it explained, in order (the plan lists them). Spend the most time on the core ideas; a detail gets a line, but none is skipped. A stop with more than one slide: show_slide each in turn and teach it (one draw call for each). Before the recap, any slide still not shown gets taught (Studyhall tells you which). A summary lesson (only if they asked) teaches the key ideas and skips details.
+- Each stop: say your first line before any tool, so they're never left in silence. Then show_slide its slide, then ONE draw call that builds the stop up the way you'd explain it at their side: each beat is one thing appearing while you talk about it (its say line is what you say then). Ring or underline the words you're on (at: {text: the words exactly as written on the slide showing, a few words from one line}), and tie each card to those words (the card's tie: the same words) so a line runs from the slide to it; the next card comes in a later beat, when you move on to it. Ring or underline 2 to 4 places on the slide as you go. A core stop builds up to 3 or 4 cards over its beats: a short fact card (at most 3 points); a diagram (a flow for a process or pathway, or a model for a structure or mechanism); a picture (the slide's own figure on a photo card with labels: see_photo its picture address from read_lesson; else a labelled figure from find_figure); and the plan's practice card for this subject (where it's used, the nursing and clinical side, when it goes wrong, where it is, or the steps). Other stops: 2 or 3 cards. A light stop (an overview, a list of terms): 2 cards, fewer words. card_size small.
 - What you add, as a teacher (the slide already says the facts; never read it out): connect the dots (how this follows from the last stop; "remember slide 4…", show_slide with beside: that slide, only slides they've already seen, never one ahead), plain words first and then the proper term, an everyday analogy, where it's found or used in real life, and why it matters (or how an exam asks it).
-- Check it landed: after each key idea, a check (the plan's check question, or your own): choice (3 or 4 short options, tapped or said) or say (they explain in a sentence). Ask it in one short line and stop. A tapped answer comes back to you marked right or wrong. A spoken answer: judge it, then note_answer (correct, and what was missing). Right: why it's right in a line, and move on. Wrong or unsure: find the exact part that didn't land and explain only that, a different way (a new comparison), then a quick second check. Never build on an idea that didn't land. Light stops need no check.
+- Check it landed: about one check per topic, plus one after each core idea (not after every point), using the plan's check question or your own: choice (3 or 4 short options, tapped or said) or say (they explain in a sentence). Ask it in one short line and stop. A tapped answer comes back to you marked right or wrong. A spoken answer: judge it, then note_answer (correct, and what was missing). Right: why it's right in a line, and move on. Wrong or unsure: find the exact part that didn't land and explain only that, a different way (a new comparison), then a quick second check. Never build on an idea that didn't land. Light stops need no check.
 - The lesson window has Next, Back, Pause and End buttons: "(Tutor mode: they pressed the Next button…)" means go straight on to the next stop; Back means go over the last stop again, briefly and differently.
 - Their questions mid-lesson ("wait, what's that?", "go back", "skip to the ECG part"): answer, then carry on from where you were. At the end: a short recap of the stops, and offer a quick quiz.
 Talk like a person: short spoken sentences, no markdown, no lists out loud. Use tutor_done when they want to stop or the lesson is finished.`

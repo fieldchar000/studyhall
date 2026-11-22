@@ -22,8 +22,8 @@ import { getPrefs } from './prefs'
 import { APP_NAMES, openApp, orbEmote, orbPanel, setInkPause, setSubject, showCards, showMarks, orbAgent } from './bauer'
 // The pause after each step of a drawing while teaching (seconds): the voice waits this long, and so does the drawing.
 const STEP_PAUSE = 0.7
-import { openLessonWindow, showLessonSlide, lessonHooks, lessonShown, lessonPage, lessonWindowOpen, showCheck, markCheck, checkUp } from './lessonWindow'
-import { noteAnswer, noteCheck, noteLine, noteSaid, noteSlide, noteYou, openCheck, startRun } from './lessonRecord'
+import { openLessonWindow, showLessonSlide, lessonHooks, lessonShown, lessonPage, lessonWindowOpen, showCheck, markCheck, checkUp, lessonInFront, lessonSeen } from './lessonWindow'
+import { currentRun, noteAnswer, noteCheck, noteLine, noteSaid, noteSlide, noteYou, openCheck, startRun } from './lessonRecord'
 import { lessonPlan, planText } from './lessonPlan'
 import { replaying } from './lessonReplay'
 import { goToPage, lastLesson, lessonQuizText, lessonText, pageLog, readLesson, warmPictures } from './lessonReader'
@@ -33,7 +33,7 @@ import { splitForLesson } from './windowSplit'
 import { conversationOn, setConversation } from './conversation'
 import { explainDrew, explainEnd, explainSaid, explainStart, saveExplanation } from './explanations'
 import { illustrationsText } from './illustrations'
-import { setTutor, tutorOn, tutorPrompt, tutorTitle } from './tutor'
+import { setTutor, tutorOn, tutorPrompt, tutorTitle, tutorStyle } from './tutor'
 import { stageDone, stageStart, stageTool, stageToolEnd, trailEnd, trailPlan, trailSettle } from './novaStage'
 import { captureArea, describeControls, eyes, helpOnScreen, see, selectionNow, type Seen, type SeenControl } from './eyes'
 import { doOnScreen } from './hands'
@@ -825,7 +825,7 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
 
 ` : ''}${lessonText(l, 1, l.count, 16_000)}
 
-(The lesson window is open on ${word} 1. Now: say the plan's first line${plan?.ask_order ? ', then ask once: slide by slide, or topic by topic, and wait' : ''}; then teach the first stop: show_slide its ${word}, then one draw call.)`)
+(The lesson window is open on ${word} 1. Now: say the plan's first line${plan?.ask_order ? ', then ask once: slide by slide, or topic by topic, and wait' : ''}; then teach the first stop: show_slide its ${word}, then one draw call.${lessonInFront() ? '' : ' Their lesson window may be behind the window they were in: say once, in your first line, that their lesson is open in Studyhall.'})`)
         }
         const split = ''
         // Already read in this conversation (the last hour): its text and lesson map are above; don't pay for them twice.
@@ -1259,6 +1259,8 @@ function lookup(kind: string, key: string, run: () => Promise<string>): Promise<
 // The card kinds that count as an explanation's topic visual (beside its fact cards and flow).
 // Pictures only: a table, timeline, chart or the study board is words and lines, not something to look at.
 const TOPIC_VISUALS = new Set(['photo', 'scene', 'model', 'molecule', 'map', 'geometry'])
+// Cards that show the idea rather than say it (a tutor stop has at least one).
+const SHOW_KINDS = new Set(['flow', 'model', 'photo', 'scene', 'molecule', 'graph', 'bars', 'timeline', 'map', 'geometry', 'mindmap', 'table'])
 const RING_KINDS = new Set(['ring', 'label', 'target', 'arrow', 'point', 'circle', 'frame', 'underline', 'highlight'])
 /** After a drawing in an explanation: still no topic visual? Say so once in the draw's result, so Nova adds it next
  *  (it otherwise often stopped at a fact card and a flow). */
@@ -1269,9 +1271,15 @@ function stillMissing(tr: Turn | null | undefined, args: Record<string, unknown>
   tr.drew = [...(tr.drew ?? []), ...kinds]
   // Tutor mode: every stop teaches with 2 cards (it was skipping them and only talking).
   if (tutorOn()) {
-    if (tr.drew.some((k) => k === 'quiz' || k === 'medal') || tr.drew.filter((k) => CARD_KINDS.has(k)).length >= 2) return ''
+    if (tr.drew.some((k) => k === 'quiz' || k === 'medal')) return ''
+    const cards = tr.drew.filter((k) => CARD_KINDS.has(k)).length
+    // (and one of them shows it, not only words: a diagram or a picture; word cards alone were all it drew)
+    const shown = tr.drew.some((k) => SHOW_KINDS.has(k))
+    if (cards >= 2 && shown) return ''
     tr.nudged = true
-    return '\n\nThis stop has only one card: add one more now in another draw call (a flow of the steps, a picture of it, or a short fact card), and keep talking while it draws.'
+    return cards < 2
+      ? '\n\nThis stop has only one card: add more now in another draw call (a flow or model that shows it, the slide\'s own figure on a photo card with labels, or a short fact card), and keep talking while it draws.'
+      : "\n\nThis stop's cards are all words: add one that shows it now, in another draw call (a flow of the steps or pathway, a model of the structure or mechanism, or the slide's own figure on a photo card with labels: see_photo its picture address first), and keep talking while it draws."
   }
   if (!tr.visual) return ''
   if (tr.drew.some((k) => TOPIC_VISUALS.has(k) || (tr.circled && RING_KINDS.has(k)))) return ''
@@ -1520,6 +1528,13 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     screen.text = [screen.text, `(They're watching a Replay of their lesson "${rp.title}" in the lesson window, on slide or page ${rp.page}, and asked about it: "this" means what's on that slide. Answer like their tutor; rings and cards drawn now go on that slide.)`]
       .filter(Boolean)
       .join('\n')
+  // The full lesson covers every slide in the plan: which ones haven't been shown yet (so none is skipped).
+  const run = tutorOn() && tutorStyle() === 'full' && lessonShown() ? currentRun() : null
+  if (run?.stops.length) {
+    const seenNow = new Set(lessonSeen())
+    const left = [...new Set(run.stops.flatMap((st) => st.slides))].sort((a, b) => a - b).filter((n) => !seenNow.has(n))
+    if (left.length) screen.text = [screen.text, `(Slides in the plan not shown yet: ${left.slice(0, 14).join(', ')}${left.length > 14 ? '…' : ''}. Teach them in order; none is skipped.)`].filter(Boolean).join('\n')
+  }
   // "Send an agent to…": the agents' corner hatches one while the brief is written (as in Roamies).
   const agentish = !said.startsWith('(') && wantsAgent(said)
   if (agentish) agentsHatch(true)
@@ -1549,6 +1564,8 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   const chat = tutorOn() ? { deep: false, effort: want } : chatDepth(said)
   noteHosts(said)
   if (tutorOn()) noteYou(said)
+  // (a new request stops what was still drawing: nothing of it is left to wait for)
+  if (tutorOn()) forgetLessonInk()
   // A long chat (conversation mode, or a heart-to-heart) goes on a card beside the globe as well, both sides, so a long
   // rant or reply can be read back instead of being cut off in the bubble. It goes when the chat moves on.
   heart = chat.deep

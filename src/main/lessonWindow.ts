@@ -2,7 +2,7 @@
 // (Next, Back, Pause, the slides seen so far, End). Studyhall shows the slides itself, from the file Nova read, so it
 // turns pages at once and knows where every word is: nothing in their browser or PowerPoint is touched.
 // The drawing (rings, arrows, cards) and the two Novas are on Nova's see-through layer over this window (ink.js).
-import { BrowserWindow, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, screen } from 'electron'
 import { findOnPage, type Lesson } from './lessonReader'
 
 type Rect = [number, number, number, number]
@@ -146,7 +146,7 @@ export function openLessonWindow(l: Lesson, start = 1): void {
   layout = null
   if (win && !win.isDestroyed()) {
     send()
-    if (!OFFSCREEN) win.show()
+    if (!OFFSCREEN) toFront(win)
     return
   }
   const wa = screen.getPrimaryDisplay().workArea
@@ -167,7 +167,7 @@ export function openLessonWindow(l: Lesson, start = 1): void {
     if (OFFSCREEN) win.showInactive()
     else {
       win.maximize()
-      win.show()
+      toFront(win)
     }
   })
   const moved = (): void => {
@@ -184,6 +184,22 @@ export function openLessonWindow(l: Lesson, start = 1): void {
     else lessonHooks.end()
   })
 }
+
+/** In front of the window they were in (their browser or PowerPoint): Windows keeps a background app from jumping
+ *  in front, so it's on top for a moment, given the keyboard, then an ordinary window again. */
+function toFront(w: BrowserWindow): void {
+  if (w.isMinimized()) w.restore()
+  w.setAlwaysOnTop(true)
+  w.show()
+  w.moveTop()
+  app.focus({ steal: true })
+  w.focus()
+  setTimeout(() => {
+    if (!w.isDestroyed()) w.setAlwaysOnTop(false)
+  }, 1500)
+}
+/** The lesson window is the one in front (if not, Nova tells them where it is). */
+export const lessonInFront = (): boolean => !!win && !win.isDestroyed() && win.isVisible() && (OFFSCREEN || win.isFocused())
 
 export function closeLessonWindow(): void {
   const w = win

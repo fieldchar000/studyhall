@@ -345,7 +345,10 @@ async function boot(opts: {
       case 'lesson':
         lessonOn = !!e.on
         ;(R.ink as { lessonMode?: (on: boolean) => void } | undefined)?.lessonMode?.(lessonOn)
-        if (!lessonOn) R.speakerNear(null, [])
+        if (!lessonOn) {
+          lessonBlock = []
+          R.speakerNear(null, [])
+        }
         break
       case 'lessonArea': {
         // (the lesson window laid out: the globe moves off the slide if it's on it, or beside the new check card)
@@ -354,8 +357,11 @@ async function boot(opts: {
         const oy = R.origin?.y ?? 0
         const loc = (r: number[]): number[] => [r[0] - ox, r[1] - oy, r[2], r[3]]
         const avoid = (e.avoid as number[][]).map(loc)
+        lessonBlock = avoid
         const mv = c.mover
-        const onIt = avoid.some((q) => mv.x > q[0] - 60 && mv.x < q[0] + q[2] + 60 && mv.y > q[1] - 60 && mv.y < q[1] + q[3] + 60)
+        // (where it is, and where it's heading: a spot picked before this card came can be under it)
+        const near = (x: number, y: number): boolean => avoid.some((q) => x > q[0] - 60 && x < q[0] + q[2] + 60 && y > q[1] - 60 && y < q[1] + q[3] + 60)
+        const onIt = near(mv.x, mv.y) || (!!aside && near(aside.x, aside.y))
         if (onIt || !aside || e.check !== undefined) R.speakerNear(loc(e.focus as number[]), avoid)
         break
       }
@@ -431,7 +437,10 @@ async function boot(opts: {
   // beside what's being taught (ink.js says where), never over a card, an arrow, a ring or the words, with room for its
   // speech bubble above it. null: the lesson is over.
   let lessonOn = false
-  R.speakerNear = (f: number[] | null, avoid: number[][]): void => {
+  // (what the lesson window says to keep clear of right now: its slides, buttons and the check card; every move keeps off them)
+  let lessonBlock: number[][] = []
+  R.speakerNear = (f: number[] | null, avoidNow: number[][]): void => {
+    const avoid = [...avoidNow, ...lessonBlock]
     if (!f) {
       if (aside?.part === 'lesson') {
         aside = null

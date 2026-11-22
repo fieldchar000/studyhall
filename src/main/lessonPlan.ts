@@ -22,13 +22,17 @@ export type LessonStop = {
   why: string
   check: { question: string; kind: 'choice' | 'say'; options?: string[]; answer: string; wrong_idea: string } | null
   light: boolean
+  core?: boolean
+  points?: string[]
 }
-export type LessonPlan = { structure: 'ordered' | 'grouped' | 'scattered'; summary: string; ask_order: boolean; topics: { name: string; slides: number[] }[]; stops: LessonStop[] }
+export type Subject = 'engineering' | 'pharmacology' | 'biology' | 'anatomy' | 'procedure' | 'other'
+export type LessonPlan = { structure: 'ordered' | 'grouped' | 'scattered'; subject?: Subject; summary: string; ask_order: boolean; topics: { name: string; slides: number[] }[]; stops: LessonStop[] }
 
 const SCHEMA = {
   type: 'object',
   properties: {
     structure: { type: 'string', enum: ['ordered', 'grouped', 'scattered'] },
+    subject: { type: 'string', enum: ['engineering', 'pharmacology', 'biology', 'anatomy', 'procedure', 'other'] },
     summary: { type: 'string' },
     ask_order: { type: 'boolean' },
     topics: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, slides: { type: 'array', items: { type: 'integer' } } }, required: ['name', 'slides'] } },
@@ -46,6 +50,8 @@ const SCHEMA = {
           real_use: { type: 'string' },
           why: { type: 'string' },
           light: { type: 'boolean' },
+          core: { type: 'boolean' },
+          points: { type: 'array', items: { type: 'string' } },
           check_question: { type: 'string' },
           check_kind: { type: 'string', enum: ['choice', 'say', 'none'] },
           check_options: { type: 'array', items: { type: 'string' } },
@@ -56,22 +62,25 @@ const SCHEMA = {
       }
     }
   },
-  required: ['structure', 'summary', 'ask_order', 'topics', 'stops']
+  required: ['structure', 'subject', 'summary', 'ask_order', 'topics', 'stops']
 }
 
 const PROMPT = `You are preparing to teach a student this deck, the way a good teacher prepares a lesson: read all of it, then map how to teach it. Your map is used by the tutor (who speaks to the student, rings words on the slides and draws small cards), so make it concrete and short.
 
 - structure: "ordered" (the slides tell one story in order), "grouped" (clear topics, in blocks), or "scattered" (topics jump about and come back: heart, then brain, then heart). ask_order: true only for scattered decks (the tutor will ask: slide by slide, or topic by topic).
 - summary: what you'll say first, 1 or 2 spoken sentences ("24 slides on transducers, in three parts: the LDR, the thermistor and the moisture sensor. It's well laid out, so we'll go in order.").
+- subject: engineering (or physics, electronics), pharmacology, biology (or physiology), anatomy, procedure (guidelines, how to do something), or other.
 - topics: the deck's topics and their slides.
-- stops: the lesson, in teaching order. One stop is one idea (it may cover 1 to 3 slides that belong together). Title slides, outlines and references are not stops (fold an overview slide into the first stop, as a light one). For a long deck, at most 18 stops: group what goes together.
+- stops: the lesson, in teaching order, covering EVERY content slide: each slide with content is in exactly one stop. One stop is one idea; it may cover 1 to 3 slides that belong together (each still taught, one after the other). Only title slides, outline/contents slides, references and blank slides are left out (fold an overview slide into the first stop, as a light one). At most 30 stops.
   For each stop:
   - slides: the slide numbers it teaches (its main slide first).
   - idea: the one idea, in a plain sentence.
+  - points: every point its slides make that the student needs, in order, a few words each (so none is skipped).
+  - core: true for the deck's core ideas (how something works, a key mechanism, a key drug class); false otherwise.
   - builds_on: earlier slides (lower numbers, already taught in an earlier stop) this idea needs; [] if none.
   - circle: 1 to 3 short phrases to ring on its main slide, copied EXACTLY as written there (a few words from one line).
   - analogy: an everyday comparison that carries the idea (short).
-  - real_use: where this is found or used in real life, a case, a job (short and specific).
+  - real_use: the card that shows why it matters in practice, by subject: engineering: where it's used ("street lights switch on at dusk with an LDR"); pharmacology: the nursing or clinical side (what to check, warning signs, a typical drug: "gentamicin: check trough levels, watch for ringing in the ears"); biology: when it goes wrong (the condition or symptom: "cochlea damage → sensorineural hearing loss"); anatomy: where it is (the parts to label); procedure: the steps in order, or a short case. Short and specific.
   - why: why it matters, or how an exam would ask about it (short).
   - light: true for an overview or a slide that only lists terms (taught briefly).
   - check_kind: "choice" (a quick multiple-choice check), "say" (they explain in a sentence), or "none" (light stops).
@@ -79,7 +88,8 @@ const PROMPT = `You are preparing to teach a student this deck, the way a good t
 Use the slides' own facts; don't invent content that isn't supported by the deck or standard knowledge of the subject.`
 
 const mem = new Map<string, Promise<LessonPlan | null>>()
-const fileOf = (id: string): string => join(app.getPath('userData'), 'lesson-plans', `${id}.json`)
+// (v2: every content slide covered, the subject, and each stop's points; plans from before are made again)
+const fileOf = (id: string): string => join(app.getPath('userData'), 'lesson-plans', `${id}.v2.json`)
 
 /** The deck's lesson plan: kept from before, or made now (about half a minute for a big deck). null if it couldn't be made. */
 export function lessonPlan(l: Lesson): Promise<LessonPlan | null> {
@@ -116,6 +126,7 @@ export function lessonPlan(l: Lesson): Promise<LessonPlan | null> {
     const ints = (v: unknown): number[] => (Array.isArray(v) ? v.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= l.count) : [])
     const plan: LessonPlan = {
       structure: (['ordered', 'grouped', 'scattered'].includes(String(j.structure)) ? j.structure : 'ordered') as LessonPlan['structure'],
+      subject: (['engineering', 'pharmacology', 'biology', 'anatomy', 'procedure'].includes(String(j.subject)) ? j.subject : 'other') as Subject,
       summary: String(j.summary ?? ''),
       ask_order: !!j.ask_order,
       topics: ((Array.isArray(j.topics) ? j.topics : []) as Record<string, unknown>[]).map((t) => ({ name: String(t.name ?? ''), slides: ints(t.slides) })),
@@ -131,6 +142,8 @@ export function lessonPlan(l: Lesson): Promise<LessonPlan | null> {
           real_use: String(s.real_use ?? ''),
           why: String(s.why ?? ''),
           light: !!s.light,
+          core: !!s.core,
+          points: (Array.isArray(s.points) ? s.points : []).map(String).slice(0, 12),
           check:
             s.check_kind === 'none' || !s.check_question
               ? null
@@ -157,18 +170,29 @@ export function lessonPlan(l: Lesson): Promise<LessonPlan | null> {
   return p
 }
 
+// A core stop's fourth card, by subject: why it matters in practice.
+const CARD4: Record<Subject, string> = {
+  engineering: 'where you see it (a device, a circuit, a real use)',
+  pharmacology: 'nursing and clinical: what the nurse checks, warning signs, a typical drug',
+  biology: 'when it goes wrong: the condition or symptom that shows why it matters',
+  anatomy: "where it is: a labelled picture (the slide's own figure, or a figure from the web) with the parts named",
+  procedure: 'the steps in order, or a short case to work through',
+  other: 'where it matters in real life'
+}
 /** The plan as the tutor reads it: compact, one stop to a few lines. */
 export function planText(p: LessonPlan, word: string): string {
   const out = [
-    `LESSON PLAN (your map, not a script). The deck is ${p.structure}${p.ask_order ? ' (ask once: slide by slide, or topic by topic)' : ''}. Say first: ${p.summary}`,
+    `LESSON PLAN (your map, not a script). The deck is ${p.structure}${p.ask_order ? ' (ask once: slide by slide, or topic by topic)' : ''}; the subject: ${p.subject ?? 'other'}. Say first: ${p.summary}`,
+    `Practice card (a core stop's 4th card), for ${p.subject ?? 'this subject'}: ${CARD4[p.subject ?? 'other']}`,
     `Topics: ${p.topics.map((t) => `${t.name} (${word}s ${t.slides.join(', ')})`).join('; ')}`
   ]
   for (const s of p.stops) {
     out.push(
-      `Stop ${s.n}${s.light ? ' (light)' : ''}: ${word}${s.slides.length > 1 ? 's' : ''} ${s.slides.join(', ')} · ${s.topic}: ${s.idea}` +
+      `Stop ${s.n}${s.light ? ' (light)' : s.core ? ' (core)' : ''}: ${word}${s.slides.length > 1 ? 's' : ''} ${s.slides.join(', ')} · ${s.topic}: ${s.idea}` +
+        `${s.points?.length ? ` | points: ${s.points.join('; ')}` : ''}` +
         `${s.builds_on.length ? ` | builds on ${word}s ${s.builds_on.join(', ')}` : ''}` +
         `${s.circle.length ? ` | ring: ${s.circle.map((c) => `"${c}"`).join(', ')}` : ''}` +
-        `${s.analogy ? ` | analogy: ${s.analogy}` : ''}${s.real_use ? ` | real use: ${s.real_use}` : ''}${s.why ? ` | why: ${s.why}` : ''}` +
+        `${s.analogy ? ` | analogy: ${s.analogy}` : ''}${s.real_use ? ` | practice card: ${s.real_use}` : ''}${s.why ? ` | why: ${s.why}` : ''}` +
         `${s.check ? ` | check (${s.check.kind}): ${s.check.question}${s.check.options?.length ? ` [${s.check.options.join(' / ')}]` : ''} → ${s.check.answer}${s.check.wrong_idea ? ` (wrong idea: ${s.check.wrong_idea})` : ''}` : ''}`
     )
   }

@@ -49,6 +49,8 @@ https://github.com/KenKaiii/Roamies
   own while the globe (the Nova that talks) glides beside what's being taught, clear of the slide and the cards.
   Since v0.75 a card's tie in the lesson window runs under the ringed words to the gap beside the slide, cards are no
   wider than the card column there, and the Clear all chip isn't shown in it.
+  Since v0.77.1 a card and the words it explains share a small number there, and the line between them fades after
+  it's drawn.
 - `native/roamies-hands`: Roamies' Windows hands helper (Rust: UI Automation, Windows OCR, screenshots, clicking and
   typing), copied unchanged and built on GitHub Actions.
 - Nova's brain follows Roamies' design. It makes one fast Claude call with Nova's own tools and

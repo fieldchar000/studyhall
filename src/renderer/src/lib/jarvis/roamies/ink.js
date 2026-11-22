@@ -587,6 +587,20 @@
   }
   async function free(m, pts) { const s = strokeMark(m.part, pts, tone(m.tone)); s.marked = boxOf(pts); await drawStroke(s); await name(m.part, s.marked, m.label); }
   // A curved arrow, the head drawn as two quick strokes after the line.
+  // Studyhall (the lesson window): a small numbered disc on ringed words and on their card, so it's clear which card
+  // explains which words without a line staying across the slide.
+  function badge(part, [bx, by], n) {
+    const r = 10, str = String(n);
+    add({ z: 8, part, kind: 'badge', box: [bx - r - 2, by - r - 2, 2 * r + 4, 2 * r + 4],
+      draw(b, l, t) {
+        const u = clamp((t - this.born) / 0.25, 0, 1);
+        b.save(); b.globalAlpha *= u;
+        b.fillStyle = HOT; b.strokeStyle = EDGE; b.lineWidth = 2;
+        b.beginPath(); b.arc(bx, by, r * (0.6 + 0.4 * u), 0, Math.PI * 2); b.fill(); b.stroke();
+        b.fillStyle = INKDARK; b.font = `800 12px ${MONO}`; b.textAlign = 'center'; b.textBaseline = 'middle'; b.fillText(str, bx, by + 0.5);
+        b.restore();
+      } });
+  }
   async function arrow(part, a, b, o = {}) {
     let curve;
     if (o.via) curve = handPath(catmull(o.via, false), 0.8);
@@ -783,12 +797,14 @@
     if (m.card_size === 'full' && !c.full) await toggleFull(c);
     if (m.tie?.rect) {
       const T = locRect(m.tie.rect), C = [x, y, w, h], tc = [T[0] + T[2] / 2, T[1] + T[3] / 2];
-      // (Studyhall, the lesson window: the line runs just under the ringed words to the gap beside the slide, then over to
-      // the card, instead of straight across the slide's text)
-      const slide = miniPen && preferRect ? busyRects.find((q) => tc[0] >= q[0] && tc[0] <= q[0] + q[2] && tc[1] >= q[1] && tc[1] <= q[1] + q[3]) : null;
-      if (slide && x >= slide[0] + slide[2]) {
-        const gx = Math.min(x - 14, slide[0] + slide[2] + 12), yy = T[1] + T[3] + 5, cy = clamp(y + 18, y, y + h - 8);
-        await arrow(m.part, [T[0] + T[2] - 6, yy], [x - 3, cy], { via: [[T[0] + T[2] - 6, yy], [slide[0] + slide[2] - 4, yy], [gx, yy + (cy - yy) * 0.35], [gx + (x - gx) * 0.5, cy], [x - 3, cy]], screen: false });
+      // (Studyhall, the lesson window: the words and their card get the same number, and one smooth line sweeps from the
+      // words to the card as it comes, then fades, leaving the numbers: lines that stayed piled up beside the slide)
+      if (miniPen && preferRect) {
+        const n = (G.tieN = (G.tieN ?? 0) + 1);
+        badge(null, [T[0] - 6, T[1] - 6], n); // (its own: dragging the card leaves it on the words)
+        badge(m.part, [x - 8, y - 8], n);
+        const s = await arrow(m.part, edgeToward(T, [x + w / 2, y + h / 2], 6), edgeToward(C, tc, 6), { bend: -0.22, screen: false });
+        setTimeout(() => { if (s?.alive && !s.leaving) fadeOut([s], 0.9); }, 2200);
       } else await arrow(m.part, edgeToward(T, [x + w / 2, y + h / 2], 6), edgeToward(C, tc, 6), { bend: -0.2, screen: false });
     }
     return c;
@@ -2720,6 +2736,7 @@
     // { screen: true } clears the screen marks (cards stay); otherwise everything but the reminders card, which
     // { all: true } (Esc) takes too. stop: also ends what's playing.
     clear(e = {}) {
+      G.tieN = 0; // (Studyhall: the next slide's numbers start at 1)
       if (e.stop || !e.screen) stop();
       const gone = marks.filter((m) => m.alive && !m.pinned && (e.screen ? m.screen : e.all || !m.local));
       fadeOut(gone);
