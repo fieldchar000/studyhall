@@ -19,6 +19,7 @@ const DAY = 24 * 3_600_000
 
 let view: WebContentsView | null = null
 let attachedTo: BrowserWindow | null = null
+let viewVisible = false
 export type PoliteRect = { x: number; y: number; width: number; height: number }
 
 function makeView(): WebContentsView {
@@ -43,9 +44,11 @@ export function showPoliteView(win: BrowserWindow, rect: PoliteRect): void {
   }
   view.setBounds({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.max(0, Math.round(rect.width)), height: Math.max(0, Math.round(rect.height)) })
   view.setVisible(true)
+  viewVisible = true
 }
 export function hidePoliteView(): void {
   view?.setVisible(false)
+  viewVisible = false
 }
 /** Shows a page of the site in the view (a topic, a quiz, a course's content). */
 export function politeGo(url: string): void {
@@ -56,6 +59,8 @@ export function politeGo(url: string): void {
 export function politeBack(): void {
   if (view?.webContents.navigationHistory.canGoBack()) view.webContents.navigationHistory.goBack()
 }
+export const politeView = (): WebContentsView | null => view
+export const politeViewVisible = (): boolean => viewVisible
 
 // ---------- What's new since last time ----------
 

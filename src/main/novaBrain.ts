@@ -28,6 +28,7 @@ import { lessonPlan, planText } from './lessonPlan'
 import { replaying } from './lessonReplay'
 import { goToPage, lastLesson, lessonQuizText, lessonText, pageLog, readLesson, warmPictures } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
+import { answerPoliteQuiz, isPoliteQuizActive, openPoliteQuiz, seeStudyhall, submitPoliteQuiz, type QuizResult } from './politeQuiz'
 import { figureText } from './figures'
 import { splitForLesson } from './windowSplit'
 import { conversationOn, setConversation } from './conversation'
@@ -87,6 +88,7 @@ How to help (use as few tool calls as the task needs; independent ones can go in
   • "Explain this", "what am I looking at", "this slide", "I'm confused by this", "what does this diagram mean" (something on their screen): take_screenshot of that window first, then one draw call that teaches it like a teacher at the board: 3 to 7 beats. Each beat marks the real part of the slide or page (ring or underline the words, an arrow along the diagram's arrow, a label beside a box), placed by where they are in the screenshot, AND most beats bring a compact card beside the slide (card_size: small, never over the slide) with what the slide doesn't show: the bigger picture, a diagram or labelled figure, a key fact, an everyday comparison, or how it links to other slides of the deck. Tie each card to the part of the slide it explains (tie: that part's words), so a line runs from the slide to the card; use connect with flow: true for something that travels or keeps happening. Aim for 2 to 4 cards on screen by the end, all in that ONE draw call. For example, beat 1: ring the title + a card with the big picture in two lines; beat 2: ring the first box + a small flow of what it does; beat 3: underline the key line + a note with an everyday comparison; beat 4: ring the last box + a card linking it to the rest of the deck. Before take_screenshot, say one short line ("Let's go through it.") so they hear you straight away. Each say line explains that part (what it means, why it's there, how it connects to the part before) and the last beat ties it together in one sentence they can remember. Never read the slide out word for word; explain it.
   • When their words end with "(While they held the keys, the PC was playing this, written down from its sound: …)", they held Ctrl+Alt+Shift so you'd hear what's playing (a video, a lecture recording, a song): answer about that ("what did he just say?", "explain that"). It's a rough automatic transcript of the PC's sound: go by the gist, and if it's music or unclear, say what you can make out. A YouTube video's title is usually in <live-state>.
   • Their school is on PoliteMall (Brightspace): for their courses, what's due, announcements, "what's in week 5", call school (read-only, read earlier from PoliteMall). "Pull up week 5": school with find, then school_file open: true. "Teach me week 5" / "summarise this week's slides": school with find, school_file to download the deck or PDF, then read_lesson it (source: the path) and teach it.
+  • "Answer / do this quiz for me" on PoliteMall: if they already have the quiz open on PoliteMall, call polite_quiz_open with no arguments; otherwise call school first to find the exact course and quiz name, then polite_quiz_open. Reason carefully through every question (diagrams are attached automatically, or call see_studyhall with target 'quiz' and that question's qid to inspect it closely; whenever they ask about something inside Studyhall itself or PoliteMall, use see_studyhall instead of take_screenshot). Call polite_quiz_answer with every target_id on the page (setting next_page: true if there are more pages, repeating until the last page), then call polite_quiz_submit unless they asked you not to submit yet. Never call take_screenshot, read_window, list_windows, act_in_app, or open during a PoliteMall quiz. Report the result briefly once done.
   • When what they ask about is in a slide deck or PDF they have open (PowerPoint, a PDF in Edge, Opera GX or Chrome; the window in <live-state> tells you): call read_lesson once for that lesson (the whole thing as text, cheap; don't read it again for each question) and teach with all of it, not just what's on screen. Connect what they marked to what comes before and after it ("slide 9 set this up…"), going by the lesson map at the end (where each key term first comes up and comes back, and what each slide builds on); when a slide builds on an earlier one or leads to a later one (the map shows it), show it with show_board instead of leaving their slide: slides [{page: the one they're on, rings: [{id: "a", text: the words exactly as on that slide}]}, {page: the linked one, rings: [{id: "b", text: words on it}]}] and links [{from: "a", to: "b", label: "first came up here"}]; say the link out loud. On a board, underline a key term (style: underline), highlight a line to remember (style: highlight), point at part of a slide's diagram with area (see_photo its picture first), and add notes (small cards under the slides with an arrow from a ring) for what a spot means. While the board is up it covers their slide: ring more on it with show_board add: true (rings on the board's copy of the slide), never with draw on their screen. A board shows 2 or 3 slides; their own slide never moves. Every explanation of one slide or page names at least one link from the map out loud ("this builds on slide 2's receptor types", "slide 7 is where this matters") and, when it helps, a small card for that link; for a topic ("teach me beta blockers"), give read_lesson the topic and teach its slides as one story, and when a later slide or page goes deeper (a detailed diagram, a worked example), say so and show it: see_photo its picture address, then a photo card of it with labels on the parts you're explaining, or go_to_page to it and ring it on their screen (take_screenshot first). Use the slides' own words and diagrams; add a picture from the web (a photo card with a Wikipedia query) or a drawn diagram when the slides don't have one.
   • From their own study files (they name their notes, a week, a module or a file): find_material, then read_material, then teach it the same live way (draw beats from what their notes say), or teach with material_id when they ask for a lesson with a quiz at the end.
   After a live lesson, stop: the drawing speaks its lines. Offer one next step in a few words only if it helps ("Want me to quiz you on it?").
@@ -373,7 +375,7 @@ function startJob(brief: string, materials: string, title: string, wc: WebConten
 
 const ACTION_TYPES = ['add_task', 'complete_task', 'delete_task', 'change_task_date', 'add_event', 'move_event', 'cancel_event', 'log_study', 'tick_habit', 'money', 'journal', 'checkin', 'inbox', 'open_website', 'open_page'] as const
 
-type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean; visual?: string | null; drew?: string[]; nudged?: boolean; circled?: boolean; stopNudged?: boolean; lookAsked?: boolean; skipped?: boolean }
+type Turn = { onBeat: () => void; quiet: boolean; tools: string[]; research: null | 'looking' | 'writing'; fromWeb: boolean; started?: number; times?: string[]; howTo?: boolean; visual?: string | null; drew?: string[]; nudged?: boolean; circled?: boolean; stopNudged?: boolean; lookAsked?: boolean; skipped?: boolean; quizRun?: boolean }
 // Sites that came up in this hour's searches, pages read and what they said: Nova opens only those (or everyday sites),
 // so it can't open a guessed address (it opened krillion.com for "the Krillion game page").
 const seenHosts = new Map<string, number>()
@@ -427,6 +429,15 @@ const READ_ONLY = /\n\s*(?:>|```|\||#{1,6}\s)/
 async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tutor = false): Promise<import('@anthropic-ai/claude-agent-sdk').McpSdkServerConfigWithInstance> {
   const { tool, createSdkMcpServer } = await import('@anthropic-ai/claude-agent-sdk')
   const text = (t: string): { content: { type: 'text'; text: string }[] } => ({ content: [{ type: 'text', text: t }] })
+  const quizReply = (r: QuizResult): { content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[] } => ({
+    content: [
+      { type: 'text' as const, text: r.text },
+      ...(r.images ?? []).flatMap((img) => [
+        { type: 'text' as const, text: `[Image: ${img.label}]` },
+        { type: 'image' as const, data: img.data, mimeType: 'image/jpeg' }
+      ])
+    ]
+  })
   const slow = (): void => turnRef.current?.onBeat()
   const quiet = (): void => {
     if (turnRef.current) turnRef.current.quiet = true
@@ -898,6 +909,60 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       'A file from PoliteMall: downloads a topic (by its topic number from school) so you can read_lesson it and teach it ("teach me week 5", "summarise this week\'s slides"), or open: true shows it to them in the PoliteMall window ("pull up week 5").',
       { course: z.string().max(80), topic: z.number().int(), open: z.boolean().optional() },
       async ({ course, topic, open }) => text(await schoolFile(String(course), topic, !!open))
+    ),
+    tool(
+      'polite_quiz_open',
+      'Open and start a PoliteMall quiz in Studyhall’s signed-in browser (or read the quiz already open in PoliteMall) and return the questions on the page (plus automatic screenshots of any diagrams).',
+      {
+        course: z.string().max(80).optional().describe('course code or name from school (omit if quiz is already open)'),
+        quiz: z.string().max(120).optional().describe('quiz name from school (omit if quiz is already open)')
+      },
+      async ({ course, quiz }) => {
+        slow()
+        quizModeUntil = Date.now() + 15 * 60_000
+        return quizReply(await openPoliteQuiz(course ? String(course) : undefined, quiz ? String(quiz) : undefined))
+      }
+    ),
+    tool(
+      'polite_quiz_answer',
+      'Select or fill answers on the open PoliteMall quiz page. Pass each target_id from polite_quiz_open (e.g. "f0_q1_o2"); include text for text/richtext/select inputs. Set next_page: true if the quiz has more pages.',
+      {
+        answers: z.array(
+          z.object({
+            target_id: z.string(),
+            text: z.string().optional().describe('text to type, or option value for select dropdowns')
+          })
+        ),
+        next_page: z.boolean().optional()
+      },
+      async ({ answers, next_page }) => {
+        slow()
+        quizModeUntil = Date.now() + 15 * 60_000
+        return quizReply(await answerPoliteQuiz(answers, !!next_page))
+      }
+    ),
+    tool(
+      'see_studyhall',
+      'Take a direct screenshot of what is inside Studyhall itself (the PoliteMall quiz window, PoliteMall tab, or Studyhall main window). Use this instead of take_screenshot whenever looking at something inside Studyhall.',
+      {
+        target: z.enum(['auto', 'quiz', 'politemall', 'app']).optional().describe('which Studyhall view to capture (default auto)'),
+        qid: z.string().max(32).optional().describe('optional quiz question id (e.g. "f0_q3") to scroll into view before capturing')
+      },
+      async ({ target, qid }) => {
+        slow()
+        return quizReply(await seeStudyhall(target ?? 'auto', qid ? String(qid) : undefined))
+      }
+    ),
+    tool(
+      'polite_quiz_submit',
+      'Submit the currently open PoliteMall quiz (clicks Submit Quiz and confirms). Call after answering the final page.',
+      {},
+      async () => {
+        slow()
+        const r = await submitPoliteQuiz()
+        if (r.ok) quizModeUntil = 0
+        return text(r.text)
+      }
     )
   ]
   // Tutor mode on and off (tutor.ts).
@@ -981,6 +1046,9 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
       // They pressed Next: what's left of this stop doesn't happen (the next stop is already asked for).
       if (turnRef.current?.skipped) return text('They pressed Next, so this stop is over: stop here and say nothing more. The next stop comes in the next request.')
       if (t.name === 'draw' && turnRef.current?.howTo) needsClick(args)
+      if (turnRef.current?.quizRun && (t.name === 'take_screenshot' || t.name === 'read_window' || t.name === 'list_windows' || t.name === 'act_in_app' || t.name === 'open')) {
+        return text('A PoliteMall quiz is open inside Studyhall: stay inside Studyhall and use only school, polite_quiz_open, polite_quiz_answer, polite_quiz_submit, or see_studyhall.')
+      }
       // Tutor mode with the whole document read: looking at the screen only adds slow, costly steps (split screen and
       // a PDF that couldn't be got are when it's needed).
       // A web address that didn't come up in any search or page: a guess. Search first instead.
@@ -1096,7 +1164,7 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
       // else is Nova's own tools.
       allowedTools: ['mcp__nova__*', 'WebSearch'],
       includePartialMessages: true,
-      maxTurns: 12,
+      maxTurns: 80,
       // Tutor mode: a stop that's about to end with the board up (or the lesson read) but no cards drawn carries on, in
       // the same turn, to draw them: no extra request, no mic opening again (the way 0.72.0 tried it).
       ...(tutor
@@ -1305,6 +1373,8 @@ function boardHint(said: string): string {
 // when the chat moves on (study or a request) or after ten quiet minutes. Spotted from their words (free) or flagged
 // by Nova itself (go_deeper). Never when the week's Claude is running low (roomForDeeper). Nova's page can make it
 // always quick or always deeper instead.
+let quizModeUntil = 0
+const QUIZ_RUN = /\b(answer|do|complete|take|finish|submit)\b[\s\S]{0,40}\b(quiz|quizzes|politemall)\b|\b(quiz|quizzes)\b[\s\S]{0,25}\b(for me|on politemall)\b/i
 let chatDeepUntil = 0
 const HEART = /\b(i feel|i'?m (?:so |really |kinda |kind of )?(?:stressed|sad|upset|angry|mad|tired|exhausted|anxious|lonely|worried|overwhelmed|hurt|annoyed|frustrated|scared|lost|confused about (?:my|what))|i can'?t (?:deal|cope|stop thinking)|my (?:friend|best friend|mum|mom|dad|parents|boyfriend|girlfriend|bf|gf|partner|sister|brother|family|classmate|groupmate|lecturer|teacher|boss|ex)\b|we (?:had|got into) (?:a|an) (?:fight|argument)|broke up|don'?t know what to do|should i\b|what would you do|can i (?:vent|rant)|need to (?:vent|rant|talk)|it (?:really )?hurt|i cried|crying|nobody|no one (?:cares|understands))/i
 function chatDepth(said: string): { deep: boolean; effort: NovaEffort } {
@@ -1548,20 +1618,24 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
     if (agentish) agentsHatch(false)
     return { text: '', quiet: false, tools: [], error: blocked, notice: claudePauseNotice(p) ?? undefined }
   }
-  const { model, effort } = settingsFor()
+  const quizRun = !tutorOn() && !said.startsWith('(') && (QUIZ_RUN.test(said) || Date.now() < quizModeUntil || isPoliteQuizActive())
+  if (quizRun) quizModeUntil = Date.now() + 15 * 60_000
+  const base = settingsFor()
+  const model: ModelKey = quizRun ? 'sonnet' : base.model
+  const effort: NovaEffort = quizRun ? 'high' : base.effort
   if (!convo || convo.dead || convo.wc !== wc || convo.model !== model || convo.effort !== effort || convo.tutor !== tutorOn()) {
     close(convo)
     convo = await open(wc, model, effort)
   }
   const c = convo
   const started = Date.now()
-  const want = tutorOn() ? effort : (screen.looked ? effort : effortFor(said, effort, !!screen.text))
-  teaching = tutorOn() || !!screen.text || DEEP_ASK.test(said)
+  const want = tutorOn() || quizRun ? effort : (screen.looked ? effort : effortFor(said, effort, !!screen.text))
+  teaching = tutorOn() || (!quizRun && (!!screen.text || DEEP_ASK.test(said)))
   setInkPause(teaching ? STEP_PAUSE : 0)
   explainStart(said, /Window in front: ([^\n]*)/.exec(liveState)?.[1] ?? '', teaching)
   if (teaching) lastExplained = Date.now()
   // A heart-to-heart: Sonnet for this chat (same conversation, no restart), at chat effort; else back to the usual.
-  const chat = tutorOn() ? { deep: false, effort: want } : chatDepth(said)
+  const chat = tutorOn() || quizRun ? { deep: false, effort: want } : chatDepth(said)
   noteHosts(said)
   if (tutorOn()) noteYou(said)
   // (a new request stops what was still drawing: nothing of it is left to wait for)
@@ -1595,8 +1669,9 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   let retried = false
   let beatDone = false
   // (tutor mode: no check, each stop decides what it needs)
-  const need = tutorOn() ? null : visualNeed(said)
+  const need = tutorOn() || quizRun ? null : visualNeed(said)
   const turn: Turn = {
+    quizRun,
     howTo: isHowTo(said),
     visual: need?.extra ?? null,
     circled: !!screen.looked,
@@ -1798,7 +1873,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   } catch (e) {
     close(c)
     const msg = e instanceof Error ? e.message : String(e)
-    console.warn('Nova turn failed:', msg)
+    console.warn('Nova turn failed:', msg, 'tools:', turn.tools.join(', ') || 'none')
     if (turn.research) orbPanel('fail', msg)
     trailEnd()
     stageDone()
