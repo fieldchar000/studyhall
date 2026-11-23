@@ -274,7 +274,8 @@ async function readPdf(source: string, fr: Front | null): Promise<Lesson | strin
   const out = await pdfAsk('text', { data })
   let pages: LessonPage[]
   try {
-    pages = (JSON.parse(out) as { n: number; text: string; pictures: number; boxes?: TextBox[] }[]).map((p) => ({ n: p.n, text: p.text.trim(), notes: '', pictures: p.pictures, shapes: 0, boxes: p.boxes ?? [] }))
+    // (a page drawing a dozen or more lines and shapes has a drawn diagram: a circuit, a chart)
+    pages = (JSON.parse(out) as { n: number; text: string; pictures: number; paths?: number; boxes?: TextBox[] }[]).map((p) => ({ n: p.n, text: p.text.trim(), notes: '', pictures: p.pictures, shapes: (p.paths ?? 0) >= 12 ? Math.floor((p.paths ?? 0) / 3) : 0, boxes: p.boxes ?? [] }))
   } catch {
     return `Couldn’t read that PDF: ${out.slice(0, 120)}`
   }
@@ -604,6 +605,9 @@ export function findOnPage(lessonId: string, page: number, words: string): [numb
   const norm = (s: string): string => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
   const want = norm(words)
   if (!want) return null
+  // (a diagram's part named exactly: the part itself, not the same word somewhere in the slide's text)
+  const part = p.boxes.find((b) => partBoxes.has(b) && norm(b[4]) === want)
+  if (part) return [part[0], part[1], part[2], part[3]]
   const w = want.split(' ')
   let best: { b: TextBox; score: number } | null = null
   for (const b of p.boxes) {
@@ -626,6 +630,17 @@ export function findOnPage(lessonId: string, page: number, words: string): [numb
     return [Math.max(x, nx - pad), y, Math.min(nw + pad * 2, x + bw - Math.max(x, nx - pad)), bh]
   }
   return [x, y, bw, bh]
+}
+/** Parts of a picture on a page (a diagram's labelled parts, from Nova looking at it while planning), so rings can go
+ *  on them by name like on words. Each [x, y, w, h, label], as fractions of the page. */
+const partBoxes = new WeakSet<TextBox>()
+export function addPictureParts(lessonId: string, page: number, parts: TextBox[]): void {
+  const p = lessons.get(lessonId)?.pages.find((x) => x.n === page)
+  if (!p) return
+  const had = new Set((p.boxes ?? []).filter((b) => partBoxes.has(b)).map((b) => b[4].toLowerCase()))
+  const add = parts.filter((b) => !had.has(b[4].toLowerCase()))
+  for (const b of add) partBoxes.add(b)
+  p.boxes = [...(p.boxes ?? []), ...add]
 }
 /** The id of the lesson read most recently (for the study board). */
 export const lastLessonId = (): string | null => lastLesson()?.id ?? null

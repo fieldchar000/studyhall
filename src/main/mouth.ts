@@ -10,6 +10,8 @@ import { cpus } from 'node:os'
 import { join } from 'node:path'
 import type { EarsStatus } from '@shared/types'
 import { ADDON_PART, installParts, loadAddon, type Part } from './ears'
+import { getPrefs } from './prefs'
+import { BLEND_SLOT, LOWER, blendedVoices, jarvisFinish } from './voiceFx'
 
 const DIR = (): string => join(app.getPath('userData'), 'nova', 'voice')
 const MODEL_DIR = (): string => join(DIR(), 'kokoro')
@@ -35,7 +37,8 @@ export const VOICES: Record<string, number> = {
   bm_george: 26,
   bm_daniel: 24,
   am_michael: 16,
-  am_onyx: 17
+  am_onyx: 17,
+  nova_jarvis: BLEND_SLOT // (Nova's own British voice: a blend, see voiceFx.ts)
 }
 
 const exists = async (p: string): Promise<boolean> => !!(await stat(p).catch(() => null))
@@ -78,22 +81,29 @@ export async function removeMouth(): Promise<EarsStatus> {
 
 let tts: unknown = null
 let ttsLoading: Promise<unknown> | null = null
+let ttsBlend = ''
+let blendOverride = '' // (automated tests: a mix to try)
 export function unloadMouth(): void {
   tts = null
   ttsLoading = null
 }
 
 function loadTts(): Promise<unknown> {
+  // (the Jarvis voice's mix changed: the voices are loaded again with the new one)
+  const blend = blendOverride || getPrefs().novaVoiceBlend || 'jarvis'
+  if (ttsBlend && ttsBlend !== blend) unloadMouth()
   if (tts) return Promise.resolve(tts)
   ttsLoading ??= (async () => {
     const a = loadAddon()
     const k = MODEL_DIR()
     const t0 = Date.now()
+    const voices = await blendedVoices(k, blend)
+    ttsBlend = blend
     tts = await (a.createOfflineTtsAsync({
       model: {
         kokoro: {
           model: join(k, 'model.onnx'),
-          voices: join(k, 'voices.bin'),
+          voices,
           tokens: join(k, 'tokens.txt'),
           lexicon: `${join(k, 'lexicon-us-en.txt')},${join(k, 'lexicon-gb-en.txt')}`,
           lengthScale: 1.0
@@ -123,12 +133,52 @@ export async function speakMouth(text: string, voice: string, speed: number): Pr
   const h = await loadTts()
   const a = loadAddon()
   const t0 = Date.now()
+  const jarvis = voice === 'nova_jarvis'
   const out = (await (a.offlineTtsGenerateAsync(h, {
     text: speakable(text).slice(0, 600), // (numbers, symbols and Greek letters said as words: see speakable.ts)
     sid: VOICES[voice] ?? VOICES.af_heart,
-    speed: Math.max(0.7, Math.min(1.5, speed || 1)),
+    // (the Jarvis voice is spoken a touch faster, then stretched back: lower, the same pace)
+    speed: Math.max(0.7, Math.min(1.5, speed || 1)) * (jarvis ? LOWER : 1),
     enableExternalBuffer: false // (Electron doesn't allow the add-on's own buffers)
   }) as Promise<{ samples: Float32Array; sampleRate: number }>)) ?? { samples: new Float32Array(0), sampleRate: 24000 }
   console.info(`Nova voice: ${(out.samples.length / out.sampleRate).toFixed(1)} s of speech in ${Date.now() - t0} ms`)
+  if (jarvis && out.samples.length) return { samples: jarvisFinish(new Float32Array(out.samples), out.sampleRate), sampleRate: out.sampleRate }
   return { samples: new Float32Array(out.samples), sampleRate: out.sampleRate }
 }
+
+// Automated tests only: a line in a voice (and Jarvis mix) saved as a WAV file, to listen to.
+if (process.env.STUDYHALL_OFFSCREEN === '1')
+  (globalThis as unknown as { __voiceSample: unknown }).__voiceSample = async (texts: string[], voice: string, blend: string, out: string, speed = 1) => {
+    blendOverride = blend
+    // (each line, with a pause between)
+    const parts: Float32Array[] = []
+    let sampleRate = 24000
+    for (const t of texts) {
+      const a = await speakMouth(t, voice, speed)
+      sampleRate = a.sampleRate
+      parts.push(a.samples, new Float32Array(Math.round(a.sampleRate * 0.7)))
+    }
+    const samples = new Float32Array(parts.reduce((n, p) => n + p.length, 0))
+    let at = 0
+    for (const p of parts) {
+      samples.set(p, at)
+      at += p.length
+    }
+    const pcm = Buffer.alloc(samples.length * 2)
+    for (let i = 0; i < samples.length; i++) pcm.writeInt16LE(Math.round(Math.max(-1, Math.min(1, samples[i])) * 32767), i * 2)
+    const head = Buffer.alloc(44)
+    head.write('RIFF', 0)
+    head.writeUInt32LE(36 + pcm.length, 4)
+    head.write('WAVEfmt ', 8)
+    head.writeUInt32LE(16, 16)
+    head.writeUInt16LE(1, 20)
+    head.writeUInt16LE(1, 22)
+    head.writeUInt32LE(sampleRate, 24)
+    head.writeUInt32LE(sampleRate * 2, 28)
+    head.writeUInt16LE(2, 32)
+    head.writeUInt16LE(16, 34)
+    head.write('data', 36)
+    head.writeUInt32LE(pcm.length, 40)
+    await writeFile(out, Buffer.concat([head, pcm]))
+    return (samples.length / sampleRate).toFixed(1)
+  }

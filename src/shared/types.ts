@@ -1100,6 +1100,7 @@ export interface Prefs {
   novaChatDepth?: 'auto' | 'quick' | 'deeper' // chats: Nova goes deeper (Sonnet) by itself for a heart-to-heart (auto), or always quick / always deeper
   novaAutoNotes?: boolean // every explanation Nova draws for is added to the day's "Nova notes" page (default off)
   novaTutorBrain?: 'haiku' | 'sonnet' // tutor mode's model: Sonnet (the default, the best teacher) or Haiku (much cheaper)
+  novaTutorDepth?: 'standard' | 'thorough' // tutor mode: standard (Sonnet, low effort) or thorough (medium effort: more cards, rings and links, slower)
   novaTutorLayout?: 'live' | 'split' | 'stage' // live: Nova teaches on their own open slides (turning pages, ringing them; the default; when a slide fills the screen, their window moves aside by itself). split: their window moved to the left from the start. stage: the study board. // tutor mode: their slide big on the study board with the cards beside it (stage, the default), or their own slides window moved to the left of the screen (split)
   novaCaptions?: boolean // while it draws, what it says shows as captions at the bottom of the screen (off: in its speech bubble, the default)
   novaTeachSpeedSet?: boolean // they moved the teaching speed slider themselves
@@ -1109,6 +1110,14 @@ export interface Prefs {
   politeNotify?: boolean // a notification for new PoliteMall announcements, files and grades (default on)
   novaHideIdle?: boolean // the globe disappears when it's not needed and comes back when you talk to it (default off)
   novaVoice?: string // Kokoro voice (default af_heart)
+  novaBriefEvening?: boolean // the evening wrap-up (and Sunday's week ahead), 7 to 11 pm (default off)
+  novaCity?: string // the weather in briefs is for this city (default: from the time zone)
+  novaWeather?: boolean // the weather in briefs (default on)
+  novaNews?: boolean // the news you watch, in briefs and alerts (default on)
+  novaJarvis?: boolean // Jarvis mode (hidden: "initiate Jarvis protocol"): a composed British butler who calls you sir
+  novaAddress?: string // what Jarvis mode calls you (default "sir")
+  novaWit?: 'off' | 'dry' | 'cheeky' // Jarvis mode's humour (default dry)
+  novaVoiceBlend?: 'jarvis' | 'jarvis_deep' | 'jarvis_crisp' // the Jarvis voice's mix of Kokoro's British men (voiceFx.ts)
   novaSpeed?: number // how fast Nova talks, 0.8–1.3 (default 1.05)
   novaOrbSize?: 'small' | 'default' | 'cursor' // the floating orb (default default)
   novaDrift?: boolean // the globe floats around the screen (default on)
@@ -1390,6 +1399,10 @@ export interface Api {
     lessonsFolder(): Promise<void>
     /** Turn tutor mode on or off (like Ctrl+Alt+T). */
     tutor(on: boolean): Promise<void>
+    /** The news topics Nova watches (news.ts). */
+    newsTopics(): Promise<{ topic: string; level: 'alert' | 'brief' }[]>
+    /** Watch a news topic (alert me, or brief only), or stop ('off'). */
+    watchNews(topic: string, level: 'alert' | 'brief' | 'off'): Promise<string>
     /** Conversation mode on or off (Ctrl+Alt+C): hands-free talking. */
     conversation(on: boolean): Promise<void>
     /** Nova's own promises list (today, later), for its page. */

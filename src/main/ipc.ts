@@ -327,7 +327,15 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     if ('novaBrain' in patch && ['auto', 'haiku', 'sonnet', 'opus'].includes(String(patch.novaBrain))) clean.novaBrain = String(patch.novaBrain) as Prefs['novaBrain']
     if ('novaEffort' in patch && ['low', 'medium', 'high'].includes(String(patch.novaEffort))) clean.novaEffort = String(patch.novaEffort) as Prefs['novaEffort']
     if ('novaCap' in patch && Number.isFinite(Number(patch.novaCap))) clean.novaCap = Math.min(100, Math.max(10, Math.round(Number(patch.novaCap))))
-    if (typeof patch.novaVoice === 'string' && /^[a-z]{2}_[a-z]+$/.test(patch.novaVoice)) clean.novaVoice = patch.novaVoice
+    if (typeof patch.novaVoice === 'string' && /^[a-z]{2,4}_[a-z]+$/.test(patch.novaVoice)) clean.novaVoice = patch.novaVoice
+    if ('novaVoiceBlend' in patch && ['jarvis', 'jarvis_deep', 'jarvis_crisp'].includes(String(patch.novaVoiceBlend))) clean.novaVoiceBlend = String(patch.novaVoiceBlend) as Prefs['novaVoiceBlend']
+    if ('novaJarvis' in patch) clean.novaJarvis = !!patch.novaJarvis
+    for (const k of ['novaBriefEvening', 'novaWeather', 'novaNews'] as const) if (k in patch) clean[k] = !!patch[k]
+    if (typeof patch.novaCity === 'string') clean.novaCity = patch.novaCity.replace(/[^\p{L}\p{N} ,.'-]/gu, '').trim().slice(0, 60)
+    if (typeof patch.novaAddress === 'string') clean.novaAddress = patch.novaAddress.replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 30)
+    if ('novaWit' in patch && ['off', 'dry', 'cheeky'].includes(String(patch.novaWit))) clean.novaWit = String(patch.novaWit) as Prefs['novaWit']
+    if ('novaTutorBrain' in patch && ['haiku', 'sonnet'].includes(String(patch.novaTutorBrain))) clean.novaTutorBrain = String(patch.novaTutorBrain) as Prefs['novaTutorBrain']
+    if ('novaTutorDepth' in patch && ['standard', 'thorough'].includes(String(patch.novaTutorDepth))) clean.novaTutorDepth = String(patch.novaTutorDepth) as Prefs['novaTutorDepth']
     if ('novaSpeed' in patch && Number.isFinite(Number(patch.novaSpeed))) clean.novaSpeed = Math.min(1.3, Math.max(0.8, Number(patch.novaSpeed)))
     if ('novaChatDepth' in patch && ['auto', 'quick', 'deeper'].includes(String(patch.novaChatDepth))) clean.novaChatDepth = String(patch.novaChatDepth) as Prefs['novaChatDepth']
     if ('novaTeachSpeed' in patch && Number.isFinite(Number(patch.novaTeachSpeed))) clean.novaTeachSpeed = Math.min(1.3, Math.max(0.7, Number(patch.novaTeachSpeed)))

@@ -2,18 +2,19 @@
 //  • Focus sessions ("focus on chemistry for 45 minutes"): Studyhall's own focus timer runs (so the time is logged as
 //    usual); Nova checks in halfway, nudges you (the globe gets upset) if you drift to YouTube, games or socials for
 //    a while, and cheers when you finish.
-//  • Morning brief: the first time you're at the PC each morning, "here's your day" (classes, what's due, promises).
+//  • Briefs (briefs.ts): the morning brief the first time you're at the PC, and (if switched on) the evening wrap-up,
+//    or the week ahead on Sundays.
 //  • Proactive quiz: after about 30 minutes on the same notes, it offers a quick quiz on them.
 // It only reads the title of the window in front (the same as the taskbar shows), once every 20 seconds, while a
 // focus session runs or you're on study notes. Nothing is stored or sent anywhere.
 
 import { powerMonitor } from 'electron'
 import type { BauerCard } from '@shared/types'
-import { getDb, getSetting, setSetting } from './db'
+import { getSetting, setSetting } from './db'
 import { getPrefs } from './prefs'
 import { eyes } from './eyes'
 import * as timer from './timer'
-import { schoolBrief } from './politemall'
+import { makeBrief, type BriefKind } from './briefs'
 
 export const buddyHooks = {
   say: (_text: string): void => {},
@@ -97,71 +98,24 @@ async function focusTick(): Promise<void> {
   }
 }
 
-// ---------- Morning brief ----------
+// ---------- Briefs (briefs.ts) ----------
 
 const ymd = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-const hm = (iso: string): string => new Date(iso).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(':00', '').replace(' ', '')
 
-export function briefText(): { say: string; card: BauerCard } {
-  const db = getDb()
+/** The briefs, each once a day at its time, the first time you're at the PC then: the morning brief (5 am to 2 pm), the
+ *  evening wrap-up (7 to 11 pm, if you switched it on) and the week ahead (Sunday evening, instead of the wrap-up). */
+async function briefTick(): Promise<void> {
+  const p = getPrefs()
+  if (p.bauerOrb === false || OFFSCREEN || buddyHooks.away()) return
+  if (powerMonitor.getSystemIdleTime() > 60) return // you're not at the PC
   const now = new Date()
-  const start = new Date(now)
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start.getTime() + 864e5)
-  const events = db
-    .prepare(`SELECT title, start_at, all_day FROM events WHERE deleted_at IS NULL AND ((start_at >= ? AND start_at < ?) OR start_at = ?) ORDER BY start_at`)
-    .all(start.toISOString(), end.toISOString(), ymd(now)) as unknown as { title: string; start_at: string; all_day: number }[]
-  const due = db
-    .prepare(`SELECT title, due_at FROM tasks WHERE deleted_at IS NULL AND status != 'done' AND due_at IS NOT NULL AND due_at < ? ORDER BY due_at`)
-    .all(end.toISOString()) as unknown as { title: string; due_at: string }[]
-  const overdue = due.filter((t) => Date.parse(t.due_at) < start.getTime())
-  const today = due.filter((t) => Date.parse(t.due_at) >= start.getTime())
-  const greet = now.getHours() < 12 ? 'Morning!' : 'Hey!'
-  const parts: string[] = [greet]
-  if (events.length) parts.push(`Today you've got ${events.slice(0, 4).map((e) => (e.all_day || e.start_at.length === 10 ? e.title : `${e.title} at ${hm(e.start_at)}`)).join(', ')}${events.length > 4 ? `, and ${events.length - 4} more` : ''}.`)
-  else parts.push('Nothing in your calendar today.')
-  if (today.length) parts.push(`Due today: ${today.slice(0, 3).map((t) => t.title).join(', ')}${today.length > 3 ? ` and ${today.length - 3} more` : ''}.`)
-  if (overdue.length) parts.push(`${overdue.length === 1 ? `"${overdue[0].title}" is` : `${overdue.length} things are`} overdue.`)
-  // Nova's own list: what you said you'd do today, and anything you promised that's now overdue.
-  const promised = buddyHooks.promises().sort((x, y) => (x.due ?? Infinity) - (y.due ?? Infinity))
-  const pToday = promised.filter((p) => p.due != null && p.due >= start.getTime() && p.due < end.getTime())
-  const pLate = promised.filter((p) => p.due != null && p.due < start.getTime())
-  if (pToday.length) parts.push(`You said you'd ${pToday.slice(0, 3).map((p) => `${p.text.replace(/^./, (c) => c.toLowerCase())}${new Date(p.due!).getHours() || new Date(p.due!).getMinutes() ? ` at ${hm(new Date(p.due!).toISOString())}` : ''}`).join(', ')}${pToday.length > 3 ? `, and ${pToday.length - 3} more` : ''}.`)
-  if (pLate.length) parts.push(`${pLate.length === 1 ? `"${pLate[0].text}" from your list is` : `${pLate.length} things on your list are`} still waiting.`)
-  // PoliteMall: what's due in the next 3 days that you haven't submitted, and announcements since yesterday.
-  const school = schoolBrief()
-  // ("Bio: Endocrine quiz (quiz)" is said "Bio's Endocrine quiz"; "Gerontology: Reflection", "Gerontology's Reflection")
-  const spoken = (what: string): string => what.replace(/^(.*?): (.*?)( \(quiz\))?$/, (_m, c: string, n: string, q?: string) => `${c}'s ${n}${q && !/quiz/i.test(n) ? ' quiz' : ''}`)
-  const dueWhen = (iso: string): string => {
-    const days = Math.round((new Date(iso).setHours(0, 0, 0, 0) - start.getTime()) / 864e5)
-    return days === 0 ? `today at ${hm(iso)}` : days === 1 ? `tomorrow at ${hm(iso)}` : new Date(iso).toLocaleDateString('en-GB', { weekday: 'long' })
-  }
-  if (school.due.length) parts.push(`On PoliteMall, ${school.due.slice(0, 3).map((x) => `${spoken(x.what)} is due ${dueWhen(x.due)}`).join(', ')}${school.due.length > 3 ? `, and ${school.due.length - 3} more` : ''}.`)
-  if (school.news.length) parts.push(`${school.news.length === 1 ? 'There’s a new announcement' : `There are ${school.news.length} new announcements`}: ${school.news.slice(0, 2).map((n) => n.what).join('; ')}.`)
-  if (!today.length && !overdue.length && !pToday.length && !pLate.length && !school.due.length) parts.push('Nothing due. Good day to get ahead.')
-  const items = [
-    ...events.slice(0, 6).map((e) => ({ label: e.all_day || e.start_at.length === 10 ? 'All day' : hm(e.start_at), detail: e.title })),
-    ...today.slice(0, 4).map((t) => ({ label: 'Due', detail: t.title })),
-    ...overdue.slice(0, 3).map((t) => ({ label: 'Overdue', detail: t.title })),
-    ...pToday.slice(0, 4).map((p) => ({ label: hm(new Date(p.due!).toISOString()), detail: `Promise: ${p.text}` })),
-    ...pLate.slice(0, 3).map((p) => ({ label: 'Waiting', detail: `Promise: ${p.text}` })),
-    ...school.due.slice(0, 4).map((x) => ({ label: new Date(x.due).toLocaleDateString('en-GB', { weekday: 'short' }), detail: x.what })),
-    ...school.news.slice(0, 3).map((n) => ({ label: 'News', detail: n.what }))
-  ]
-  return {
-    say: parts.join(' '),
-    card: { id: `brief-${ymd(now)}`, kind: 'timeline', title: `Today · ${now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}`, items: items.length ? items : [{ label: 'Free', detail: 'Nothing planned' }], source: 'Studyhall' }
-  }
-}
-
-function briefTick(): void {
-  if (getPrefs().novaBrief === false || getPrefs().bauerOrb === false || OFFSCREEN || buddyHooks.away()) return
-  const now = new Date()
-  if (now.getHours() < 5 || now.getHours() >= 14) return
-  if (getSetting<string>('nova_brief_day') === ymd(now)) return
-  if (powerMonitor.getSystemIdleTime() > 60) return // you're not at the PC yet
-  setSetting('nova_brief_day', ymd(now))
-  const b = briefText()
+  const h = now.getHours()
+  const kind: BriefKind | null = h >= 5 && h < 14 && p.novaBrief !== false ? 'morning' : h >= 19 && h < 23 && p.novaBriefEvening === true ? (now.getDay() === 0 ? 'weekly' : 'evening') : null
+  if (!kind) return
+  const key = `nova_brief_${kind === 'morning' ? 'day' : 'evening'}`
+  if (getSetting<string>(key) === ymd(now)) return
+  setSetting(key, ymd(now))
+  const b = await makeBrief(kind)
   buddyHooks.emote('wave')
   buddyHooks.cards([b.card])
   buddyHooks.say(b.say)
@@ -205,14 +159,10 @@ export function startBuddy(): void {
   started = true
   setInterval(() => void focusTick().catch(() => {}), 20_000).unref()
   setInterval(() => {
-    try {
-      briefTick()
-    } catch (e) {
-      console.warn('Nova brief:', e)
-    }
+    void briefTick().catch((e) => console.warn('Nova brief:', e))
     void offerTick().catch(() => {})
   }, 60_000).unref()
 }
 
 // Automated tests only: the morning brief's words, without waiting for the morning.
-if (process.env.STUDYHALL_OFFSCREEN === '1') (globalThis as unknown as { __novaBrief: unknown }).__novaBrief = briefText
+if (process.env.STUDYHALL_OFFSCREEN === '1') (globalThis as unknown as { __novaBrief: unknown }).__novaBrief = (kind: BriefKind = 'morning') => makeBrief(kind)

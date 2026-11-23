@@ -15,16 +15,18 @@ export async function lessonPdfText(data: Uint8Array): Promise<string> {
   const { pages } = await pdfText(data)
   const pdfjs = await import('pdfjs-dist')
   const doc = await open(data)
-  const out: { n: number; text: string; pictures: number; boxes: [number, number, number, number, string][] }[] = []
+  const out: { n: number; text: string; pictures: number; paths: number; boxes: [number, number, number, number, string][] }[] = []
   for (let i = 1; i <= doc.numPages; i++) {
     let pictures = 0
+    let paths = 0 // (lines and shapes drawn on the page: a circuit or a chart drawn in the PDF itself, not a picture)
     let boxes: [number, number, number, number, string][] = []
     if (i <= 200) boxes = await pageBoxes(await doc.getPage(i)).catch(() => [])
     if (i <= 200) {
       const ops = await (await doc.getPage(i)).getOperatorList().catch(() => null)
       pictures = ops ? ops.fnArray.filter((f) => f === pdfjs.OPS.paintImageXObject || f === pdfjs.OPS.paintInlineImageXObject).length : 0
+      paths = ops ? ops.fnArray.filter((f) => f === pdfjs.OPS.constructPath).length : 0
     }
-    out.push({ n: i, text: pages[i - 1] ?? '', pictures, boxes })
+    out.push({ n: i, text: pages[i - 1] ?? '', pictures, paths, boxes })
   }
   await doc.cleanup().catch(() => {})
   return JSON.stringify(out)

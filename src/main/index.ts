@@ -21,6 +21,9 @@ import { currentSenderId, registerIpc } from './ipc'
 import { applyLoginItem, getPrefs, watchShortcut } from './prefs'
 import { checkDeadlines, checkDueNow } from './reminders'
 import { buddyHooks, focusState, lastOffered, startBuddy } from './buddy'
+import { briefHooks } from './briefs'
+import { setWatch, startNews, watches } from './news'
+import { lastSpokeUp, startWatcher, watchHooks } from './watcher'
 import { checkLifeReminders } from './lifeReminders'
 import * as timer from './timer'
 import { createTray, updateTray } from './tray'
@@ -50,7 +53,7 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
 }
 import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, emoteHooks, hiddenFromCaptures, novaInRecordings, orbPress, orbPressHooks, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
 import { setCourseName } from './courseNames'
-import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, showPoliteView, type PoliteRect } from './politePage'
+import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, readNew, showPoliteView, type PoliteRect } from './politePage'
 import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
 import { conversationLine, convHooks, setConversation, toggleConversation } from './conversation'
 import { restoreAfterLesson } from './windowSplit'
@@ -487,12 +490,15 @@ if (!app.requestSingleInstanceLock()) {
             facts,
             focusState(),
             lastOffered(),
+            lastSpokeUp(),
             conversationLine(),
             '</live-state>'
           ].join('\n')
           return novaTurn(e.sender, String(said ?? '').slice(0, 4000), live)
         })
         handle('nova:warm', (e) => warmNova(e.sender))
+        handle('nova:newsTopics', () => watches().map((w) => ({ topic: w.topic, level: w.level })))
+        handle('nova:watchNews', (_e, topic: string, level: string) => setWatch(String(topic ?? ''), level === 'alert' || level === 'brief' ? level : 'off'))
         handle('nova:reset', () => resetNova())
         handle('nova:facts', () => listNovaFacts())
         handle('nova:lessons', () => listLessons())
@@ -818,6 +824,20 @@ if (!app.requestSingleInstanceLock()) {
     buddyHooks.cards = (c) => showCards(c)
     buddyHooks.away = () => novaAway
     startBuddy()
+    // Briefs beyond school, and Nova speaking up on its own (briefs.ts, watcher.ts, news.ts).
+    briefHooks.promises = () => buddyHooks.promises()
+    watchHooks.say = (t) => voiceSay(t)
+    watchHooks.sayThenListen = buddyHooks.sayThenListen
+    watchHooks.emote = (e) => orbEmote(e)
+    watchHooks.busy = () => novaAway || tutorOn() || !!focusState()
+    watchHooks.whileAway = (since) => {
+      const fresh = readNew().filter((n) => Date.parse(n.at) > since)
+      if (!fresh.length) return ''
+      const grades = fresh.filter((n) => n.kind === 'grade')
+      return grades.length ? `There's a new grade in ${grades[0].course}${fresh.length > 1 ? `, and ${fresh.length - 1} more updates on PoliteMall` : ''}.` : `${fresh.length} new update${fresh.length > 1 ? 's' : ''} on PoliteMall, the latest from ${fresh[0].course}.`
+    }
+    startWatcher()
+    startNews()
     startSchool()
   })
 

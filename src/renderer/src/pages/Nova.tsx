@@ -143,6 +143,97 @@ function RoomLeft({ name, usage, cap, noExtra }: { name: string; usage: ClaudeSt
 }
 
 /** Tutor mode: start it, whether lessons are recorded, and the recorded lessons to watch again. */
+/** The news topics Nova watches: "alert me" (big, confirmed news said straight away) or "brief only". */
+function NewsWatch({ name }: { name: string }): React.JSX.Element {
+  const [list, setList] = useState<{ topic: string; level: 'alert' | 'brief' }[]>([])
+  const [topic, setTopic] = useState('')
+  const load = useCallback(() => void api.nova.newsTopics().then(setList), [])
+  useEffect(load, [load])
+  const set = (t: string, level: 'alert' | 'brief' | 'off'): void => void api.nova.watchNews(t, level).then(load)
+  return (
+    <div className="border-t border-line pt-3">
+      <b className="block text-[13px]">News you watch</b>
+      <p className="mb-2 text-[12px] text-muted">
+        Each story is labelled confirmed, reported or rumour. Alert me: {name} tells you straight away when something big and not just a rumour lands. Or say “watch NVIDIA news”, “watch GTA 6
+        jailbreak news closely”. (X, TikTok and Reddit can’t be read for free; their big posts usually reach the news within hours.)
+      </p>
+      <ul className="flex flex-col gap-1">
+        {list.map((w) => (
+          <li key={w.topic} className="flex items-center gap-2 text-[13px]">
+            <span className="min-w-0 flex-1 truncate">{w.topic}</span>
+            <Seg
+              value={w.level}
+              options={[
+                ['alert', 'Alert me'],
+                ['brief', 'Brief only']
+              ]}
+              onChange={(v) => set(w.topic, v)}
+            />
+            <button className="btn-ghost px-1 text-muted" aria-label={`Stop watching ${w.topic}`} onClick={() => set(w.topic, 'off')}>
+              ×
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="mt-2 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (topic.trim()) set(topic.trim(), 'brief')
+          setTopic('')
+        }}
+      >
+        <input className="field-boxed min-w-0 flex-1 px-2 py-1 text-sm" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Add a topic (NVIDIA, GTA 6 jailbreak…)" aria-label="News topic" />
+        <button className="btn" type="submit">
+          Watch
+        </button>
+      </form>
+    </div>
+  )
+}
+
+/** Jarvis protocol (a hidden setting): shown once it's on, or when "jarvis" is searched for. */
+function JarvisCard({ name, prefs, save }: { name: string; prefs: Prefs | null | undefined; save: (p: Partial<Prefs>) => void }): React.JSX.Element {
+  const [address, setAddress] = useState<string | null>(null)
+  return (
+    <section className="card rounded-2xl p-5" data-secret={prefs?.novaJarvis ? undefined : 'jarvis'} data-settings="jarvis protocol butler sir wit">
+      <h2 className="font-semibold">Jarvis protocol</h2>
+      <p className="mt-1 text-[13px] text-muted">
+        {name} becomes a composed British butler: it calls you sir, greets you in kind, offers the next step before you ask, and has a dry wit (never about anything serious). Say “{name}, initiate
+        Jarvis protocol” or “end Jarvis protocol”.
+      </p>
+      <Row title="Jarvis protocol">
+        <input type="checkbox" checked={!!prefs?.novaJarvis} onChange={(e) => save({ novaJarvis: e.target.checked })} aria-label="Jarvis protocol" />
+      </Row>
+      <Row title="Calls you" hint="Sir, ma'am, your name, or anything else.">
+        <input
+          className="field-boxed w-32 px-2 py-1 text-sm"
+          value={address ?? prefs?.novaAddress ?? 'sir'}
+          onChange={(e) => setAddress(e.target.value)}
+          onBlur={() => address != null && save({ novaAddress: address.trim() || 'sir' })}
+          aria-label="What Jarvis calls you"
+        />
+      </Row>
+      <Row title="Wit" hint="Dry: understated, said straight. Cheeky: a little teasing about your habits. Off: just polite.">
+        <Seg
+          value={prefs?.novaWit ?? 'dry'}
+          options={[
+            ['off', 'Off'],
+            ['dry', 'Dry'],
+            ['cheeky', 'Cheeky']
+          ]}
+          onChange={(v) => save({ novaWit: v })}
+        />
+      </Row>
+      {prefs?.novaVoice !== 'nova_jarvis' && (
+        <button className="btn-ghost mt-2 rounded-md border border-line px-2 py-1 text-[12px]" onClick={() => save({ novaVoice: 'nova_jarvis' })}>
+          Use the Jarvis voice too
+        </button>
+      )}
+    </section>
+  )
+}
+
 function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | undefined; save: (p: Partial<Prefs>) => void }): React.JSX.Element {
   const [lessons, setLessons] = useState<{ name: string; path: string; at: string; mb: number }[] | null>(null)
   // The lesson being watched, in Studyhall's own player (it plays these recordings and can skip around in them).
@@ -188,6 +279,19 @@ function TutorCard({ name, prefs, save }: { name: string; prefs: Prefs | null | 
             ['haiku', 'Haiku (cheaper)']
           ]}
           onChange={(v) => save({ novaTutorBrain: v })}
+        />
+      </Row>
+      <Row
+        title="Teaching depth"
+        hint="Standard: every slide gets a fact card, a flowchart and a picture or model, with its key lines ringed. Thorough: Sonnet thinks harder, so it adds more cards, rings and links between slides, but each slide takes longer and uses a little more of your plan."
+      >
+        <Seg
+          value={prefs?.novaTutorDepth === 'thorough' ? 'thorough' : 'standard'}
+          options={[
+            ['standard', 'Standard'],
+            ['thorough', 'Thorough']
+          ]}
+          onChange={(v) => save({ novaTutorDepth: v })}
         />
       </Row>
       <Row title="Also record a video" hint="Off by default: every lesson can be watched again with Replay on the Lessons tab. On: each lesson is also saved as a video (your screen and its voice) in Documents\Nova Lessons, to keep or send.">
@@ -246,7 +350,9 @@ function SettingsSearch(): React.JSX.Element {
     const want = q.trim().toLowerCase()
     for (const sec of Array.from(box.querySelectorAll('section'))) {
       const hay = `${sec.textContent ?? ''} ${sec.getAttribute('data-settings') ?? ''}`.toLowerCase()
-      ;(sec as HTMLElement).style.display = !want || hay.includes(want) ? '' : 'none'
+      // (a hidden card shows only when its secret word is searched for)
+      const secret = sec.getAttribute('data-secret')
+      ;(sec as HTMLElement).style.display = secret ? (want.includes(secret) ? '' : 'none') : !want || hay.includes(want) ? '' : 'none'
     }
   }, [q])
   return (
@@ -459,6 +565,12 @@ function useMouth(): EarsStatus | null {
 }
 
 const VOICES: { id: string; name: string; hint: string; line: string }[] = [
+  {
+    id: 'nova_jarvis',
+    name: 'Jarvis',
+    hint: 'Butler · UK · its own',
+    line: 'Good evening, sir. How may I assist you?'
+  },
   {
     id: 'af_heart',
     name: 'Heart',
@@ -1060,6 +1172,19 @@ export function NovaPage(): React.JSX.Element {
                         </div>
                       ))}
                     </div>
+                    {prefs?.novaVoice === 'nova_jarvis' && (
+                      <Row title="Jarvis mix" hint="Three blends of Kokoro's British voices. Every pronunciation fix still applies: only the sound changes.">
+                        <Seg
+                          value={prefs?.novaVoiceBlend ?? 'jarvis'}
+                          options={[
+                            ['jarvis', 'Classic'],
+                            ['jarvis_deep', 'Deeper'],
+                            ['jarvis_crisp', 'Crisper']
+                          ]}
+                          onChange={(v) => save({ novaVoiceBlend: v })}
+                        />
+                      </Row>
+                    )}
                     <Row title="Speed">
                       <input
                         type="range"
@@ -1280,20 +1405,34 @@ export function NovaPage(): React.JSX.Element {
 
             {!phone && (
               <section className="card rounded-2xl p-5">
-                <h2 className="font-semibold">Study buddy</h2>
+                <h2 className="font-semibold">Briefs and speaking up</h2>
                 <p className="mb-3 text-[13px] text-muted">
-                  Things {name} does on its own. To do them it only looks at the title of the window in front (what your taskbar shows), and only during a focus session or while you’re on study notes.
-                  Nothing is saved or sent anywhere.
+                  Things {name} does on its own. Everything is read on this PC; only the weather (your city, from Open-Meteo) and the news topics you pick (as searches on Google News and Bing News) go out, all
+                  free. Ask any time: “what’s my day?”, “status report”, “the week ahead”.
                 </p>
-                <Row title="Morning brief" hint={`The first time you’re at the PC each morning, ${name} says what’s on today and what’s due, and shows it on a card. Ask “what’s my day?” any time.`}>
+                <Row title="Morning brief" hint={`The first time you’re at the PC each morning: the weather, your day, what’s due, money, birthdays and the news you watch, on a card.`}>
                   <input type="checkbox" checked={prefs?.novaBrief !== false} onChange={(e) => save({ novaBrief: e.target.checked })} aria-label="Morning brief" />
                 </Row>
-                <Row
-                  title="Nudges and offers"
-                  hint={`In a focus session (“focus on chemistry for 45 minutes”), ${name} nudges you if you drift to YouTube, games or socials. After half an hour on the same notes it offers a quick quiz.`}
-                >
-                  <input type="checkbox" checked={prefs?.novaProactive !== false} onChange={(e) => save({ novaProactive: e.target.checked })} aria-label="Nudges and offers" />
+                <Row title="Evening wrap-up" hint="Between 7 and 11 pm: what you got done, what’s still open, and tomorrow’s first thing. On Sundays, the week ahead instead.">
+                  <input type="checkbox" checked={prefs?.novaBriefEvening === true} onChange={(e) => save({ novaBriefEvening: e.target.checked })} aria-label="Evening wrap-up" />
                 </Row>
+                <Row
+                  title="Speaks up on its own"
+                  hint={`When something matters: you’re back after a while, a class in 15 minutes, something due tonight, a budget nearly spent, a birthday tomorrow, an exam this week, big news you watch. At most once every 15 minutes, never in a lesson or focus session. “Not now” quiets it for an hour. Also: focus-session nudges and a quiz offer after half an hour on the same notes.`}
+                >
+                  <input type="checkbox" checked={prefs?.novaProactive !== false} onChange={(e) => save({ novaProactive: e.target.checked })} aria-label="Speaks up on its own" />
+                </Row>
+                <Row title="Weather" hint="In the morning brief. Leave the city blank to use your time zone’s.">
+                  <input
+                    className="field-boxed w-32 px-2 py-1 text-sm"
+                    defaultValue={prefs?.novaCity ?? ''}
+                    placeholder="City"
+                    onBlur={(e) => e.target.value !== (prefs?.novaCity ?? '') && save({ novaCity: e.target.value })}
+                    aria-label="Weather city"
+                  />
+                  <input type="checkbox" checked={prefs?.novaWeather !== false} onChange={(e) => save({ novaWeather: e.target.checked })} aria-label="Weather in the brief" />
+                </Row>
+                <NewsWatch name={name} />
               </section>
             )}
 
@@ -1496,6 +1635,7 @@ export function NovaPage(): React.JSX.Element {
           </div>
           <aside className="flex min-w-0 flex-col gap-4">
             {!phone && <TutorCard name={name} prefs={prefs} save={save} />}
+            <JarvisCard name={name} prefs={prefs} save={save} />
             <ShortcutsCard capture={prefs?.quickCaptureShortcut ?? ''} />
             <VoiceCard />
           </aside>

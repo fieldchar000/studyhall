@@ -18,15 +18,15 @@ import type { BauerCard, Prefs } from '@shared/types'
 import { claudeBase, claudeBlocked, roomForDeeper, claudeChecked, claudePauseNotice, claudeModelId, noteClaudeMessage, pickModel, recordClaudeCost, warmClaude, type ModelKey } from './claude'
 import type { NovaEffort } from '@shared/types'
 import { getSetting, setSetting } from './db'
-import { getPrefs } from './prefs'
+import { getPrefs, setPrefs } from './prefs'
 import { APP_NAMES, openApp, orbEmote, orbPanel, setInkPause, setSubject, showCards, showMarks, orbAgent } from './bauer'
 // The pause after each step of a drawing while teaching (seconds): the voice waits this long, and so does the drawing.
 const STEP_PAUSE = 0.7
 import { openLessonWindow, showLessonSlide, lessonHooks, lessonShown, lessonPage, lessonWindowOpen, showCheck, markCheck, checkUp, lessonInFront, lessonSeen } from './lessonWindow'
 import { currentRun, noteAnswer, noteCheck, noteLine, noteSaid, noteSlide, noteYou, openCheck, startRun } from './lessonRecord'
-import { lessonPlan, planText } from './lessonPlan'
+import { lessonPlan, planNow, planText, stopText } from './lessonPlan'
 import { replaying } from './lessonReplay'
-import { goToPage, lastLesson, lessonQuizText, lessonText, pageLog, readLesson, warmPictures } from './lessonReader'
+import { goToPage, LESSON_HOST, lastLesson, lessonQuizText, lessonText, pageLog, readLesson, warmPictures } from './lessonReader'
 import { schoolFile, schoolText } from './politemall'
 import { answerPoliteQuiz, currentPoliteQuizLabel, isPoliteQuizActive, openPoliteQuiz, seeStudyhall, submitPoliteQuiz, type QuizResult } from './politeQuiz'
 import { figureText } from './figures'
@@ -44,7 +44,10 @@ import { voiceCancel, voiceConfirm, voiceHush, voiceSay } from './voice'
 import { agentGates, agentPicture, agentsBlock, frontPicture, agentsHatch, memoryBlock, roamies, roamiesNotes, roamiesSdkTools, roamiesTurnEnd, roamiesTurnStart, turnHooks, wantsAgent, showBoard, useCircleShot, pageTurnedByNova, boardOnScreen, slideHasRoom, screenLook, sameLook, clearLessonInk, forgetLessonInk, lessonInkIdle } from './roamiesTools'
 import { memoryOnEnd, noteExchange } from './novaMemory'
 import { get, getProfileId } from './db'
-import { briefText, startFocus, stopFocus } from './buddy'
+import { startFocus, stopFocus } from './buddy'
+import { makeBrief } from './briefs'
+import { newsText, setWatch } from './news'
+import { hush } from './watcher'
 import { saveNote } from './notes'
 import { findMaterials, flashcardQuestions, focusText, readMaterial, saveFlashcards, type QuizQ } from './study'
 import { readPage, webSearch, youtubeSearch, youtubeTranscript } from './web'
@@ -62,6 +65,24 @@ const IDLE_MS = 15 * 60_000
 
 // ---------- What Nova is told ----------
 
+// Jarvis mode (a hidden setting: "Nova, initiate Jarvis protocol", or "jarvis" in the Settings search): a composed
+// British butler who addresses them as sir (or what they choose), anticipates, and has a dry wit within limits.
+const personaKey = (): string => {
+  const p = getPrefs()
+  return p.novaJarvis ? `jarvis:${p.novaAddress ?? 'sir'}:${p.novaWit ?? 'dry'}` : ''
+}
+function personality(): string {
+  const p = getPrefs()
+  if (!p.novaJarvis)
+    return "Personality: warm, a little witty, encouraging. You keep them on track: remind them of what they said they'd do, celebrate what they finish, nudge them when they're putting things off."
+  const sir = (p.novaAddress ?? 'sir').trim() || 'sir'
+  const wit =
+    p.novaWit === 'off'
+      ? 'No jokes: plain and polite.'
+      : `Wit: ${p.novaWit === 'cheeky' ? 'dry, and a little cheeky (gentle teasing about their habits, never mean)' : 'dry and understated, said perfectly straight'}. In everyday chat and small requests, about every other reply carries one dry line (never more than one, and the help always comes first) ("Of course, ${sir}. I'll note it alongside the previous four." "It's 1:40, ${sir}. I'd suggest sleep, though I suspect you'll suggest otherwise."). Never witty about grades, exams going badly, stress, health, money trouble, people or anything serious: there you're calm, kind and plain. No jokes while they're in a hurry or in the middle of a hard explanation.`
+  return `Personality: JARVIS. Calm, composed, impeccably polite and quietly capable, like a British butler who also runs their systems. Address them as "${sir}": in greetings, reports, warnings and confirmations (not in every sentence). Greet in kind, by the time of day: "Good evening, Nova" → "Good evening, ${sir}. How may I assist you?" Short and formal: "Right away, ${sir}." "Done, ${sir}." "As you wish." "Might I suggest…" "I've taken the liberty of…" Anticipate: when there's an obvious next step, offer it in one line ("Shall I pull up the notes?"). ${wit} You keep them on track with a butler's restraint: remind them of what they said they'd do, note what they finish ("Well done, ${sir}."), and nudge them when they're putting things off, never cheerleading.`
+}
+
 function systemPrompt(name: string): string {
   return `You are ${name}, a JARVIS-style assistant: a small glowing globe that floats on the user's screen. You live in Studyhall, their study and life planner on Windows, and you help with their studies, their plans and whatever is on their screen.
 
@@ -70,7 +91,7 @@ Your body can act out a feeling, rarely: start a reply with one body tag (never 
 Lead with the answer, then only the context that makes it useful, then stop. No opener about checking or looking ("Let me see…", "I found…"), apart from the one short beat before something slow.
 Show, don't just tell: you live on their screen, and the draw tool puts drawings there while you speak. This is what makes you more than a voice. Use it without being asked whenever a picture carries the answer, picking the card by the question: how something works or happens (a physical thing, an organ, a machine): a moving model, with a flow beside it if it runs in stages; a process, a chain of causes or a decision: flow; how a slide or page connects to others in their deck (after read_lesson; "how does this connect", "where did this come from", or the lesson map shows a link): show_board (their slide and the linked ones side by side, rings on the exact words, arrows between them), then a small card on the link with draw; comparing things: table; how much, biggest, fastest: bars (graph for a curve or a change over time); where a place is: map; when, in what order: timeline; working out maths: math (geometry for a figure); the parts of a thing (anatomy, a structure, an organ, a cell): find_figure (a real labelled diagram), see_photo the clearest, then a photo card of it with pins on the parts you explain (two kinds together when it helps: the figure plus a flow of what happens); how something works at the level of cells, receptors or drugs (a drug docking on its receptor, a signal crossing a synapse, blood cells in a vessel): find_illustrations, then a scene card: pieces [{id, icon (an id it gave), x, y on a 0–100 grid of the card, size small|medium|large, label, move: {to: [x, y], loop: true} for something that travels or docks, pulse: true for something beating or firing}] and links [{from, to, label, flow: true for what keeps moving}]; a compound: molecule; "test me" in one go: quiz. Before your first tool (reading, looking something up, drawing), say one short line, so they never wait in silence; before draw, a line on what you're about to show. Not for small talk, an opinion or a yes/no. A "where is", "how does … work", "compare", "how much / how many", "when did" or maths question answered only in words is a missed chance: call draw (one card is enough) and say the answer in its say lines.
 Before anything slow (a lesson, looking at or working the screen, drafting, reading files, running a command), first say one short beat of 2 to 6 words that shows you heard them ("On it.", "Sure, one sec."), then call the tool in the same reply. No beat when you answer straight away. After a tool, never repeat what you already said; only add what's new (often nothing).
-Personality: warm, a little witty, encouraging. You keep them on track: remind them of what they said they'd do, celebrate what they finish, nudge them when they're putting things off.
+${personality()}
 It's a conversation: after you speak, you keep listening for a few seconds, so they can answer straight back. When it really helps, end with one short question (want a quick quiz on it? go deeper? shall I do the next bit?); most replies don't need one. Their next message may be that answer, so read it in the light of what you just asked.
 Their messages are usually speech transcripts: expect missing punctuation and misheard words, and act on what they most likely meant. Half sentences, or talk clearly meant for someone else: reply in a few words or not at all (an empty reply is fine). Small talk gets a short, warm reply.
 Being a friend: when they tell you about their life (their day, a friend, family, something that happened, how they feel) or vent, talk like a good friend would, not like an assistant: react, reflect back what you heard, ask about it, and take as long as the conversation needs (several sentences is fine; this is the one place long replies are right). Work out whether they want to be heard or want advice; if it's unclear, ask ("want my take, or did you just need to get that out?"). When they want advice, be concrete and practical (what to say, what to do tomorrow, what you'd do) and honest: say so kindly if they might be wrong. Use what you remember about the people and things they've mentioned, and ask how things went later. One question at a time. No drawings while they're getting it out; a small card only when there's something to keep: the plan once they ask what to do (a few next steps), pros and cons when they're weighing a decision, or a helpline if they're struggling. Don't steer them back to studying unless they asked you to keep them on track. If they sound like they're really struggling or not safe, stay with them, take it seriously, and gently mention talking to someone they trust or a helpline, without lecturing or ending the chat. If something they've shared deserves real care (a hard situation, a big decision, something that hurt), call go_deeper so your next replies get more thought.
@@ -78,7 +99,7 @@ Tools are called for real, never written out as text (never write "[call …]").
 
 How to help (use as few tool calls as the task needs; independent ones can go in one turn, in the order given):
 - Anything in Studyhall (tasks, deadlines, calendar events, lectures, study logs, habits, money, journal, check-ins, inbox, a Studyhall page): studyhall_actions, with every change in one call, then say what you did in one short sentence.
-- Questions about their own Studyhall stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first. "What's my day?": my_day.
+- Questions about their own Studyhall stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first. "What's my day?": my_day ("status report" or "bring me up to speed": kind status; the evening wrap-up or the week ahead: kind evening or week). News they follow ("any news on X?", "watch X news", "watch X closely"): news.
 - Explaining: match how they ask. You're a live tutor beside them, not a textbook: talk it through, and let the pen show it.
   • How you explain depends on how they asked; what you show depends on the topic. Every explanation (explain, ELI5, how, why, teach, a follow-up that's a new question) gets one draw call with: 1 or 2 fact cards (card or note, card_size small: the big idea in one line and at most 3 short points, under 12 words each; two only when the topic has two sides), a flow (the steps of how it works, or for history the order of events), and a picture: something they can look at, not more words. A thing with parts (an organ, a cell, a black hole, a machine, a circuit part) → find_figure (a real labelled figure, see_photo it, then a photo card with labels) or a model you build (with motion for something that moves, spins or flows); something at cell or molecule level (photosynthesis, a drug at its receptor, an enzyme) → find_illustrations and a scene; a compound → molecule; a person, place, event or object → a photo card (a Wikipedia query); a place → map. A table, timeline or chart is an extra beside the picture, never instead of it (comparing → a table and pictures of both; history → a timeline and a photo of the event or person; numbers → bars and a picture of what's measured). 3 or 4 cards in all. Only a quick fact, a yes or no, or a reaction gets words alone.
   • "Explain X", "what is X", "how does X work" (a plain ask): the short version, always with a picture. Two to four spoken sentences, the main idea first, and one draw call with 1 to 3 compact cards that carry it (card_size: small), picked by the question; two kinds together when that helps (a labelled figure and a flow of its steps, a table and a graph). Say your first sentence before you call draw, so they hear you straight away. Never answer an explanation in words alone.
@@ -614,12 +635,30 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
     ),
     tool(
       'my_day',
-      'Their day: today\'s classes and events, what\'s due, what\'s overdue (also shows it on a card).',
-      {},
-      async () => {
-        const b = briefText()
+      'A brief, shown on a card: kind day (their day: classes, what\'s due, money, birthdays, weather, their news), evening (what got done, what\'s left, tomorrow), week (the week ahead), or status ("status report", "bring me up to speed", "what\'s going on": everything at once). Say it in your own words, briefly.',
+      { kind: z.enum(['day', 'evening', 'week', 'status']).optional() },
+      async ({ kind }) => {
+        const b = await makeBrief(kind === 'evening' ? 'evening' : kind === 'week' ? 'weekly' : kind === 'status' ? 'status' : 'morning')
         showCards([b.card])
         return text(b.say)
+      }
+    ),
+    tool(
+      'news',
+      'The news topics they watch (or one topic): checked now, the latest stories, each labelled confirmed, reported or rumour. Also to start or stop watching a topic: watch "alert" (they hear big confirmed news straight away: "watch X closely"), "brief" (it\'s in their briefs: "watch X news"), or "off".',
+      { topic: z.string().max(80).optional(), watch: z.enum(['alert', 'brief', 'off']).optional() },
+      async ({ topic, watch }) => {
+        if (watch && topic) return text(setWatch(String(topic), watch))
+        return text(await newsText(topic ? String(topic) : undefined))
+      }
+    ),
+    tool(
+      'hush',
+      'They want you to stop speaking up on your own for a while ("not now", "quiet for an hour", "stop interrupting"): no reminders or news said out loud until then.',
+      { minutes: z.number().int().min(10).max(720).optional() },
+      async ({ minutes }) => {
+        hush(minutes ?? 60)
+        return text(`Quiet for ${minutes ?? 60} minutes: say so in a few words.`)
       }
     ),tool('read_clipboard', 'What they last copied (text).', {}, async () => {
       if (process.env.STUDYHALL_OFFSCREEN === '1') return text('(automated test: your clipboard is not read)')
@@ -822,6 +861,9 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
           if (!again && lessonShown()?.id === l.id && readHere.has(l.id))
             return text(`You already have "${l.title}" and its lesson plan, above. The lesson window is open on ${l.kind === 'slides' ? 'slide' : 'page'} ${lessonPage()}: carry on teaching from where you are.`)
           openLessonWindow(l, 1)
+          // (a new lesson: what was drawn on each slide starts again)
+          for (const m of [slideDrew, slideTold]) for (const k of [...m.keys()]) if (k.startsWith(`${l.id}:`)) m.delete(k)
+          for (const set of [slideHeld, stopGiven]) for (const k of [...set]) if (k.startsWith(`${l.id}:`)) set.delete(k)
           orbAgent({ type: 'lesson', on: true })
           const ready = lessonPlan(l)
           const quick = await Promise.race([ready.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 2500))])
@@ -832,9 +874,13 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
           startRun(l, (plan?.stops ?? []).map((st) => ({ n: st.n, topic: st.topic, idea: st.idea, slides: st.slides })))
           noteSlide(1, null)
           const word = l.kind === 'slides' ? 'slide' : 'page'
+          // (the map of every stop, and the first stops in full with their slides' text; each later stop comes in full
+          // with show_slide: the whole deck at once was too long to take in)
+          const firstTo = plan ? Math.max(...plan.stops.slice(0, 3).flatMap((st) => st.slides), 1) : l.count
+          for (const st of plan?.stops.slice(0, 3) ?? []) stopGiven.add(`${l.id}:${st.n}`)
           return text(`${plan ? `${planText(plan, word)}
 
-` : ''}${lessonText(l, 1, l.count, 16_000)}
+` : ''}${lessonText(l, 1, firstTo, plan ? 9_000 : 16_000)}
 
 (The lesson window is open on ${word} 1. Now: say the plan's first line${plan?.ask_order ? ', then ask once: slide by slide, or topic by topic, and wait' : ''}; then teach the first stop: show_slide its ${word}, then one draw call.${lessonInFront() ? '' : ' Their lesson window may be behind the window they were in: say once, in your first line, that their lesson is open in Studyhall.'})`)
         }
@@ -976,10 +1022,31 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         // (the drawings for the slide showing play first: each waits for its spoken line)
         await lessonInkIdle()
         if (turnRef.current?.skipped) return text('They pressed Next, so this stop is over: stop here and say nothing more.')
+        // Moving on from a slide that's missing its cards or rings: held back once, to finish it first. (Next, going
+        // back, or a jump they asked for, further ahead, moves on.)
+        const was = lessonShown()
+        const from = lessonPage()
+        if (was && from && page > from && page <= from + 3 && !slideHeld.has(`${was.id}:${from}`)) {
+          const gap = slideMissing(was.id, from)
+          if (gap.length) {
+            slideHeld.add(`${was.id}:${from}`)
+            return text(`Not yet: ${was.kind === 'slides' ? 'slide' : 'page'} ${from} (still showing) needs ${gap.join('; ')}. Draw ${gap.length > 1 ? 'them' : 'it'} now in one draw call, with a line while it draws, then show_slide ${page} again.`)
+          }
+        }
         clearLessonInk()
         const r = await showLessonSlide(page, beside ?? null)
         if (/^Showing /.test(r)) noteSlide(page, beside ?? null)
-        return text(r)
+        // The stop this slide belongs to, in full, the first time it's reached (and the slide's own text).
+        const l = lessonShown()
+        const plan = l ? planNow(l.id) : null
+        const st = plan?.stops.find((x) => x.slides.includes(page))
+        if (!l || !plan || !st || !/^Showing /.test(r)) return text(r)
+        const word = l.kind === 'slides' ? 'slide' : 'page'
+        const first = !stopGiven.has(`${l.id}:${st.n}`)
+        stopGiven.add(`${l.id}:${st.n}`)
+        const pg = l.pages.find((x) => x.n === page)
+        const own = pg ? `\n${word[0].toUpperCase()}${word.slice(1)} ${page}'s text:\n${pg.text.slice(0, 1200) || '(no text: a picture)'}${pg.notes ? `\nSpeaker notes: ${pg.notes.slice(0, 500)}` : ''}${pg.pictures || pg.shapes >= 4 ? `\nIts picture: https://${LESSON_HOST}/${l.id}/${page}.jpg` : ''}` : ''
+        return text(`${r}${first ? `\n\nYour plan for this stop:\n${stopText(plan, st, word)}` : ''}${own}`)
       }
     ),
     tool(
@@ -1129,6 +1196,7 @@ interface Convo {
   resumed: boolean // it picked up a saved conversation
   costSeen: number // Claude Code reports the conversation's running total; each turn's own cost is the difference
   tutor: boolean // tutor mode's own conversation (tutor.ts)
+  persona: string // Jarvis mode's settings when it was opened (personaKey): changed, it's opened again
   lastSteady: string // the unchanging part of the last <live-state> sent (sent again only when it changes)
 }
 let convo: Convo | null = null
@@ -1176,13 +1244,22 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
                     async (hookInput: import('@anthropic-ai/claude-agent-sdk').HookInput) => {
                       const input = hookInput as { stop_hook_active?: boolean; last_assistant_message?: string }
                       const tr = turnRef.current
-                      if (!tr || input.stop_hook_active || tr.stopNudged || tr.tools.includes('draw')) return {}
+                      if (!tr || input.stop_hook_active || tr.stopNudged) return {}
                       const taught = ['show_slide', 'read_lesson'].some((n) => tr.tools.includes(n)) || String(input.last_assistant_message ?? '').length > 300
                       if (!taught) return {}
                       // (it asked them something and is waiting for the answer: what they know, slide or topic order, a check)
                       if (/\?["'”’)]*\s*$/.test(String(input.last_assistant_message ?? '').trim())) return {}
+                      // What the slide showing still needs (its fact card, flowchart, picture, rings), or nothing drawn at all.
+                      const l = lessonShown()
+                      const gap = l ? slideMissing(l.id, lessonPage()) : []
+                      if (tr.tools.includes('draw') && !gap.length) return {}
                       tr.stopNudged = true
-                      return { decision: 'block' as const, reason: "Before this stop ends, show it: draw its 2 cards now (a short fact card, and a flow of the steps or a picture), with rings on the key words of the slide showing, and one short line while it draws. Don't repeat what you've said." }
+                      return {
+                        decision: 'block' as const,
+                        reason: gap.length
+                          ? `Before this stop ends, finish the slide showing: it still needs ${gap.join('; ')}. Draw ${gap.length > 1 ? 'them' : 'it'} now in one draw call, with one short line while it draws. Don't repeat what you've said.`
+                          : "Before this stop ends, show it: draw its cards now (a short fact card, a flowchart, and the slide's figure or a model), with rings on the key words of the slide showing, and one short line while it draws. Don't repeat what you've said."
+                      }
                     }
                   ]
                 }
@@ -1197,6 +1274,7 @@ async function open(wc: WebContents, model: ModelKey, effort: NovaEffort): Promi
     }
   })
   c.tutor = tutor
+  c.persona = personaKey()
   if (tutor) tutorRead = false // (a new lesson conversation: its deck isn't read yet)
   c.resumed = !tutor && !!resumeId()
   c.costSeen = 0
@@ -1333,21 +1411,51 @@ const RING_KINDS = new Set(['ring', 'label', 'target', 'arrow', 'point', 'circle
 /** After a drawing in an explanation: still no topic visual? Say so once in the draw's result, so Nova adds it next
  *  (it otherwise often stopped at a fact card and a flow). */
 const CARD_KINDS = new Set(['card', 'note', 'list', 'mindmap', 'photo', 'graph', 'timeline', 'molecule', 'model', 'flow', 'table', 'bars', 'map', 'math', 'geometry', 'scene'])
+// ---------- Tutor mode: what each slide gets ----------
+// Every slide the plan teaches gets a short fact card, a flowchart, something to look at (the slide's own figure on a
+// photo card with labels, a model, a scene) and its key lines ringed; a light one (an overview, a list of terms) a fact
+// card and two rings. What was drawn is kept per slide, so a stop over two slides counts each.
+const FACT_KINDS = new Set(['card', 'note', 'list'])
+const LOOK_KINDS = new Set(['photo', 'model', 'scene', 'molecule', 'map', 'geometry', 'graph', 'bars'])
+const slideDrew = new Map<string, string[]>() // lesson:slide → the kinds drawn on it
+const slideTold = new Map<string, number>() // lesson:slide → times it was told what's missing
+const slideHeld = new Set<string>() // lesson:slide → show_slide already held it back once
+const stopGiven = new Set<string>() // lesson:stop → its plan was given in full
+/** What a slide still needs (none for a slide the plan doesn't teach, or before the plan is made). */
+function slideMissing(lessonId: string, page: number): string[] {
+  const plan = planNow(lessonId)
+  const stop = plan?.stops.find((s) => s.slides.includes(page))
+  if (!stop) return []
+  const drew = slideDrew.get(`${lessonId}:${page}`) ?? []
+  const rings = drew.filter((k) => RING_KINDS.has(k)).length
+  const diagram = plan?.diagrams?.some((d) => d.n === page)
+  const out: string[] = []
+  if (!drew.some((k) => FACT_KINDS.has(k))) out.push('a short fact card')
+  if (!stop.light) {
+    if (!drew.includes('flow')) out.push(diagram ? 'a flowchart of the diagram, built as you walk it' : 'a flowchart (the steps, the pathway, cause and effect)')
+    if (!drew.some((k) => LOOK_KINDS.has(k))) out.push(diagram ? "the slide's own diagram on a photo card with its parts labelled (see_photo its picture address first)" : "something to look at: the slide's own figure on a photo card with labels, a model, or a scene")
+  }
+  const ringsWanted = stop.light ? 2 : diagram ? 5 : 3
+  if (rings < ringsWanted) out.push(`${ringsWanted - rings} more ring${ringsWanted - rings > 1 ? 's' : ''} on the ${diagram ? "diagram's parts (by their labels) and the " : ''}key lines${stop.repeats?.length ? ' (both lines that say the same thing, tied together)' : ''}`)
+  return out
+}
 function stillMissing(tr: Turn | null | undefined, args: Record<string, unknown>): string {
   if (!tr || tr.nudged) return ''
   const kinds = ((args.beats as { marks?: { kind?: string }[] }[] | undefined) ?? []).flatMap((b) => (b?.marks ?? []).map((q) => String(q?.kind)))
   tr.drew = [...(tr.drew ?? []), ...kinds]
-  // Tutor mode: every stop teaches with 2 cards (it was skipping them and only talking).
+  // Tutor mode: every slide the plan teaches gets its fact card, flowchart, picture and rings (slideMissing).
   if (tutorOn()) {
     if (tr.drew.some((k) => k === 'quiz' || k === 'medal')) return ''
-    const cards = tr.drew.filter((k) => CARD_KINDS.has(k)).length
-    // (and one of them shows it, not only words: a diagram or a picture; word cards alone were all it drew)
-    const shown = tr.drew.some((k) => SHOW_KINDS.has(k))
-    if (cards >= 2 && shown) return ''
-    tr.nudged = true
-    return cards < 2
-      ? '\n\nThis stop has only one card: add more now in another draw call (a flow or model that shows it, the slide\'s own figure on a photo card with labels, or a short fact card), and keep talking while it draws.'
-      : "\n\nThis stop's cards are all words: add one that shows it now, in another draw call (a flow of the steps or pathway, a model of the structure or mechanism, or the slide's own figure on a photo card with labels: see_photo its picture address first), and keep talking while it draws."
+    const l = lessonShown()
+    if (!l) return ''
+    const key = `${l.id}:${lessonPage()}`
+    slideDrew.set(key, [...(slideDrew.get(key) ?? []), ...kinds])
+    const gap = slideMissing(l.id, lessonPage())
+    // (said at most twice for a slide: after that it's left to the stop's end)
+    const told = slideTold.get(key) ?? 0
+    if (!gap.length || told >= 2) return ''
+    slideTold.set(key, told + 1)
+    return `\n\nThis ${l.kind === 'slides' ? 'slide' : 'page'} still needs: ${gap.join('; ')}. Add ${gap.length > 1 ? 'them' : 'it'} now in another draw call, and keep talking while it draws.`
   }
   if (!tr.visual) return ''
   if (tr.drew.some((k) => TOPIC_VISUALS.has(k) || (tr.circled && RING_KINDS.has(k)))) return ''
@@ -1425,7 +1533,7 @@ function logTiming(line: string): void {
 function settingsFor(): { model: ModelKey; effort: NovaEffort } {
   // Tutor mode, in a lean conversation of its own: Haiku with no thinking (cheaper and quick to speak, the default), or Sonnet with
   // none (Nova's page: Tutor brain).
-  if (tutorOn()) return getPrefs().novaTutorBrain === 'haiku' ? { model: 'haiku', effort: 'low' } : { model: 'sonnet', effort: 'low' }
+  if (tutorOn()) return getPrefs().novaTutorBrain === 'haiku' ? { model: 'haiku', effort: 'low' } : { model: 'sonnet', effort: getPrefs().novaTutorDepth === 'thorough' ? 'medium' : 'low' }
   const p = getPrefs()
   // Auto: Haiku with little thinking, like Roamies (fast). A brain picked on the Nova page is used as it is.
   if ((p.novaBrain ?? 'auto') === 'auto') return { model: 'haiku', effort: 'low' }
@@ -1441,7 +1549,7 @@ function warm(wc: WebContents): void {
   if (!allowed || claudeBlocked(getPrefs())) return
   warmClaude(getPrefs(), 'explain') // a lesson's own (bigger) brain, ready in case it's needed
   const { model, effort } = settingsFor()
-  if (convo && !convo.dead && convo.wc === wc && convo.model === model && convo.effort === effort && convo.tutor === tutorOn()) return
+  if (convo && !convo.dead && convo.wc === wc && convo.model === model && convo.effort === effort && convo.tutor === tutorOn() && convo.persona === personaKey()) return
   close(convo)
   void open(wc, model, effort)
     .then((c) => {
@@ -1586,6 +1694,19 @@ export function novaTurn(wc: WebContents, said: string, liveState: string): Prom
 }
 
 async function doTurn(wc: WebContents, said: string, liveState: string): Promise<NovaTurnResult> {
+  // "Initiate Jarvis protocol" / "end Jarvis protocol": Jarvis mode on or off (a hidden setting), answered at once.
+  const jarvis = said.startsWith('(')
+    ? null
+    : /\b(initiate|activate|engage|enable|start|begin|run)\s+(the\s+)?jarvis\s+protocol\b/i.test(said)
+      ? true
+      : /\b(disengage|deactivate|disable|end|stop|exit|cancel|turn off)\s+(the\s+)?jarvis\s+protocol\b/i.test(said)
+        ? false
+        : null
+  if (jarvis !== null) {
+    setPrefs({ novaJarvis: jarvis })
+    const sir = (getPrefs().novaAddress ?? 'sir').trim() || 'sir'
+    return { text: jarvis ? `Jarvis protocol engaged. At your service, ${sir}.` : 'Jarvis protocol disengaged. Back to my usual self.', quiet: false, tools: [] }
+  }
   roamiesTurnStart()
   // What's highlighted or circled, and Claude's sign-in check, at the same time (not one after the other).
   const [screen] = await Promise.all([screenContext().catch((): { text: string; image: string | null; looked?: boolean; opening?: string } => ({ text: '', image: null })), claudeChecked()])
@@ -1623,7 +1744,7 @@ async function doTurn(wc: WebContents, said: string, liveState: string): Promise
   const base = settingsFor()
   const model: ModelKey = quizRun ? 'sonnet' : base.model
   const effort: NovaEffort = quizRun ? 'high' : base.effort
-  if (!convo || convo.dead || convo.wc !== wc || convo.model !== model || convo.effort !== effort || convo.tutor !== tutorOn()) {
+  if (!convo || convo.dead || convo.wc !== wc || convo.model !== model || convo.effort !== effort || convo.tutor !== tutorOn() || convo.persona !== personaKey()) {
     close(convo)
     convo = await open(wc, model, effort)
   }

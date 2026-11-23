@@ -67,7 +67,7 @@ export const politeViewVisible = (): boolean => viewVisible
 
 export type PoliteNew = { at: string; kind: 'file' | 'news' | 'grade' | 'assignment' | 'quiz'; courseId: number; course: string; text: string; topicId?: number }
 const newFile = (): string => join(app.getPath('userData'), 'politemall-new.json')
-function readNew(): PoliteNew[] {
+export function readNew(): PoliteNew[] {
   try {
     return existsSync(newFile()) ? (JSON.parse(readFileSync(newFile(), 'utf8')) as PoliteNew[]) : []
   } catch {
