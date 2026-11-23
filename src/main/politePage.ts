@@ -6,6 +6,7 @@
 import { app, BrowserWindow, Notification, session, shell, WebContentsView } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { courseName, nameList } from './courseNames'
 import { create, getDb, getSetting, setSetting, update } from './db'
 import { importMaterials } from './files'
 import { getPrefs } from './prefs'
@@ -78,7 +79,7 @@ function whatChanged(before: SchoolData, after: SchoolData): PoliteNew[] {
   const out: PoliteNew[] = []
   for (const c of after.courses) {
     const old = before.courses.find((x) => x.id === c.id)
-    const name = c.code || c.name
+    const name = courseName(c)
     if (!old) continue // a course seen for the first time: everything in it would count as new
     const oldTopics = new Set(flat(old.modules).flatMap((x) => x.m.topics.map((t) => t.id)))
     for (const x of flat(c.modules))
@@ -122,7 +123,7 @@ export function dueItems(d: SchoolData | null = schoolData(), days = 7): DueItem
           key: `quiz:${c.id}:${q.id}`,
           kind: 'quiz',
           courseId: c.id,
-          course: c.code || c.name,
+          course: courseName(c),
           courseName: c.name,
           id: q.id,
           name: q.name,
@@ -138,7 +139,7 @@ export function dueItems(d: SchoolData | null = schoolData(), days = 7): DueItem
           key: `assignment:${c.id}:${a.id}`,
           kind: 'assignment',
           courseId: c.id,
-          course: c.code || c.name,
+          course: courseName(c),
           courseName: c.name,
           id: a.id,
           name: a.name,
@@ -239,11 +240,16 @@ export function politePageData(): unknown {
       const c = d?.courses.find((x) => x.id === it.courseId)
       return { ...it, ready: it.kind === 'quiz' && c ? readiness(c) : null }
     }),
-    news: readNew(),
+    // (what's new was kept with the course's name then: shown with its name now)
+    news: readNew().map((n) => {
+      const c = d?.courses.find((x) => x.id === n.courseId)
+      return c ? { ...n, course: courseName(c) } : n
+    }),
     courses: (d?.courses ?? []).map((c) => ({
       id: c.id,
       code: c.code,
       name: c.name,
+      nick: courseName(c),
       weeks: flat(c.modules).map((x) => ({
         id: x.m.id,
         title: x.path.join(' › '),
@@ -253,7 +259,8 @@ export function politePageData(): unknown {
       news: c.news.slice(0, 6)
     })),
     tasks: getPrefs().politeTasks !== false,
-    notify: getPrefs().politeNotify !== false
+    notify: getPrefs().politeNotify !== false,
+    names: nameList(d?.courses ?? [])
   }
 }
 
@@ -277,7 +284,7 @@ export async function politeAction(a: { kind: string; courseId: number; topicId?
   }
   if (a.kind === 'study') {
     voiceAsk(
-      `Help me study for "${a.name}" in ${c.code || c.name}${a.due ? `, due ${new Date(a.due).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}: use school to work out which weeks it covers, then give me a short practice quiz on them.`
+      `Help me study for "${a.name}" in ${courseName(c)}${a.due ? `, due ${new Date(a.due).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}: use school to work out which weeks it covers, then give me a short practice quiz on them.`
     )
     return 'Nova is getting a practice quiz ready.'
   }
@@ -297,7 +304,7 @@ export async function politeAction(a: { kind: string; courseId: number; topicId?
     return saved.length ? `Saved “${t.title}” to Materials.` : 'Couldn’t save it to Materials.'
   }
   const readable = /^(pdf|pptx?|ppsx?)$/i.test(got.ext)
-  const what = `"${t.title}" from ${c.code || c.name} on PoliteMall, saved at ${got.path}`
+  const what = `"${t.title}" from ${courseName(c)} on PoliteMall, saved at ${got.path}`
   if (a.kind === 'teach') voiceAsk(readable ? `Teach me ${what}: read_lesson it (source: that path) and teach it like a teacher, connecting the slides.` : `Teach me ${what}.`)
   else if (a.kind === 'summary') voiceAsk(readable ? `Summarise ${what}: read_lesson it (source: that path), then the big ideas on cards.` : `Summarise ${what}.`)
   else if (a.kind === 'flashcards') voiceAsk(readable ? `Make flashcards from ${what}: read_lesson it (source: that path), then save_flashcards with the key facts.` : `Make flashcards from ${what}.`)

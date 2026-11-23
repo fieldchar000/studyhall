@@ -30,11 +30,13 @@ type Course = {
   id: number
   code: string
   name: string
+  nick: string
   weeks: { id: number; title: string; topics: Topic[] }[]
   grades: { name: string; grade: string }[]
   news: { title: string; at: string | null; text: string }[]
 }
-type PageData = { status: PoliteStatus; due: Due[]; news: News[]; courses: Course[]; tasks: boolean; notify: boolean }
+type CourseNameRow = { stem: string; say: string; also: string[]; auto: string; full: string; archived: boolean }
+type PageData = { status: PoliteStatus; due: Due[]; news: News[]; courses: Course[]; tasks: boolean; notify: boolean; names: CourseNameRow[] }
 
 const when = (iso: string): string => {
   const d = new Date(iso)
@@ -107,10 +109,10 @@ export function PoliteMallPage(): React.JSX.Element {
     const out: { courseId: number; course: string; text: string; sub: string; topicId?: number }[] = []
     for (const c of data.courses) {
       for (const w of c.weeks) {
-        if (w.title.toLowerCase().includes(n)) out.push({ courseId: c.id, course: c.code || c.name, text: w.title, sub: `${w.topics.length} items` })
-        for (const t of w.topics) if (t.title.toLowerCase().includes(n)) out.push({ courseId: c.id, course: c.code || c.name, text: t.title, sub: w.title, topicId: t.id })
+        if (w.title.toLowerCase().includes(n)) out.push({ courseId: c.id, course: c.nick, text: w.title, sub: `${w.topics.length} items` })
+        for (const t of w.topics) if (t.title.toLowerCase().includes(n)) out.push({ courseId: c.id, course: c.nick, text: t.title, sub: w.title, topicId: t.id })
       }
-      for (const a of c.news) if (`${a.title} ${a.text}`.toLowerCase().includes(n)) out.push({ courseId: c.id, course: c.code || c.name, text: a.title, sub: 'Announcement' })
+      for (const a of c.news) if (`${a.title} ${a.text}`.toLowerCase().includes(n)) out.push({ courseId: c.id, course: c.nick, text: a.title, sub: 'Announcement' })
     }
     return out.slice(0, 60)
   }, [q, data])
@@ -277,8 +279,7 @@ export function PoliteMallPage(): React.JSX.Element {
                   <select className="field-boxed mb-2 w-full text-sm" value={course.id} onChange={(e) => setCourseId(Number(e.target.value))}>
                     {data?.courses.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.code ? `${c.code} · ` : ''}
-                        {c.name}
+                        {c.nick} · {c.name}
                       </option>
                     ))}
                   </select>
@@ -328,7 +329,7 @@ export function PoliteMallPage(): React.JSX.Element {
               {tab === 'grades' &&
                 (data?.courses ?? []).map((c) => (
                   <div key={c.id} className="mb-3">
-                    <h3 className="text-[12px] font-semibold">{c.code || c.name}</h3>
+                    <h3 className="text-[12px] font-semibold">{c.nick}</h3>
                     {c.grades.length ? (
                       <ul>
                         {c.grades.map((g) => (
@@ -357,9 +358,59 @@ export function PoliteMallPage(): React.JSX.Element {
             <input type="checkbox" checked={data?.notify !== false} onChange={(e) => void api.prefs.set({ politeNotify: e.target.checked }).then(load)} />
             Notify me about new announcements, files and grades
           </label>
+          {!!data?.names?.length && <CourseNames rows={data.names} onSaved={load} />}
           <span>Checks every 8 hours while Studyhall is open. Read-only: nothing is ever submitted.</span>
         </div>
       </aside>
     </div>
+  )
+}
+
+/** What you call your courses: the name Nova says ("Bio") and other names it answers to ("HBS"). Saved as you leave
+ *  a box. Last semester's courses are folded away. */
+function CourseNames({ rows, onSaved }: { rows: CourseNameRow[]; onSaved: () => void }): React.JSX.Element {
+  const save = (r: CourseNameRow, say: string, also: string): void => {
+    const list = also
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+    if (say.trim() === r.say && list.join(',') === r.also.join(',')) return
+    void api.polite.setName(r.stem, say, list).then(onSaved)
+  }
+  const row = (r: CourseNameRow): React.JSX.Element => (
+    <li key={r.stem} className="grid grid-cols-[1fr_1fr] gap-1 py-1">
+      <span className="col-span-2 truncate text-[10px] text-muted" title={r.full}>
+        {r.full}
+      </span>
+      <input
+        className="field-boxed px-1.5 py-0.5 text-[12px]"
+        defaultValue={r.say}
+        placeholder={r.auto}
+        aria-label={`What you call ${r.full}`}
+        onBlur={(e) => save(r, e.target.value, (e.target.nextElementSibling as HTMLInputElement).value)}
+      />
+      <input
+        className="field-boxed px-1.5 py-0.5 text-[12px]"
+        defaultValue={r.also.join(', ')}
+        placeholder={`Also: ${r.stem}`}
+        aria-label={`Other names for ${r.full}`}
+        onBlur={(e) => save(r, (e.target.previousElementSibling as HTMLInputElement).value, e.target.value)}
+      />
+    </li>
+  )
+  const now = rows.filter((r) => !r.archived)
+  const old = rows.filter((r) => r.archived)
+  return (
+    <details className="text-[11px]">
+      <summary className="cursor-pointer">Your names for courses (what Nova calls them)</summary>
+      <p className="mt-1">Left: the name Nova says. Right: other names you use, separated by commas. Blank uses the grey name.</p>
+      <ul>{now.map(row)}</ul>
+      {!!old.length && (
+        <details className="mt-1">
+          <summary className="cursor-pointer">Last semester</summary>
+          <ul>{old.map(row)}</ul>
+        </details>
+      )}
+    </details>
   )
 }

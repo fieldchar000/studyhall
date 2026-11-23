@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PoliteStatus } from '@shared/types'
+import { courseAliases, courseName, isArchived } from './courseNames'
 
 export const LMS = 'https://nplms.polite.edu.sg'
 export const PART = 'persist:politemall'
@@ -512,10 +513,14 @@ export function findCourse(q: string): SchoolCourse | null {
   const cs = schoolData()?.courses ?? []
   const n = norm(q)
   if (!n) return null
+  // (this semester's courses before last semester's, and a course before its eTest copy)
+  const eTest = (c: SchoolCourse): number => Number(/\(e-?test\)/i.test(c.name))
+  const by = [...cs].sort((a, b) => Number(isArchived(a)) - Number(isArchived(b)) || eTest(a) - eTest(b))
+  const hay = (c: SchoolCourse): string => norm(`${c.code} ${c.name} ${courseAliases(c).join(' ')}`)
   return (
-    cs.find((c) => norm(c.code) === n || norm(c.name) === n) ??
-    cs.find((c) => norm(`${c.code} ${c.name}`).includes(n)) ??
-    cs.find((c) => n.split(' ').every((w) => norm(`${c.code} ${c.name}`).includes(w))) ??
+    by.find((c) => norm(c.code) === n || norm(c.name) === n || courseAliases(c).some((a) => norm(a) === n)) ??
+    by.find((c) => hay(c).includes(n)) ??
+    by.find((c) => n.split(' ').every((w) => hay(c).includes(w))) ??
     null
   )
 }
@@ -541,14 +546,14 @@ const dueSoon = (c: SchoolCourse, days: number): { what: string; due: string; do
     ...c.assignments
       .filter((a) => a.due && Date.parse(a.due) > now - 24 * HOUR && Date.parse(a.due) < end)
       .map((a) => ({
-        what: `${c.code || c.name}: ${a.name}`,
+        what: `${courseName(c)}: ${a.name}`,
         due: a.due!,
         done: !!a.submitted
       })),
     ...c.quizzes
       .filter((q) => q.due && Date.parse(q.due) > now - 24 * HOUR && Date.parse(q.due) < end)
       .map((q) => ({
-        what: `${c.code || c.name}: ${q.name} (quiz)`,
+        what: `${courseName(c)}: ${q.name} (quiz)`,
         due: q.due!,
         done: !!q.attempts
       }))
@@ -569,14 +574,15 @@ export function schoolText(course?: string, find?: string): string {
       .slice(0, 6)
     return [
       `Their PoliteMall courses ${fresh}:`,
-      ...d.courses.map((c) => `• ${c.code ? `${c.code} ` : ''}${c.name} (${flat(c.modules).length} modules)`),
+      `(Call each course by their name for it, the first one; they may use any of the others.)`,
+      ...d.courses.map((c) => `• ${courseAliases(c).join(' / ')} (PoliteMall: ${c.name}${isArchived(c) ? ', last semester' : ''}; ${flat(c.modules).length} modules)`),
       due.length ? `\nDue in the next 2 weeks:\n${due.map((x) => `• ${x.what}: ${when(x.due)}${x.done ? ' (submitted/attempted)' : ''}`).join('\n')}` : '\nNothing due in the next 2 weeks.',
-      news.length ? `\nLatest announcements:\n${news.map((n) => `• ${n.c.code || n.c.name}: ${n.title} (${when(n.at)})`).join('\n')}` : ''
+      news.length ? `\nLatest announcements:\n${news.map((n) => `• ${courseName(n.c)}: ${n.title} (${when(n.at)})`).join('\n')}` : ''
     ].join('\n')
   }
   const c = findCourse(course)
-  if (!c) return `No course matching "${course}". Their courses: ${d.courses.map((x) => `${x.code} ${x.name}`.trim()).join('; ')}.`
-  const head = `${c.code ? `${c.code} ` : ''}${c.name} ${fresh}`
+  if (!c) return `No course matching "${course}". Their courses: ${d.courses.map((x) => `${courseName(x)} (${x.name})`).join('; ')}.`
+  const head = `${courseName(c)} (PoliteMall: ${c.name}) ${fresh}`
   const topicLine = (t: SchoolTopic): string =>
     `    - ${t.title} [${t.kind === 'Link' ? 'link' : (/\.(\w{2,5})(?:\?|$)/.exec(t.url ?? '')?.[1] ?? t.kind).toLowerCase()}, topic ${t.id}]${t.due ? ` due ${when(t.due)}` : ''}`
   if (find) {
@@ -673,7 +679,7 @@ export function schoolBrief(): {
       .flatMap((c) => dueSoon(c, 3))
       .filter((x) => !x.done)
       .sort((a, b) => Date.parse(a.due) - Date.parse(b.due)),
-    news: d.courses.flatMap((c) => c.news.filter((n) => n.at && Date.parse(n.at) > since).map((n) => ({ what: `${c.code || c.name}: ${n.title}`, at: n.at! })))
+    news: d.courses.flatMap((c) => c.news.filter((n) => n.at && Date.parse(n.at) > since).map((n) => ({ what: `${courseName(c)}: ${n.title}`, at: n.at! })))
   }
 }
 

@@ -130,7 +130,13 @@ export function briefText(): { say: string; card: BauerCard } {
   if (pLate.length) parts.push(`${pLate.length === 1 ? `"${pLate[0].text}" from your list is` : `${pLate.length} things on your list are`} still waiting.`)
   // PoliteMall: what's due in the next 3 days that you haven't submitted, and announcements since yesterday.
   const school = schoolBrief()
-  if (school.due.length) parts.push(`On PoliteMall, ${school.due.slice(0, 3).map((x) => `${x.what.replace(/^[^:]*: /, '')} is due ${new Date(x.due).toDateString() === now.toDateString() ? `today at ${hm(x.due)}` : new Date(x.due).toLocaleDateString('en-GB', { weekday: 'long' })}`).join(', ')}${school.due.length > 3 ? `, and ${school.due.length - 3} more` : ''}.`)
+  // ("Bio: Endocrine quiz (quiz)" is said "Bio's Endocrine quiz"; "Gerontology: Reflection", "Gerontology's Reflection")
+  const spoken = (what: string): string => what.replace(/^(.*?): (.*?)( \(quiz\))?$/, (_m, c: string, n: string, q?: string) => `${c}'s ${n}${q && !/quiz/i.test(n) ? ' quiz' : ''}`)
+  const dueWhen = (iso: string): string => {
+    const days = Math.round((new Date(iso).setHours(0, 0, 0, 0) - start.getTime()) / 864e5)
+    return days === 0 ? `today at ${hm(iso)}` : days === 1 ? `tomorrow at ${hm(iso)}` : new Date(iso).toLocaleDateString('en-GB', { weekday: 'long' })
+  }
+  if (school.due.length) parts.push(`On PoliteMall, ${school.due.slice(0, 3).map((x) => `${spoken(x.what)} is due ${dueWhen(x.due)}`).join(', ')}${school.due.length > 3 ? `, and ${school.due.length - 3} more` : ''}.`)
   if (school.news.length) parts.push(`${school.news.length === 1 ? 'There’s a new announcement' : `There are ${school.news.length} new announcements`}: ${school.news.slice(0, 2).map((n) => n.what).join('; ')}.`)
   if (!today.length && !overdue.length && !pToday.length && !pLate.length && !school.due.length) parts.push('Nothing due. Good day to get ahead.')
   const items = [

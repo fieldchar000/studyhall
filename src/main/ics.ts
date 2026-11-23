@@ -6,6 +6,8 @@ import { net } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { getDb, list, now, tx } from './db'
 import type { CalendarSubscription } from '@shared/types'
+import { withCourseNames } from './courseNames'
+import { schoolData } from './politemall'
 
 const DAY = 24 * 60 * 60 * 1000
 const PAST_DAYS = 90 // keep this much history
@@ -99,6 +101,9 @@ async function refreshOne(sub: CalendarSubscription): Promise<void> {
     const text = await res.text()
     if (!text.includes('BEGIN:VCALENDAR')) throw new Error("That link isn't an ICS calendar feed")
     const occurrences = parseIcs(text)
+    // PoliteMall's feed names courses by code ("26S2-1HBS12_013050"): shown with your names for them instead.
+    const courses = /polite\.edu\.sg/i.test(url) ? (schoolData()?.courses ?? []) : []
+    if (courses.length) for (const o of occurrences) Object.assign(o, { title: withCourseNames(o.title, courses), location: o.location && withCourseNames(o.location, courses) })
 
     tx(() => {
       db.prepare('DELETE FROM subscription_events WHERE subscription_id = ?').run(sub.id)

@@ -49,6 +49,7 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   return aiChat(messages, schema, maxTokens)
 }
 import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, emoteHooks, hiddenFromCaptures, novaInRecordings, orbPress, orbPressHooks, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
+import { setCourseName } from './courseNames'
 import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, showPoliteView, type PoliteRect } from './politePage'
 import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
 import { conversationLine, convHooks, setConversation, toggleConversation } from './conversation'
@@ -510,6 +511,12 @@ if (!app.requestSingleInstanceLock()) {
         handle('polite:go', (_e, url: string) => politeGo(String(url)))
         handle('polite:back', () => politeBack())
         handle('polite:action', (_e, a: { kind: string; courseId: number; topicId?: number; id?: number; name?: string; due?: string }) => politeAction(a))
+        // What you call your courses (courseNames.ts): Nova says and understands these.
+        handle('polite:setName', (_e, stem: string, say: string, also: string[]) => {
+          setCourseName(String(stem), String(say ?? ''), Array.isArray(also) ? also.map(String) : [])
+          politeHooks.changed()
+          void refreshSubscriptions().then(notifyCalendar) // (the PoliteMall calendar feed, with the new name)
+        })
         politeHooks.changed = () => mainWindow?.webContents.send('polite:changed', schoolStatus())
         handle('nova:openLesson', (_e, path: string) => openLesson(String(path)))
         handle('nova:lessonsFolder', () => showLessonsFolder())

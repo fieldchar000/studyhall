@@ -281,6 +281,7 @@ const api: Api = {
     go: (url) => ipcRenderer.invoke('polite:go', url),
     back: () => ipcRenderer.invoke('polite:back'),
     action: (a) => ipcRenderer.invoke('polite:action', a),
+    setName: (stem, say, also) => ipcRenderer.invoke('polite:setName', stem, say, also),
     onChanged: (cb) => {
       const l = (_e: unknown, s: PoliteStatus): void => cb(s)
       ipcRenderer.on('polite:changed', l)

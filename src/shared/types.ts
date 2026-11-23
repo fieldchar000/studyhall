@@ -1345,6 +1345,8 @@ export interface Api {
     back(): Promise<void>
     /** A button on the page (open, teach, summary, flashcards, save, study, course): a message to show, or ''. */
     action(a: { kind: string; courseId: number; topicId?: number; id?: number; name?: string; due?: string }): Promise<string>
+    /** What you call a course (by its subject letters, e.g. HBS): the name Nova says, and other names it answers to. */
+    setName(stem: string, say: string, also: string[]): Promise<void>
   }
   /** The main window reads PDFs for Nova's lesson reader. */
   lesson: {
