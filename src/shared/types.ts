@@ -1114,6 +1114,7 @@ export interface Prefs {
   novaCity?: string // the weather in briefs is for this city (default: from the time zone)
   novaWeather?: boolean // the weather in briefs (default on)
   novaNews?: boolean // the news you watch, in briefs and alerts (default on)
+  novaLook?: 'neural' | 'globe' // how Nova looks: a network of nodes (neural, the default) or the globe of points
   novaJarvis?: boolean // Jarvis mode (hidden: "initiate Jarvis protocol"): a composed British butler who calls you sir
   novaAddress?: string // what Jarvis mode calls you (default "sir")
   novaWit?: 'off' | 'dry' | 'cheeky' // Jarvis mode's humour (default dry)
@@ -1399,6 +1400,16 @@ export interface Api {
     lessonsFolder(): Promise<void>
     /** Turn tutor mode on or off (like Ctrl+Alt+T). */
     tutor(on: boolean): Promise<void>
+    /** Nova's main screen: send a typed message (Nova answers out loud, as if it were said). */
+    ask(text: string): Promise<void>
+    /** A brief: what's said and its card (briefs.ts). */
+    brief(kind: 'morning' | 'evening' | 'weekly' | 'status'): Promise<{ say: string; card: BauerCard }>
+    /** The latest stories on the news topics watched. */
+    stories(): Promise<{ topic: string; headline: string; summary: string; trust: 'confirmed' | 'reported' | 'rumour'; important: boolean; sources: string[]; url: string; at: number }[]>
+    /** What Nova is doing (the floating globe's state), for its main screen. */
+    onState(cb: (s: { state: string; text?: string }) => void): () => void
+    /** Loudness: its voice (an envelope, 40 ms steps, as a sentence starts) or your microphone (now). */
+    onLevels(cb: (s: { kind: string; env?: number[]; v?: number }) => void): () => void
     /** The news topics Nova watches (news.ts). */
     newsTopics(): Promise<{ topic: string; level: 'alert' | 'brief' }[]>
     /** Watch a news topic (alert me, or brief only), or stop ('off'). */
@@ -1486,7 +1497,7 @@ export interface Api {
     onCards(cb: (cards: BauerCard[] | null) => void): () => void
     onOrb(cb: (s: { state: OrbState; text?: string; cursor?: { x: number; y: number } }) => void): () => void
     /** (orb window) size and behaviour from the Nova page */
-    onOrbConfig(cb: (c: { size: 'small' | 'default' | 'cursor'; roam: boolean; home: { x: number; y: number } | null; sounds?: boolean; hideIdle?: boolean }) => void): () => void
+    onOrbConfig(cb: (c: { size: 'small' | 'default' | 'cursor'; roam: boolean; home: { x: number; y: number } | null; sounds?: boolean; hideIdle?: boolean; look?: 'neural' | 'globe' }) => void): () => void
     /** (orb window) fly over to a point in the window (pointing at something), or null: back to what it was doing */
     onOrbGo(cb: (p: { x: number; y: number } | null) => void): () => void
     /** (orb window) a little performance: wave, hype, remind, upset, motivate */

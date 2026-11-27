@@ -8,6 +8,7 @@
 // (its bubbles, cards and little menu), the way Roamies does: each mouse move asks "is this you?" and the answer decides.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { neural } from './neural'
 type Any = any
 
 export type NovaState = 'idle' | 'listening' | 'thinking' | 'done' | 'error'
@@ -42,7 +43,7 @@ type InkOp = {
 export type NovaGlobe = {
   /** cursor: where your mouse is (CSS px in this window), when you start talking */
   setState(s: NovaState, cursor?: { x: number; y: number }, text?: string): void
-  setConfig(c: { size: NovaSize; roam: boolean; home: { x: number; y: number } | null; sounds?: boolean; hideIdle?: boolean }): void
+  setConfig(c: { size: NovaSize; roam: boolean; home: { x: number; y: number } | null; sounds?: boolean; hideIdle?: boolean; look?: 'neural' | 'globe' }): void
   /** Disappear (Roamies' materialize / CRT / drop, in turn); it comes back when it has something to do. */
   hide(): void
   voice(env: number[]): void
@@ -94,6 +95,8 @@ async function boot(opts: {
   await import('./roamies/core.js')
   await import('./roamies/jarvis.js')
   const R = W.Roamie
+  // Studyhall's neural look (a network of nodes, ./neural.ts): the JARVIS look's reticle and read-outs, its own globe.
+  R.neural = Object.assign(Object.create(R.jarvis), neural)
 
   // Roamies' character reads the voice's loudness from Roamie.voiceOut while it plays (its mouth moves with it).
   const voice = { env: [] as number[], at: 0 }
@@ -579,6 +582,7 @@ async function boot(opts: {
     },
     setConfig(n) {
       if (n.home) home = n.home
+      if (n.look) c.setLook(n.look === 'globe' ? 'jarvis' : 'neural')
       if (R.sfx && n.sounds !== undefined) R.sfx.enabled = n.sounds
       c.setForm(n.size)
       // Hide when idle (a setting, off unless you turn it on): gone soon after it's done, back for anything it does.

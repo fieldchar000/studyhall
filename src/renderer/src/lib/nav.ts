@@ -35,6 +35,7 @@ export type Route =
   | { name: 'review' }
   | { name: 'bauer' }
   | { name: 'nova' }
+  | { name: 'novahome' }
   | { name: 'game' }
   | { name: 'languages' }
   | { name: 'language'; id: string }
@@ -97,7 +98,7 @@ export function useRoute(): Route {
 }
 
 /** Pages that need no id: the tray, notifications and Bauer can open these by name. */
-export const SIMPLE_PAGES = ['focus', 'home', 'brain', 'tasks', 'inbox', 'politemall', 'servers', 'friends', 'money', 'people', 'partner', 'journal', 'review', 'trends', 'modules', 'materials', 'notes', 'timetable', 'flashcards', 'habits', 'stats', 'recall', 'exams', 'projects', 'library', 'mindmaps', 'grades', 'videos', 'settings', 'bauer', 'nova']
+export const SIMPLE_PAGES = ['focus', 'home', 'brain', 'tasks', 'inbox', 'politemall', 'servers', 'friends', 'money', 'people', 'partner', 'journal', 'review', 'trends', 'modules', 'materials', 'notes', 'timetable', 'flashcards', 'habits', 'stats', 'recall', 'exams', 'projects', 'library', 'mindmaps', 'grades', 'videos', 'settings', 'bauer', 'nova', 'novahome']
 
 // The tray menu and notifications can ask for a page.
 api.app.onNavigate((page) => {

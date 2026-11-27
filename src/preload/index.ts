@@ -331,6 +331,19 @@ const api: Api = {
     lessonsFolder: () => ipcRenderer.invoke('nova:lessonsFolder'),
     tutor: (on) => ipcRenderer.invoke('nova:tutor', on),
     newsTopics: () => ipcRenderer.invoke('nova:newsTopics'),
+    ask: (text) => ipcRenderer.invoke('nova:ask', text),
+    brief: (kind) => ipcRenderer.invoke('nova:brief', kind),
+    stories: () => ipcRenderer.invoke('nova:stories'),
+    onState: (cb) => {
+      const l = (_e: unknown, s: { state: string; text?: string }): void => cb(s)
+      ipcRenderer.on('nova:state', l)
+      return () => ipcRenderer.removeListener('nova:state', l)
+    },
+    onLevels: (cb) => {
+      const l = (_e: unknown, s: { kind: string; env?: number[]; v?: number }): void => cb(s)
+      ipcRenderer.on('nova:levels', l)
+      return () => ipcRenderer.removeListener('nova:levels', l)
+    },
     watchNews: (topic, level) => ipcRenderer.invoke('nova:watchNews', topic, level),
     conversation: (on) => ipcRenderer.invoke('nova:conversation', on),
     promises: () => ipcRenderer.invoke('nova:promises'),

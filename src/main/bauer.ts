@@ -92,8 +92,15 @@ export function configureBauer(opts: { url: (hash: string) => string; webPrefere
     }
     else if (msg.type === 'orb') sendOrb(String(msg.state) as OrbState, typeof msg.text === 'string' ? msg.text : undefined)
     // Loudness for the orb's ripples: Nova's voice (a list, every 40 ms) or your microphone (one number).
-    else if (msg.type === 'voice' && Array.isArray(msg.env)) orbWin?.webContents.send('bauer:levels', { kind: 'voice', env: msg.env.slice(0, 3000).map((v: unknown) => Math.max(0, Math.min(1, Number(v) || 0))) })
-    else if (msg.type === 'mic') orbWin?.webContents.send('bauer:levels', { kind: 'mic', v: Math.max(0, Math.min(1, Number(msg.v) || 0)) })
+    else if (msg.type === 'voice' && Array.isArray(msg.env)) {
+      const lv = { kind: 'voice', env: msg.env.slice(0, 3000).map((v: unknown) => Math.max(0, Math.min(1, Number(v) || 0))) }
+      orbWin?.webContents.send('bauer:levels', lv)
+      orbMirror.send('nova:levels', lv)
+    } else if (msg.type === 'mic') {
+      const lv = { kind: 'mic', v: Math.max(0, Math.min(1, Number(msg.v) || 0)) }
+      orbWin?.webContents.send('bauer:levels', lv)
+      orbMirror.send('nova:levels', lv)
+    }
     else if (msg.type === 'closeCircle' && from === circleWin) closeCircle()
     else if (msg.type === 'listen' && from === orbWin) startBrief()
     else if (msg.type === 'hideOrb' && from === orbWin) orbWin?.hide()
@@ -255,7 +262,7 @@ function sendOrbConfig(): void {
   const h = savedHome()
   const b = OFFSCREEN ? screen.getPrimaryDisplay().workArea : orbWin.getBounds()
   const homeHere = h && h.x >= b.x && h.x <= b.x + b.width && h.y >= b.y && h.y <= b.y + b.height ? local(h) : null
-  orbWin.webContents.send('bauer:orbConfig', { size: orbSize(), roam: getPrefs().novaDrift !== false, home: homeHere, sounds: getPrefs().novaSounds !== false, hideIdle: getPrefs().novaHideIdle === true })
+  orbWin.webContents.send('bauer:orbConfig', { size: orbSize(), roam: getPrefs().novaDrift !== false, home: homeHere, sounds: getPrefs().novaSounds !== false, hideIdle: getPrefs().novaHideIdle === true, look: getPrefs().novaLook === 'globe' ? 'globe' : 'neural' })
   sendLayer()
   orbWin.setIgnoreMouseEvents(true, { forward: true })
   watchCursor()
@@ -330,7 +337,10 @@ export function syncOrb(force = false): void {
 
 /** What Nova is doing, for the globe (listening, thinking, a short line of what it did). When you start talking it
  *  comes over beside your cursor, on whichever screen that is. */
+/** Nova's main screen mirrors the globe: what it's doing, and the loudness of its voice and yours (index.ts). */
+export const orbMirror = { send: (_channel: string, _payload: unknown): void => {} }
 export function sendOrb(state: OrbState, text?: string): void {
+  orbMirror.send('nova:state', { state, text })
   if (!orbWin || orbWin.isDestroyed()) return
   let cursor: Spot | undefined
   if (state === 'listening' && !OFFSCREEN) {

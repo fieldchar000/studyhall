@@ -7,10 +7,9 @@ import { api, useLive } from '@/lib/data'
 import { setPrefs, usePrefs } from '@/lib/prefs'
 import { navigate } from '@/lib/nav'
 import { isPhoneApp } from '@/lib/platform'
-import { startBrief } from '@/lib/voice'
 import { VoiceCard } from '@/components/VoiceCard'
 import { onSpeaking, speak, voiceLevelRef } from '@/lib/voice/speak'
-import { NovaOrb } from '@/components/NovaOrb'
+import { NovaNeural } from '@/components/NovaNeural'
 import { LessonsTab, MapTab, ShortcutsCard } from './NovaLessons'
 import { QuizzesTab } from './NovaQuizzes'
 import { isDue } from '@/lib/sm2'
@@ -878,15 +877,23 @@ export function NovaPage(): React.JSX.Element {
   return (
     <div className="nova-page mx-auto max-w-[1180px] px-6 pb-16 pt-2">
       <section className="flex flex-wrap items-center gap-6 py-4">
-        <NovaOrb
-          size={phone ? 150 : 200}
-          mode={talking ? 'speaking' : busy || !!claude?.signingIn || !!claude?.downloading ? 'thinking' : 'idle'}
+        <NovaNeural
+          size={phone ? 120 : 150}
+          cell={3}
+          mode={talking ? 'talk' : busy || !!claude?.signingIn || !!claude?.downloading ? 'think' : 'idle'}
           level={voiceLevelRef}
-          drift={prefs?.novaDrift !== false}
+          look={prefs?.novaLook === 'globe' ? 'globe' : 'neural'}
         />
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-5xl font-semibold leading-none">{name}</h1>
-          <p className="mt-2 max-w-[62ch] text-[15px] text-muted">Your assistant, built into Studyhall. Hold Ctrl + Alt anywhere and talk, tap Ctrl + Shift to type, or say “Hey {name}”.</p>
+          <h1 className="font-display text-4xl font-semibold leading-none">{name}</h1>
+          <p className="mt-2 max-w-[62ch] text-[14px] text-muted">
+            Lessons, the map, quizzes and settings. Talk any time: hold Ctrl + Alt, or say “Hey {name}”.{' '}
+            {!phone && (
+              <button className="underline hover:text-ink" onClick={() => navigate({ name: 'novahome' })}>
+                {name}’s main screen
+              </button>
+            )}
+          </p>
           <div className="mt-3 flex flex-wrap gap-2 text-[12.5px]">
             {status && (
               <span className="nova-chip">
@@ -925,18 +932,13 @@ export function NovaPage(): React.JSX.Element {
               </button>
             )}
             {!phone && (
-              <button className="glass rounded-full px-4 py-2 text-sm font-semibold" onClick={() => void startBrief()}>
-                Talk to {name}
-              </button>
-            )}
-            {!phone && (
               <button className="glass rounded-full px-4 py-2 text-sm font-semibold" onClick={() => save({ bauerOrb: !(prefs?.bauerOrb ?? true) })}>
                 {(prefs?.bauerOrb ?? true) ? `Hide ${name}` : `Show ${name}`}
               </button>
             )}
           </div>
           {claude?.error && <p className="mt-2 text-sm text-danger">{claude.error}</p>}
-          {!phone && claude?.installed && (
+          {!phone && claude?.installed && tab === 'settings' && (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
               {confirm === null && (
                 <>
@@ -1064,6 +1066,16 @@ export function NovaPage(): React.JSX.Element {
                   </button>
                 ))}
               </div>
+              <Row title="Look" hint={`How ${name} looks, on your screen and on its main screen: a network of pixel nodes with signals firing along them, or the globe of points.`}>
+                <Seg
+                  value={prefs?.novaLook === 'globe' ? 'globe' : 'neural'}
+                  options={[
+                    ['neural', 'Neural'],
+                    ['globe', 'Globe']
+                  ]}
+                  onChange={(v) => save({ novaLook: v })}
+                />
+              </Row>
             </section>
 
             {!phone && ears && (

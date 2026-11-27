@@ -21,8 +21,8 @@ import { currentSenderId, registerIpc } from './ipc'
 import { applyLoginItem, getPrefs, watchShortcut } from './prefs'
 import { checkDeadlines, checkDueNow } from './reminders'
 import { buddyHooks, focusState, lastOffered, startBuddy } from './buddy'
-import { briefHooks } from './briefs'
-import { setWatch, startNews, watches } from './news'
+import { briefHooks, makeBrief, type BriefKind } from './briefs'
+import { recentStories, setWatch, startNews, watches } from './news'
 import { lastSpokeUp, startWatcher, watchHooks } from './watcher'
 import { checkLifeReminders } from './lifeReminders'
 import * as timer from './timer'
@@ -51,7 +51,7 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
   } else if (why !== 'not connected' && prefs.novaOffline === false) throw new Error(`Nova is paused because ${why}.`)
   return aiChat(messages, schema, maxTokens)
 }
-import { clearCards, closeBauerWindows, configureBauer, openApp, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, emoteHooks, hiddenFromCaptures, novaInRecordings, orbPress, orbPressHooks, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
+import { clearCards, closeBauerWindows, configureBauer, openApp, orbMirror, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, emoteHooks, hiddenFromCaptures, novaInRecordings, orbPress, orbPressHooks, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
 import { setCourseName } from './courseNames'
 import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, readNew, showPoliteView, type PoliteRect } from './politePage'
 import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
@@ -497,6 +497,16 @@ if (!app.requestSingleInstanceLock()) {
           return novaTurn(e.sender, String(said ?? '').slice(0, 4000), live)
         })
         handle('nova:warm', (e) => warmNova(e.sender))
+        // Nova's main screen: a typed message goes to Nova like a spoken one; the briefing and the news beside it.
+        handle('nova:ask', (_e, text: string) => {
+          const t = String(text ?? '').trim().slice(0, 4000)
+          if (t) voiceAsk(t)
+        })
+        handle('nova:brief', (_e, kind: string) => makeBrief((['morning', 'evening', 'weekly', 'status'] as BriefKind[]).includes(kind as BriefKind) ? (kind as BriefKind) : 'status'))
+        handle('nova:stories', () => recentStories(6))
+        orbMirror.send = (channel, payload) => {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
+        }
         handle('nova:newsTopics', () => watches().map((w) => ({ topic: w.topic, level: w.level })))
         handle('nova:watchNews', (_e, topic: string, level: string) => setWatch(String(topic ?? ''), level === 'alert' || level === 'brief' ? level : 'off'))
         handle('nova:reset', () => resetNova())
@@ -612,7 +622,7 @@ if (!app.requestSingleInstanceLock()) {
       },
       onPrefs: (patch) => {
         if ('voiceWake' in patch || 'voiceSensitivity' in patch || 'novaName' in patch) syncVoiceWindow()
-        if ('bauerOrb' in patch || 'novaOrbSize' in patch || 'novaDrift' in patch || 'novaSounds' in patch || 'novaHideIdle' in patch) syncOrb()
+        if ('bauerOrb' in patch || 'novaOrbSize' in patch || 'novaDrift' in patch || 'novaSounds' in patch || 'novaHideIdle' in patch || 'novaLook' in patch) syncOrb()
         if ('bauerOnlyWhenOpen' in patch) bauerAway(!mainWindow?.isVisible())
       }
     })

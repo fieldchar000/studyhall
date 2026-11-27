@@ -233,3 +233,12 @@ export function startNews(): void {
   setTimeout(() => void tick(), 90_000)
   setInterval(() => void tick(), 5 * 60_000).unref?.()
 }
+
+/** The latest stories on the topics watched now (Nova's main screen), newest first. */
+export function recentStories(limit = 6): Story[] {
+  const ws = watches().map((w) => w.topic.toLowerCase())
+  return all()
+    .filter((s) => ws.includes(s.topic.toLowerCase()) && Date.now() - s.at < 3 * 864e5)
+    .sort((a, b) => b.at - a.at)
+    .slice(0, limit)
+}

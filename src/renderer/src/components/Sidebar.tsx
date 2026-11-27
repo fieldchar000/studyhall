@@ -41,7 +41,7 @@ const groups: { title?: string; items: NavItem[] }[] = [
       { label: 'Inbox', icon: 'inbox', route: { name: 'inbox' }, match: ['inbox'], modes: ALL },
       { label: 'Tasks', icon: 'tasks', route: { name: 'tasks' }, match: ['tasks'], modes: ALL },
       { label: 'Focus', icon: 'focus', route: { name: 'focus' }, match: ['focus'], modes: ALL },
-      { label: 'Nova', icon: 'mic', route: { name: 'nova' }, match: ['nova', 'bauer'], modes: ALL }
+      { label: 'Nova', icon: 'mic', route: { name: 'novahome' }, match: ['novahome', 'nova', 'bauer'], modes: ALL }
     ]
   },
   {
