@@ -262,7 +262,7 @@ function sendOrbConfig(): void {
   const h = savedHome()
   const b = OFFSCREEN ? screen.getPrimaryDisplay().workArea : orbWin.getBounds()
   const homeHere = h && h.x >= b.x && h.x <= b.x + b.width && h.y >= b.y && h.y <= b.y + b.height ? local(h) : null
-  orbWin.webContents.send('bauer:orbConfig', { size: orbSize(), roam: getPrefs().novaDrift !== false, home: homeHere, sounds: getPrefs().novaSounds !== false, hideIdle: getPrefs().novaHideIdle === true, look: getPrefs().novaLook === 'globe' ? 'globe' : 'neural' })
+  orbWin.webContents.send('bauer:orbConfig', { size: orbSize(), roam: getPrefs().novaDrift !== false, home: homeHere, sounds: getPrefs().novaSounds !== false, hideIdle: getPrefs().novaHideIdle === true, look: getPrefs().novaLook ?? 'hologram', color: getPrefs().novaColor ?? 'gold' })
   sendLayer()
   orbWin.setIgnoreMouseEvents(true, { forward: true })
   watchCursor()

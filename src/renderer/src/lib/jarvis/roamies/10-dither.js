@@ -51,7 +51,7 @@
       // Look: 'classic' (the goo blob, and the arrow at cursor size), 'jarvis' (roamies/jarvis.js: a globe of
       // points with a lit heart, and a HUD reticle at cursor size) or a character from roamies/people.js
       // ('anime', 'sarah', 'adrian', 'rita'). Moves, sizes and everything else are shared.
-      const drawn = (l) => (l === 'jarvis' ? Roamie.jarvis : l === 'neural' ? Roamie.neural : Roamie.people?.[l]); // (Studyhall: + its neural look)
+      const drawn = (l) => (l === 'jarvis' ? Roamie.jarvis : l === 'neural' ? Roamie.neural : l === 'hologram' ? Roamie.hologram : Roamie.people?.[l]); // (Studyhall: + its neural and hologram looks)
       const pickLook = (l) => (drawn(l) ? l : 'classic');
       let look = pickLook(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('look') : null);
       const jst = { spin: 0, dt: 0.016 };
@@ -840,7 +840,7 @@
             const sf = env.safe ?? {}, top = Math.ceil(((sf.top ?? 0) + R * 0.9) / P);
             const gx = clamp(Math.round((bx + side * R * 0.95) / P), Math.ceil(((sf.left ?? 0) + R * 0.4) / P), Math.floor((env.w - (sf.right ?? 0) - R * 0.4) / P));
             const gy = Math.max(top, Math.round((by - R * 1.3) / P) - Math.round(Math.abs(Math.sin(act.a * 6))));
-            if (look === 'jarvis' || look === 'neural') Roamie.jarvis?.readout({ put, L }, gx, gy, icon, act.a, act.dur, !(P < 6 && form === 'default'));
+            if (look === 'jarvis' || look === 'neural' || look === 'hologram') Roamie.jarvis?.readout({ put, L }, gx, gy, icon, act.a, act.dur, !(P < 6 && form === 'default'));
             else bubble(gx, gy, icon);
           }
           plug?.gridOver?.(env);

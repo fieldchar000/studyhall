@@ -882,7 +882,8 @@ export function NovaPage(): React.JSX.Element {
           cell={3}
           mode={talking ? 'talk' : busy || !!claude?.signingIn || !!claude?.downloading ? 'think' : 'idle'}
           level={voiceLevelRef}
-          look={prefs?.novaLook === 'globe' ? 'globe' : 'neural'}
+          look={prefs?.novaLook ?? 'hologram'}
+          color={prefs?.novaColor ?? 'gold'}
         />
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-4xl font-semibold leading-none">{name}</h1>
@@ -1066,16 +1067,32 @@ export function NovaPage(): React.JSX.Element {
                   </button>
                 ))}
               </div>
-              <Row title="Look" hint={`How ${name} looks, on your screen and on its main screen: a network of pixel nodes with signals firing along them, or the globe of points.`}>
+              <Row
+                title="Look"
+                hint={`How ${name} looks, on your screen and on its main screen: a sphere of light (rings, circuit traces and sparks round a glowing core), a network of pixel nodes, or the globe of points.`}
+              >
                 <Seg
-                  value={prefs?.novaLook === 'globe' ? 'globe' : 'neural'}
+                  value={prefs?.novaLook ?? 'hologram'}
                   options={[
+                    ['hologram', 'Hologram'],
                     ['neural', 'Neural'],
                     ['globe', 'Globe']
                   ]}
                   onChange={(v) => save({ novaLook: v })}
                 />
               </Row>
+              {(prefs?.novaLook ?? 'hologram') === 'hologram' && (
+                <Row title="Colour">
+                  <Seg
+                    value={prefs?.novaColor ?? 'gold'}
+                    options={[
+                      ['gold', 'Gold'],
+                      ['blue', 'Blue']
+                    ]}
+                    onChange={(v) => save({ novaColor: v })}
+                  />
+                </Row>
+              )}
             </section>
 
             {!phone && ears && (

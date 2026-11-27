@@ -1,7 +1,8 @@
-// Nova drawn big on its main screen, in LED pixels like the floating globe: the "neural" look (a hollow globe of nodes
-// and links with signals firing along them) or the classic "globe". Each frame the look writes cells into a small
-// grid; the grid is painted as square LEDs with a soft glow behind them.
+// Nova drawn big on its main screen: the "hologram" look (a sphere of light, hologram.ts), or in LED pixels like the
+// floating globe: the "neural" look (a hollow globe of nodes and links with signals firing along them) or the "globe".
+// In LEDs, each frame the look writes cells into a small grid; the grid is painted as square LEDs with a soft glow.
 import { useEffect, useRef } from 'react'
+import { makeHologram, type HoloColor } from '@/lib/jarvis/hologram'
 import { neural } from '@/lib/jarvis/neural'
 
 export type NeuralMode = 'idle' | 'listen' | 'think' | 'talk'
@@ -57,19 +58,22 @@ export function NovaNeural({
   mode = 'idle',
   level,
   look = 'neural',
+  color = 'gold',
   cell = 4
 }: {
   size?: number
   mode?: NeuralMode
   /** 0..1, read every frame: your voice while it listens, its voice while it speaks */
   level?: { current: number }
-  look?: 'neural' | 'globe'
+  look?: 'neural' | 'globe' | 'hologram'
+  /** the hologram's colour */
+  color?: HoloColor
   /** how big each LED is, in CSS px */
   cell?: number
 }): React.JSX.Element {
   const ref = useRef<HTMLCanvasElement>(null)
-  const live = useRef({ mode, look })
-  live.current = { mode, look }
+  const live = useRef({ mode, look, color })
+  live.current = { mode, look, color }
   const lv = useRef(level)
   lv.current = level
   useEffect(() => {
@@ -102,13 +106,21 @@ export function NovaNeural({
     let raf = 0
     let last = performance.now()
     let shown = 0
+    const holo = makeHologram()
     const frame = (now: number): void => {
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
-      const { mode: m, look: lk } = live.current
+      const { mode: m, look: lk, color: col } = live.current
       const input = Math.max(0, Math.min(1, lv.current?.current ?? 0))
       // (eased, so the voice drives it smoothly)
       shown += (input - shown) * 0.35
+      // The hologram: smooth light, drawn by hologram.ts at the canvas's full size.
+      if (lk === 'hologram') {
+        ctx.clearRect(0, 0, c.width, c.height)
+        ctx.drawImage(holo.draw(c.width, { t: now / 1000, dt: reduce ? dt * 0.3 : dt, mode: m, level: shown, color: col }), 0, 0)
+        raf = requestAnimationFrame(frame)
+        return
+      }
       Object.assign(st, { t: now / 1000, dt: reduce ? dt * 0.3 : dt, mode: m === 'idle' ? null : m, voice: m === 'talk' ? shown : undefined, heard: m === 'listen' ? 0.2 + shown * 0.8 : undefined })
       grid.fill(0)
       const look = lk === 'globe' ? globe : neural

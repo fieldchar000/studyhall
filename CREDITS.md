@@ -11,7 +11,8 @@ https://github.com/KenKaiii/Roamies
   `10-dither.js` nearly so. They provide the JARVIS globe, the LED pixel dither renderer and the movement.
   Studyhall adds its own colours and behaviour around them (`src/renderer/src/lib/jarvis/nova.ts`). Since v0.79
   `10-dither.js` also accepts Studyhall's own "neural" look (`src/renderer/src/lib/jarvis/neural.ts`, Studyhall's code:
-  a hollow globe of nodes and links), drawn the way the JARVIS look is.
+  a hollow globe of nodes and links), drawn the way the JARVIS look is, and since v0.80 its "hologram" look
+  (`src/renderer/src/lib/jarvis/hologram.ts`, Studyhall's code, painted over the globe's place).
 - Drawn explainers: `src/renderer/src/lib/jarvis/roamies/ink.js`, `ink3d.js` and `world.js` (the drawing overlay, its
   3D models and its world map; ink.js recoloured to Studyhall's blue), and `src/main/roamies/draw.mjs` and `countries.mjs`
   (checking and laying out each drawing), copied unchanged from Roamies 0.1.41. `src/main/roamies/safety.mjs` holds

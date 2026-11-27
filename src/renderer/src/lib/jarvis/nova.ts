@@ -8,6 +8,7 @@
 // (its bubbles, cards and little menu), the way Roamies does: each mouse move asks "is this you?" and the answer decides.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { makeHologram, type HoloColor } from './hologram'
 import { neural } from './neural'
 type Any = any
 
@@ -43,7 +44,7 @@ type InkOp = {
 export type NovaGlobe = {
   /** cursor: where your mouse is (CSS px in this window), when you start talking */
   setState(s: NovaState, cursor?: { x: number; y: number }, text?: string): void
-  setConfig(c: { size: NovaSize; roam: boolean; home: { x: number; y: number } | null; sounds?: boolean; hideIdle?: boolean; look?: 'neural' | 'globe' }): void
+  setConfig(c: { size: NovaSize; roam: boolean; home: { x: number; y: number } | null; sounds?: boolean; hideIdle?: boolean; look?: 'neural' | 'globe' | 'hologram'; color?: HoloColor }): void
   /** Disappear (Roamies' materialize / CRT / drop, in turn); it comes back when it has something to do. */
   hide(): void
   voice(env: number[]): void
@@ -97,6 +98,9 @@ async function boot(opts: {
   const R = W.Roamie
   // Studyhall's neural look (a network of nodes, ./neural.ts): the JARVIS look's reticle and read-outs, its own globe.
   R.neural = Object.assign(Object.create(R.jarvis), neural)
+  // The hologram look is painted smooth over the globe's place (see p.over below). In LED cells it lights just one dim
+  // cell at its centre (under the core): the layer only makes room round something lit.
+  R.hologram = Object.assign(Object.create(R.jarvis), { body: (k: Any, cx: number, cy: number) => k.put(cx, cy, 1) })
 
   // Roamies' character reads the voice's loudness from Roamie.voiceOut while it plays (its mouth moves with it).
   const voice = { env: [] as number[], at: 0 }
@@ -125,6 +129,13 @@ async function boot(opts: {
   let kit: Any = null
   let agent: Any = null
   let hat = false // tutor mode
+  // The hologram look (./hologram.ts): what it's doing and how loud, for its drawing.
+  let holo = false
+  let holoColor: HoloColor = 'gold'
+  let holoMode: 'idle' | 'listen' | 'think' = 'idle'
+  let micLv = 0
+  let holoLast = performance.now()
+  const holoArt = makeHologram()
   let live = false // conversation mode
   let freshAnswer = false // a new request: its first drawing clears the last answer's cards
   let deeper = false // a deeper chat (Sonnet)
@@ -166,6 +177,17 @@ async function boot(opts: {
     // Tutor mode: a pixel scholar's cap on the globe (drawn over it, with the bubbles and tags).
     const over = p.over
     p.over = (ctx: CanvasRenderingContext2D, env: Any) => {
+      // The hologram, painted where the globe is (under its bubbles and tags), about three times its radius across.
+      if (holo && k.presence === 'shown' && c0()?.form !== 'cursor') {
+        const now = performance.now()
+        const i = Math.floor((now - voice.at) / 40)
+        const talking = i >= 0 && i < voice.env.length
+        const size = Math.round(k.R * 3.2)
+        const d = Math.min(2, devicePixelRatio || 1)
+        const art = holoArt.draw(Math.round(size * d), { t: now / 1000, dt: (now - holoLast) / 1000, mode: talking ? 'talk' : holoMode, level: talking ? voice.env[i] : micLv, color: holoColor })
+        holoLast = now
+        ctx.drawImage(art, k.m.x - size / 2, k.m.y - size / 2, size, size)
+      }
       over?.(ctx, env)
       if (hat && k.presence === 'shown' && c0()?.form !== 'cursor') drawHat(ctx, k.m.x, k.m.y, k.R)
       // A deeper chat: a faint warm glow behind the globe.
@@ -196,14 +218,20 @@ async function boot(opts: {
     }
     const extent = p.extent
     p.extent = () => {
-      const e = extent?.() ?? null
+      let e = extent?.() ?? null
+      // (the hologram is painted, not drawn in LED cells: the layer keeps room for it)
+      if (holo && k.presence === 'shown' && c0()?.form !== 'cursor') {
+        const h = k.R * 1.7
+        const box = [k.m.x - h, k.m.y - h, k.m.x + h, k.m.y + h]
+        e = e ? [Math.min(e[0], box[0]), Math.min(e[1], box[1]), Math.max(e[2], box[2]), Math.max(e[3], box[3])] : box
+      }
       if (!hat || k.presence !== 'shown') return e
       const R = k.R
       const box = [k.m.x - R * 1.3, k.m.y - R * 1.9, k.m.x + R * 1.5, k.m.y - R * 0.4]
       return e ? [Math.min(e[0], box[0]), Math.min(e[1], box[1]), Math.max(e[2], box[2]), Math.max(e[3], box[3])] : box
     }
     const quiet = p.quiet
-    p.quiet = () => !hat && !live && (quiet ? quiet() : true)
+    p.quiet = () => !hat && !live && !holo && (quiet ? quiet() : true)
     p.update = (dt: number, env: Any) => {
       update?.(dt, env)
       const m = k.m
@@ -562,6 +590,7 @@ async function boot(opts: {
 
   const globe: NovaGlobe = {
     setState(s, cursor, text) {
+      holoMode = s === 'listening' ? 'listen' : s === 'thinking' ? 'think' : 'idle'
       if (cursor) {
         R.ptr(cursor.x, cursor.y)
         mouse = [cursor.x, cursor.y]
@@ -582,7 +611,9 @@ async function boot(opts: {
     },
     setConfig(n) {
       if (n.home) home = n.home
-      if (n.look) c.setLook(n.look === 'globe' ? 'jarvis' : 'neural')
+      if (n.look) c.setLook(n.look === 'globe' ? 'jarvis' : n.look === 'hologram' ? 'hologram' : 'neural')
+      holo = n.look === 'hologram'
+      if (n.color) holoColor = n.color
       if (R.sfx && n.sounds !== undefined) R.sfx.enabled = n.sounds
       c.setForm(n.size)
       // Hide when idle (a setting, off unless you turn it on): gone soon after it's done, back for anything it does.
@@ -599,7 +630,8 @@ async function boot(opts: {
       R.wake?.()
     },
     mic(v) {
-      listen?.level(Math.min(1, v * 1.6))
+      micLv = Math.min(1, v * 1.6)
+      listen?.level(micLv)
     },
     bubble(b) {
       if (!agent) return

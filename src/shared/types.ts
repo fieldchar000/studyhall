@@ -1114,7 +1114,8 @@ export interface Prefs {
   novaCity?: string // the weather in briefs is for this city (default: from the time zone)
   novaWeather?: boolean // the weather in briefs (default on)
   novaNews?: boolean // the news you watch, in briefs and alerts (default on)
-  novaLook?: 'neural' | 'globe' // how Nova looks: a network of nodes (neural, the default) or the globe of points
+  novaLook?: 'hologram' | 'neural' | 'globe' // how Nova looks: a sphere of light (hologram, the default), a network of pixel nodes, or the globe of points
+  novaColor?: 'gold' | 'blue' // the hologram's colour (default gold)
   novaJarvis?: boolean // Jarvis mode (hidden: "initiate Jarvis protocol"): a composed British butler who calls you sir
   novaAddress?: string // what Jarvis mode calls you (default "sir")
   novaWit?: 'off' | 'dry' | 'cheeky' // Jarvis mode's humour (default dry)
@@ -1497,7 +1498,7 @@ export interface Api {
     onCards(cb: (cards: BauerCard[] | null) => void): () => void
     onOrb(cb: (s: { state: OrbState; text?: string; cursor?: { x: number; y: number } }) => void): () => void
     /** (orb window) size and behaviour from the Nova page */
-    onOrbConfig(cb: (c: { size: 'small' | 'default' | 'cursor'; roam: boolean; home: { x: number; y: number } | null; sounds?: boolean; hideIdle?: boolean; look?: 'neural' | 'globe' }) => void): () => void
+    onOrbConfig(cb: (c: { size: 'small' | 'default' | 'cursor'; roam: boolean; home: { x: number; y: number } | null; sounds?: boolean; hideIdle?: boolean; look?: 'neural' | 'globe' | 'hologram'; color?: 'gold' | 'blue' }) => void): () => void
     /** (orb window) fly over to a point in the window (pointing at something), or null: back to what it was doing */
     onOrbGo(cb: (p: { x: number; y: number } | null) => void): () => void
     /** (orb window) a little performance: wave, hype, remind, upset, motivate */
