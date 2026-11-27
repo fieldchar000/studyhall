@@ -58,7 +58,7 @@ export function NovaNeural({
   mode = 'idle',
   level,
   look = 'neural',
-  color = 'gold',
+  color = 'blue',
   cell = 4
 }: {
   size?: number

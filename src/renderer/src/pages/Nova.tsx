@@ -883,7 +883,7 @@ export function NovaPage(): React.JSX.Element {
           mode={talking ? 'talk' : busy || !!claude?.signingIn || !!claude?.downloading ? 'think' : 'idle'}
           level={voiceLevelRef}
           look={prefs?.novaLook ?? 'hologram'}
-          color={prefs?.novaColor ?? 'gold'}
+          color={prefs?.novaColor ?? 'blue'}
         />
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-4xl font-semibold leading-none">{name}</h1>
@@ -1084,10 +1084,10 @@ export function NovaPage(): React.JSX.Element {
               {(prefs?.novaLook ?? 'hologram') === 'hologram' && (
                 <Row title="Colour">
                   <Seg
-                    value={prefs?.novaColor ?? 'gold'}
+                    value={prefs?.novaColor ?? 'blue'}
                     options={[
-                      ['gold', 'Gold'],
-                      ['blue', 'Blue']
+                      ['blue', 'Blue'],
+                      ['gold', 'Gold']
                     ]}
                     onChange={(v) => save({ novaColor: v })}
                   />

@@ -1115,7 +1115,7 @@ export interface Prefs {
   novaWeather?: boolean // the weather in briefs (default on)
   novaNews?: boolean // the news you watch, in briefs and alerts (default on)
   novaLook?: 'hologram' | 'neural' | 'globe' // how Nova looks: a sphere of light (hologram, the default), a network of pixel nodes, or the globe of points
-  novaColor?: 'gold' | 'blue' // the hologram's colour (default gold)
+  novaColor?: 'gold' | 'blue' // the hologram's colour (default blue)
   novaJarvis?: boolean // Jarvis mode (hidden: "initiate Jarvis protocol"): a composed British butler who calls you sir
   novaAddress?: string // what Jarvis mode calls you (default "sir")
   novaWit?: 'off' | 'dry' | 'cheeky' // Jarvis mode's humour (default dry)

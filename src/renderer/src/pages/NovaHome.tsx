@@ -148,7 +148,7 @@ export function NovaHomePage(): React.JSX.Element {
 
         <div ref={stage} className="nova-home-stage">
           {/* (as big as the space above the conversation allows, so the message box always stays on screen) */}
-          <NovaNeural key={big} size={big} mode={mode} level={level} look={prefs?.novaLook ?? 'hologram'} color={prefs?.novaColor ?? 'gold'} />
+          <NovaNeural key={big} size={big} mode={mode} level={level} look={prefs?.novaLook ?? 'hologram'} color={prefs?.novaColor ?? 'blue'} />
           <p className={`nova-home-caption ${mode !== 'idle' ? 'live' : ''}`}>{caption}</p>
         </div>
 

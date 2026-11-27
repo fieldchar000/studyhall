@@ -1,5 +1,5 @@
 // Nova's "hologram" look: a sphere of light built from broken rings, circuit traces wrapped round it, little data
-// panels, soft out-of-focus sparks and spokes running in to a lens-like core, all in warm gold (or Studyhall's blue).
+// panels, soft out-of-focus sparks and spokes running in to a lens-like core, in Studyhall's blue (or warm gold).
 // It turns slowly at rest; while it listens the sparks shimmer with your voice; while it thinks it turns faster and
 // signals race along the traces; while it speaks the core and rings pulse with its voice. Studyhall's own drawing
 // (canvas 2D, additive light and a soft bloom), used on Nova's main screen and by the floating Nova.
@@ -114,7 +114,9 @@ function sparkSprite(rgb: string, hot: string): HTMLCanvasElement {
   return c
 }
 
-export type HoloState = { t: number; dt: number; mode: HoloMode; level: number; color: HoloColor }
+/** motion: how lively it is (1 normal; the floating Nova is livelier). pixel: drawn small to be shown as big pixels
+ *  (thicker lines, a lighter haze). */
+export type HoloState = { t: number; dt: number; mode: HoloMode; level: number; color: HoloColor; motion?: number; pixel?: boolean }
 
 /** A hologram that draws itself onto a square canvas of `size` px (its own canvas, with its glow). */
 export function makeHologram(seed = 7): { draw(size: number, st: HoloState): HTMLCanvasElement } {
@@ -136,15 +138,16 @@ export function makeHologram(seed = 7): { draw(size: number, st: HoloState): HTM
       const dt = Math.min(0.05, st.dt)
       const lv = Math.max(0, Math.min(1, st.level))
       energy += ((st.mode === 'talk' ? 0.55 + lv * 0.6 : st.mode === 'listen' ? 0.35 + lv * 0.5 : st.mode === 'think' ? 0.85 : 0.45) - energy) * Math.min(1, dt * 6)
-      yaw += dt * (st.mode === 'think' ? 0.55 : 0.12)
-      inner -= dt * (st.mode === 'think' ? 1.4 : 0.35)
-      pulse += dt * (st.mode === 'think' ? 1.6 : 0.45)
+      const mo = st.motion ?? 1
+      yaw += dt * (st.mode === 'think' ? 0.55 : 0.12) * mo
+      inner -= dt * (st.mode === 'think' ? 1.4 : 0.35) * mo
+      pulse += dt * (st.mode === 'think' ? 1.6 : 0.45) * mo
       const cx = size / 2
       const cy = size / 2
       const R = size * 0.4 * (1 + (st.mode === 'talk' ? lv * 0.035 : 0))
       const cyw = Math.cos(yaw)
       const syw = Math.sin(yaw)
-      const tilt = -0.32 + Math.sin(st.t * 0.21) * 0.06
+      const tilt = -0.32 + Math.sin(st.t * 0.21 * mo) * 0.06 * mo
       const ct = Math.cos(tilt)
       const sn = Math.sin(tilt)
       // 3D → screen: turn about the vertical, tip toward you; z is 1 nearest you, -1 farthest.
@@ -166,7 +169,7 @@ export function makeHologram(seed = 7): { draw(size: number, st: HoloState): HTM
       x.clearRect(0, 0, size, size)
       x.globalCompositeOperation = 'lighter'
       x.lineCap = 'round'
-      const px1 = Math.max(0.6, size / 520) // (line widths scale with the size)
+      const px1 = st.pixel ? Math.max(1, size / 140) : Math.max(0.6, size / 520) // (line widths scale with the size)
 
       // Spokes: from the core out to the shell, faint, brighter while it thinks.
       for (const s of parts.spokes) {
@@ -185,7 +188,7 @@ export function makeHologram(seed = 7): { draw(size: number, st: HoloState): HTM
       }
       // Rings: arcs drawn in short runs so the far side is dimmer than the near side.
       for (const rg of parts.rings) {
-        const spin = rg.spin * st.t + (rg.r < 0.8 ? inner * 0.4 : 0)
+        const spin = rg.spin * st.t * mo + (rg.r < 0.8 ? inner * 0.4 : 0)
         const rr = rg.r * (1 + (rg.r < 0.8 ? energy * 0.06 : 0))
         for (const [a0, a1] of rg.arcs) {
           const steps = Math.max(3, Math.ceil((a1 - a0) * 18))
@@ -208,7 +211,11 @@ export function makeHologram(seed = 7): { draw(size: number, st: HoloState): HTM
         }
       }
       // Circuit traces, each ending in a small pad; while it thinks a signal runs along them.
+      // (drawn small for big pixels, a third of the traces and fewer sparks, or it all runs together into white)
+      const few = st.pixel ? 3 : 1
+      const ps = Math.max(0.35, size / 520) // (sparks and glows scale with the real size)
       parts.traces.forEach((tr, k) => {
+        if (k % few) return
         const pts = tr.pts.map((v) => P(v))
         const z = pts.reduce((s, p) => s + p[2], 0) / pts.length
         const al = tr.a * depthA(z) * (0.5 + energy * 0.7)
@@ -224,7 +231,7 @@ export function makeHologram(seed = 7): { draw(size: number, st: HoloState): HTM
           const u = (pulse * (0.6 + (k % 5) * 0.15) + k * 0.37) % 1.6
           if (u < 1) {
             const p = pts[Math.min(pts.length - 1, Math.floor(u * (pts.length - 1)))]
-            const sz = (6 + energy * 6) * px1
+            const sz = Math.max(1.5, (6 + energy * 6) * ps)
             x.globalAlpha = depthA(p[2])
             x.drawImage(sprites!.h, p[0] - sz / 2, p[1] - sz / 2, sz, sz)
             x.globalAlpha = 1
@@ -232,7 +239,7 @@ export function makeHologram(seed = 7): { draw(size: number, st: HoloState): HTM
         }
       })
       // Data panels: little grids of light on the shell.
-      for (const pn of parts.panels) {
+      for (const pn of st.pixel ? [] : parts.panels) {
         const lonNow = pn.lon
         const c = P(fromLatLon(pn.lat, lonNow, 0.97))
         if (c[2] < -0.35) continue
@@ -254,14 +261,15 @@ export function makeHologram(seed = 7): { draw(size: number, st: HoloState): HTM
         }
       }
       // Sparks: out of focus away from the middle depth, twinkling; they shimmer with your voice while it listens.
-      for (const sp of parts.sparks) {
-        const p = P(sp.p, yaw * 0.2)
+      parts.sparks.forEach((sp, k) => {
+        if (k % few) return
+        const p = P(sp.p, yaw * 0.2 + st.t * 0.15 * (mo - 1))
         const blur = Math.abs(p[2] - 0.2)
         const tw = 0.6 + 0.4 * Math.sin(st.t * (1.5 + sp.tw * 0.3) + sp.tw)
-        const sz = (sp.s * (1 + blur * 2.6) + (st.mode === 'listen' ? lv * 2 : 0)) * px1 * 4.2
+        const sz = Math.max(1, (sp.s * (1 + blur * 2.6) + (st.mode === 'listen' ? lv * 2 : 0)) * ps * 4.2)
         x.globalAlpha = Math.min(1, sp.a * depthA(p[2]) * tw * (0.45 + energy * 0.8) * (1 / (1 + blur * 1.2)))
-        x.drawImage(sprites.s, p[0] - sz / 2, p[1] - sz / 2, sz, sz)
-      }
+        x.drawImage(sprites!.s, p[0] - sz / 2, p[1] - sz / 2, sz, sz)
+      })
       x.globalAlpha = 1
       // The core: a tunnel of rings, the brightest ring at its mouth and a dim middle, swelling with the voice. Each ring
       // sits a little off centre, toward the way it's turning, so it reads as depth.
@@ -296,8 +304,8 @@ export function makeHologram(seed = 7): { draw(size: number, st: HoloState): HTM
       o.clearRect(0, 0, size, size)
       o.globalCompositeOperation = 'lighter'
       // (a wide haze, then a tight glow)
-      o.filter = `blur(${Math.max(4, Math.round(size / 22))}px)`
-      o.globalAlpha = 0.55
+      o.filter = `blur(${Math.max(st.pixel ? 1 : 4, Math.round(size / (st.pixel ? 40 : 22)))}px)`
+      o.globalAlpha = st.pixel ? 0.35 : 0.55
       o.drawImage(sharp, 0, 0)
       o.filter = `blur(${Math.max(2, Math.round(size / 75))}px)`
       o.globalAlpha = 1
