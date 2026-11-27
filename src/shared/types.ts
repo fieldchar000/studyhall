@@ -1110,6 +1110,8 @@ export interface Prefs {
   politeNotify?: boolean // a notification for new PoliteMall announcements, files and grades (default on)
   novaHideIdle?: boolean // the globe disappears when it's not needed and comes back when you talk to it (default off)
   novaVoice?: string // Kokoro voice (default af_heart)
+  novaDiary?: boolean // 10 pm: Nova asks how the day went and writes the diary (default on)
+  novaWeekly?: boolean // Sunday evening: the week ahead and a look back on the week (default on)
   novaBriefEvening?: boolean // the evening wrap-up (and Sunday's week ahead), 7 to 11 pm (default off)
   novaCity?: string // the weather in briefs is for this city (default: from the time zone)
   novaWeather?: boolean // the weather in briefs (default on)
@@ -1341,6 +1343,16 @@ export interface Api {
   /** Nova's Claude brain (PC only). */
   /** Nova's conversation (PC): one fast Claude call per request, with Nova's tools, speaking as it streams. */
   /** PoliteMall (Brightspace): you sign in yourself in its window; Studyhall reads your courses (read-only). */
+  /** GK's space (main/gkspace.ts): the TL;DR of the last 24 hours, and adding YouTube channels and subreddits. */
+  gk: {
+    tldr(fresh?: boolean): Promise<{ at: number; bullets: { text: string; source: string; link?: string }[] }>
+    addSource(kind: 'youtube' | 'reddit', value: string): Promise<string>
+  }
+  /** (PC) Money beyond logging (main/moneyMore.ts): a receipt photo read into entries, and what's changed. */
+  moneyMore: {
+    receipt(): Promise<{ added: { amount: number; category: string; note: string; date: string }[]; error?: string } | null>
+    insights(): Promise<{ insights: string[]; subscriptions: { name: string; amount: number; next: string }[]; savings: string[] }>
+  }
   /** Active recall (main/recallQuiz.ts, recallMake.ts): short quizzes from your modules' weeks. */
   recall: {
     overview(): Promise<import('../main/recallQuiz').RecallOverview>

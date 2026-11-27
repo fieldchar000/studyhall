@@ -1,9 +1,9 @@
 ﻿// Main process: creates the window, owns the database, enforces security rules.
 
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeTheme, Notification, protocol, screen, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeTheme, Notification, protocol, screen, session, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
-import { closeDb, getSetting, onDbChange, openDb, setSetting, setWriteGuard } from './db'
+import { closeDb, getDb, getSetting, onDbChange, openDb, setSetting, setWriteGuard } from './db'
 import { cloudStatus, currentUserId, onAccountChange, restoreSession } from './cloud/account'
 import { describeMessage, guardWrite, publishPresence, startLive, stopLive } from './cloud/social'
 import { configureSync, requestSync } from './cloud/sync'
@@ -24,6 +24,10 @@ import { checkDeadlines, checkDueNow } from './reminders'
 import { buddyHooks, focusState, lastOffered, startBuddy } from './buddy'
 import { briefHooks, makeBrief, type BriefKind } from './briefs'
 import { recentStories, setWatch, startNews, watches } from './news'
+import { addSource, tldr } from './gkspace'
+import { readReceipt, savingsLines, spendingInsights, splitBill, subscriptions } from './moneyMore'
+import { dayFacts, weekReflection, writeDiary } from './diary'
+import { planRevision } from './examPlan'
 import { fileFromPoliteMall, recallCourses, setRecallCourses, type RecallCourses } from './politeFiling'
 import { makeStatus, markSaq, startRecallMaking } from './recallMake'
 import { recallHooks } from './recallQuiz'
@@ -513,6 +517,17 @@ if (!app.requestSingleInstanceLock()) {
         handle('recall:status', () => makeStatus())
         handle('recall:courses', (_e, patch?: Partial<RecallCourses>) => (patch && typeof patch === 'object' ? setRecallCourses(patch) : recallCourses()))
         handle('recall:fileNow', () => fileFromPoliteMall())
+        // GK's space: the 24-hour TL;DR, and YouTube channels and subreddits added as feeds (gkspace.ts).
+        handle('gk:tldr', (_e, fresh?: boolean) => tldr(!!fresh))
+        handle('gk:addSource', (_e, kind: string, value: string) => addSource(kind === 'reddit' ? 'reddit' : 'youtube', String(value ?? '')))
+        // Money: a receipt photo read into entries, and what's changed (moneyMore.ts).
+        handle('money:receipt', async (e) => {
+          const w = BrowserWindow.fromWebContents(e.sender)
+          const r = w ? await dialog.showOpenDialog(w, { title: 'A photo of a receipt', properties: ['openFile'], filters: [{ name: 'Photos', extensions: ['jpg', 'jpeg', 'png', 'webp'] }] }) : null
+          if (!r || r.canceled || !r.filePaths[0]) return null
+          return readReceipt(r.filePaths[0])
+        })
+        handle('money:insights', () => ({ insights: spendingInsights(), subscriptions: subscriptions(), savings: savingsLines() }))
         orbMirror.send = (channel, payload) => {
           if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
         }
@@ -876,6 +891,17 @@ if (!app.requestSingleInstanceLock()) {
       setInterval(() => void fileFromPoliteMall().catch(() => 0), 6 * 3600_000).unref()
     }
     startRecallMaking()
+    // Automated tests only: the diary, money, GK's space and revision plans, called directly.
+    if (process.env.STUDYHALL_OFFSCREEN === '1') (globalThis as unknown as { __lifeTest: unknown }).__lifeTest = { readReceipt, spendingInsights, subscriptions, splitBill, savingsLines, tldr, addSource, planRevision, writeDiary, dayFacts, weekReflection }
+    // GK's space: the TL;DR made each morning (and kept for the day), when GK's space is switched on.
+    const gkMorning = (): void => {
+      const modes = (getDb().prepare('SELECT enabled_modes FROM profiles LIMIT 1').get() as { enabled_modes?: string } | undefined)?.enabled_modes ?? ''
+      if (modes.includes('dev') && new Date().getHours() >= 6) void tldr().catch(() => {})
+    }
+    if (process.env.STUDYHALL_OFFSCREEN !== '1') {
+      setTimeout(gkMorning, 4 * 60_000)
+      setInterval(gkMorning, 3 * 3600_000).unref()
+    }
     startSchool()
   })
 

@@ -4,6 +4,7 @@
 // the question itself). Shared by the PC and the phone: the questions, results and schedule are synced tables
 // (exam_papers, quiz_questions, paper_attempts), so you can start on either.
 import { create, get, getSetting, list, setSetting, update } from './db'
+import { tickHabit } from './habitsAuto'
 
 export type RecallSize = 'short' | 'medium' | 'long'
 export type RecallSource = 'both' | 'worksheet' | 'content'
@@ -243,6 +244,7 @@ export function saveQuiz(results: QuizResult[], o: { size: RecallSize; source: R
     max_score: results.length,
     notes: JSON.stringify({ recall: 1, size: o.size, source: o.source })
   })
+  tickHabit('recall') // (a study habit ticks itself)
   return { score, max: results.length }
 }
 

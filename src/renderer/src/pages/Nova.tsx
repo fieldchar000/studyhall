@@ -1442,8 +1442,14 @@ export function NovaPage(): React.JSX.Element {
                 <Row title="Morning brief" hint={`The first time you’re at the PC each morning: the weather, your day, what’s due, money, birthdays and the news you watch, on a card.`}>
                   <input type="checkbox" checked={prefs?.novaBrief !== false} onChange={(e) => save({ novaBrief: e.target.checked })} aria-label="Morning brief" />
                 </Row>
-                <Row title="Evening wrap-up" hint="Between 7 and 11 pm: what you got done, what’s still open, and tomorrow’s first thing. On Sundays, the week ahead instead.">
+                <Row title="Evening wrap-up" hint="Between 7 and 11 pm (not Sundays): what you got done, what’s still open, and tomorrow’s first thing.">
                   <input type="checkbox" checked={prefs?.novaBriefEvening === true} onChange={(e) => save({ novaBriefEvening: e.target.checked })} aria-label="Evening wrap-up" />
+                </Row>
+                <Row title="Sunday look-back" hint="Sunday evening: the week ahead, and a look back on the week: your moods, money, savings and the patterns Nova notices.">
+                  <input type="checkbox" checked={prefs?.novaWeekly !== false} onChange={(e) => save({ novaWeekly: e.target.checked })} aria-label="Sunday look-back" />
+                </Row>
+                <Row title="Diary at 10 pm" hint={`${name} asks how your day went and you talk freely; it writes your Journal entry in your words, with what you did that day, and follows up on things you mention.`}>
+                  <input type="checkbox" checked={prefs?.novaDiary !== false} onChange={(e) => save({ novaDiary: e.target.checked })} aria-label="Diary at 10 pm" />
                 </Row>
                 <Row
                   title="Speaks up on its own"

@@ -13,7 +13,7 @@ import { isAnswers, isWorksheet, recallCourses } from './politeFiling'
 import { getPrefs } from './prefs'
 import type { RecallMeta } from './recallQuiz'
 
-type Mat = { id: string; module_id: string; week_id: string; title: string; file_name: string; local_path: string | null; category: string }
+type Mat = { id: string; module_id: string; week_id: string; title: string; file_name: string; local_path: string | null; category: string; note?: string }
 type Made = Record<string, { at: number; n: number; paper?: string; skip?: string }>
 const made = (): Made => getSetting<Made>('recall_made') ?? {}
 const NOVA = "(Nova's answer) "
@@ -25,8 +25,11 @@ function pending(): (Mat & { week: number })[] {
   const mods = list<{ id: string; code: string; name: string }>('modules', { archived: 0 })
   const ours = new Set(mods.filter((m) => want.some((s) => m.code.toUpperCase().includes(s) || m.name.toUpperCase().includes(s)) || filedModules().has(m.id)).map((m) => m.id))
   const weeks = new Map(list<{ id: string; number: number }>('weeks').map((w) => [w.id, w.number]))
-  return list<Mat>('materials')
-    .filter((m) => ours.has(m.module_id) && !done[m.id] && /\.(pdf|pptx|docx)$/i.test(m.file_name) && !isAnswers(m.title) && weeks.has(m.week_id))
+  // (and the course's web pages, kept as notes in their week: NSL's sessions)
+  const notes: Mat[] = list<{ id: string; module_id: string | null; week_id: string | null; title: string; plain_text: string }>('notes')
+    .filter((n) => n.module_id && n.week_id && ours.has(n.module_id) && !done[n.id] && weeks.has(n.week_id) && n.plain_text.length > 300)
+    .map((n) => ({ id: n.id, module_id: n.module_id!, week_id: n.week_id!, title: n.title, file_name: '', local_path: null, category: 'notes', note: n.plain_text }))
+  return [...list<Mat>('materials').filter((m) => ours.has(m.module_id) && !done[m.id] && /\.(pdf|pptx|docx)$/i.test(m.file_name) && !isAnswers(m.title) && weeks.has(m.week_id)), ...notes]
     .map((m) => ({ ...m, week: weeks.get(m.week_id)! }))
     .sort((a, b) => b.week - a.week || Number(isWorksheet(b.title)) - Number(isWorksheet(a.title)))
 }
@@ -91,7 +94,7 @@ async function makeOne(): Promise<boolean> {
   makeHooks.changed()
   try {
     const path = next.local_path ? absolutePath(next as never) : ''
-    const text = path ? await docText(path, 45_000) : ''
+    const text = next.note != null ? next.note.slice(0, 45_000) : path ? await docText(path, 45_000) : ''
     const record = (r: Made[string]): void => setSetting('recall_made', { ...made(), [next.id]: r })
     if (text.replace(/\s+/g, '').length < 200) return (record({ at: Date.now(), n: 0, skip: 'no text' }), true)
     const sheet = isWorksheet(next.title)

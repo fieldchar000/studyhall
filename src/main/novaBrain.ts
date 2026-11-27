@@ -49,6 +49,10 @@ import { makeBrief } from './briefs'
 import { newsText, setWatch } from './news'
 import { hush } from './watcher'
 import { recordMark } from './marks'
+import { writeDiary } from './diary'
+import { planRevision } from './examPlan'
+import { tldr, tldrText } from './gkspace'
+import { splitBill } from './moneyMore'
 import { queueQuiz, recallHooks, recallOverview } from './recallQuiz'
 import { saveNote } from './notes'
 import { findMaterials, flashcardQuestions, focusText, readMaterial, saveFlashcards, type QuizQ } from './study'
@@ -101,7 +105,7 @@ Tools are called for real, never written out as text (never write "[call …]").
 
 How to help (use as few tool calls as the task needs; independent ones can go in one turn, in the order given):
 - Anything in Studyhall (tasks, deadlines, calendar events, lectures, study logs, habits, money, journal, check-ins, inbox, a Studyhall page): studyhall_actions, with every change in one call, then say what you did in one short sentence.
-- Questions about their own Studyhall stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first. "What's my day?": my_day ("status report" or "bring me up to speed": kind status; the evening wrap-up or the week ahead: kind evening or week). News they follow ("any news on X?", "watch X news", "watch X closely"): news. Active recall ("test me", "quiz me on what I learned this week", "daily recall"): recall_quiz. A test mark they tell you: record_mark.
+- Questions about their own Studyhall stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first. "What's my day?": my_day ("status report" or "bring me up to speed": kind status; the evening wrap-up or the week ahead: kind evening or week). News they follow ("any news on X?", "watch X news", "watch X closely"): news. Active recall ("test me", "quiz me on what I learned this week", "daily recall"): recall_quiz. A test mark they tell you: record_mark. Their day, for the diary ("how was your day", the 10 pm check-in): write_diary. A shared bill they paid: split_bill. "What's the TL;DR", "what did I miss": gk_tldr. A revision plan for an exam: plan_revision.
 - Explaining: match how they ask. You're a live tutor beside them, not a textbook: talk it through, and let the pen show it.
   • How you explain depends on how they asked; what you show depends on the topic. Every explanation (explain, ELI5, how, why, teach, a follow-up that's a new question) gets one draw call with: 1 or 2 fact cards (card or note, card_size small: the big idea in one line and at most 3 short points, under 12 words each; two only when the topic has two sides), a flow (the steps of how it works, or for history the order of events), and a picture: something they can look at, not more words. A thing with parts (an organ, a cell, a black hole, a machine, a circuit part) → find_figure (a real labelled figure, see_photo it, then a photo card with labels) or a model you build (with motion for something that moves, spins or flows); something at cell or molecule level (photosynthesis, a drug at its receptor, an enzyme) → find_illustrations and a scene; a compound → molecule; a person, place, event or object → a photo card (a Wikipedia query); a place → map. A table, timeline or chart is an extra beside the picture, never instead of it (comparing → a table and pictures of both; history → a timeline and a photo of the event or person; numbers → bars and a picture of what's measured). 3 or 4 cards in all. Only a quick fact, a yes or no, or a reaction gets words alone.
   • "Explain X", "what is X", "how does X work" (a plain ask): the short version, always with a picture. Two to four spoken sentences, the main idea first, and one draw call with 1 to 3 compact cards that carry it (card_size: small), picked by the question; two kinds together when that helps (a labelled figure and a flow of its steps, a table and a graph). Say your first sentence before you call draw, so they hear you straight away. Never answer an explanation in words alone.
@@ -664,6 +668,40 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         recallHooks.open()
         return text('The quiz is up on the Recall page.')
       }
+    ),
+    tool(
+      'write_diary',
+      "Writes their diary (today's Journal entry) from what they told you about their day: said is everything they said about it, in their words (it's tidied lightly, never rewritten); mood and energy 1 to 5 if you can tell (check the mood with them in a line); gratitude or highlight if they said one; people they mentioned. Adds to today's entry if there's one.",
+      {
+        said: z.string().max(8000),
+        mood: z.number().int().min(1).max(5).optional(),
+        energy: z.number().int().min(1).max(5).optional(),
+        gratitude: z.string().max(300).optional(),
+        highlight: z.string().max(200).optional(),
+        people: z.array(z.string().max(60)).max(10).optional()
+      },
+      async (a) => text(await writeDiary({ said: String(a.said), mood: a.mood ?? null, energy: a.energy ?? null, gratitude: a.gratitude ?? null, highlight: a.highlight ?? null, people: a.people ?? [] }))
+    ),
+    tool(
+      'split_bill',
+      'They paid for something shared ("I paid $40 for dinner with Sarah and Jun"): works out each share and adds a reminder to collect from each person tomorrow. include_me: false if they weren\'t part of it (they paid for others only). Log their own spending with studyhall_actions as usual.',
+      { total: z.number().positive(), people: z.array(z.string().max(60)).min(1).max(12), what: z.string().max(60).optional(), include_me: z.boolean().optional() },
+      async ({ total, people, what, include_me }) => text(splitBill({ total: Number(total), people: people.map(String), what: what ? String(what) : undefined, includeMe: include_me }))
+    ),
+    tool(
+      'gk_tldr',
+      "The TL;DR of the last 24 hours from what they follow (GK's space: the news they watch, their feeds, YouTube channels and subreddits, their projects, forecasts). Say it briefly in your own words. fresh: true to make it again now.",
+      { fresh: z.boolean().optional() },
+      async ({ fresh }) => {
+        if (fresh) await tldr(true)
+        return text(await tldrText())
+      }
+    ),
+    tool(
+      'plan_revision',
+      'Puts a revision plan for their next exam (in the module, if they named one) in their calendar: a 45-minute block each evening until the exam, on their weakest recall topics first, and a run-through the day before.',
+      { module: z.string().max(60).optional() },
+      async ({ module }) => text(planRevision(module ? String(module) : null))
     ),
     tool(
       'record_mark',

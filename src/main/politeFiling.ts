@@ -7,9 +7,14 @@ import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { courseName, isArchived, stemOf } from './courseNames'
-import { create, getSetting, list, setSetting } from './db'
+import { create, getSetting, list, setSetting, update } from './db'
 import { importMaterials } from './files'
 import { downloadTopic, flat, schoolData, type SchoolCourse, type SchoolModule, type SchoolTopic } from './politemall'
+import { readFile } from 'node:fs/promises'
+import { claudeChat } from './claude'
+import { docText } from './docText'
+import { saveNote } from './notes'
+import { getPrefs } from './prefs'
 
 /** Which courses are filed, and which get Nova's after-class offer (by their subject letters). */
 export type RecallCourses = { file: string[]; afterClass: string[] }
@@ -101,7 +106,7 @@ export async function fileFromPoliteMall(): Promise<number> {
       for (const x of flat(c.modules)) {
         const week = weekOf(x.path)
         if (week == null) continue
-        for (const t of x.m.topics) if (READABLE.has(extOf(t)) && !NOT_STUDY.test(t.title) && !done[String(t.id)]) items.push({ ...x, t, week })
+        for (const t of x.m.topics) if ((READABLE.has(extOf(t)) || extOf(t) === 'html') && !NOT_STUDY.test(t.title) && !done[String(t.id)]) items.push({ ...x, t, week })
       }
       items.sort((a, b) => b.week - a.week)
       if (!items.length) continue
@@ -111,6 +116,19 @@ export async function fileFromPoliteMall(): Promise<number> {
         const weekId = weekFor(moduleId, it.week, weekTitle)
         const got = await downloadTopic(c, it.t).catch(() => ({ error: 'failed' }))
         if ('error' in got) continue
+        // A web page in the course (NSL's sessions, say): kept as a note in the week, so the Brain and the quizzes have it.
+        if (extOf(it.t) === 'html') {
+          const md = htmlToMarkdown(await readFile(got.path, 'utf8').catch(() => ''))
+          done[String(it.t.id)] = 'skipped'
+          if (md.replace(/\s+/g, '').length >= 120) {
+            const note = saveNote(it.t.title, md, moduleId)
+            update('notes', note.id, { week_id: weekId })
+            done[String(it.t.id)] = `note:${note.id}`
+            n++
+          }
+          setSetting('polite_filed', done)
+          continue
+        }
         const [m] = await importMaterials({ moduleId, weekId, category: isWorksheet(it.t.title) || isAnswers(it.t.title) ? 'worksheet' : 'notes' }, [got.path])
         if (!m) continue
         done[String(it.t.id)] = m.id
@@ -120,9 +138,98 @@ export async function fileFromPoliteMall(): Promise<number> {
       }
     }
     if (fresh.length) fileHooks.filed(fresh)
+    // Each course's Teaching & Assessment plan: its tests and assignments, with their weightings and dates.
+    for (const c of d.courses) if (!isArchived(c) && !/\(e-?test\)/i.test(c.name) && want.has(stemOf(c))) await assessmentsFromPlan(c).catch((e) => console.warn('T&A plan:', e))
   } finally {
     running = false
   }
   if (n) console.info(`PoliteMall: filed ${n} files into your modules`)
   return n
+}
+
+/** A course web page as Markdown (headings, lists and paragraphs; scripts, styles and navigation left out). */
+function htmlToMarkdown(html: string): string {
+  return html
+    .replace(/<(script|style|nav|header|footer)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<h([1-4])[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, n: string, t: string) => `\n\n${'#'.repeat(Number(n))} ${t}\n\n`)
+    .replace(/<li[^>]*>/gi, '\n- ')
+    .replace(/<(br|\/p|\/div|\/tr)[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n\s*\n+/g, '\n\n')
+    .trim()
+}
+
+// ---------- Tests and assignments from the Teaching & Assessment plan ----------
+
+const PLAN = /\b(t\s*&\s*a\s*plan|teaching\s*(and|&)\s*assessment\s*plan)\b/i
+/** Reads a course's T&A plan once (a small Claude call) and adds its tests and assignments to the module, with their
+ *  weightings and dates (from the week when there's no date), so the Grades page can work out your running grade. */
+async function assessmentsFromPlan(c: SchoolCourse): Promise<void> {
+  const seen = getSetting<Record<string, number>>('polite_tna') ?? {}
+  const t = flat(c.modules)
+    .flatMap((x) => x.m.topics)
+    .find((x) => PLAN.test(x.title) && ['pdf', 'docx'].includes(extOf(x)))
+  if (!t || seen[String(t.id)]) return
+  const got = await downloadTopic(c, t)
+  if ('error' in got) return
+  const text = await docText(got.path, 30_000)
+  if (text.length < 200) return
+  // Week 1's Monday: the earliest opening date PoliteMall gives a week 1 of this course this year.
+  const starts = flat(c.modules)
+    .filter((x) => weekOf(x.path) === 1 && x.m.start && Date.now() - Date.parse(x.m.start) < 300 * 864e5)
+    .map((x) => Date.parse(x.m.start!))
+  const week1 = starts.length ? new Date(Math.min(...starts)) : null
+  const raw = await claudeChat(
+    [
+      {
+        role: 'system',
+        content:
+          "From this module's Teaching & Assessment plan, list every graded assessment: title (as the plan names it), kind (exam, quiz, assignment, presentation, lab or other), weight_pct (its weighting, a number), week (the week it happens or is due, if given), date (YYYY-MM-DD, if given). Leave out ungraded activities."
+      },
+      { role: 'user', content: text }
+    ],
+    {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { title: { type: 'string' }, kind: { type: 'string' }, weight_pct: { type: 'number' }, week: { type: 'integer' }, date: { type: 'string' } },
+            required: ['title', 'kind']
+          }
+        }
+      },
+      required: ['items']
+    },
+    { ...getPrefs(), novaBrain: 'sonnet', novaEffort: 'low' },
+    'explain'
+  ).catch(() => '')
+  let items: { title: string; kind: string; weight_pct?: number; week?: number; date?: string }[] = []
+  try {
+    items = (JSON.parse(raw) as { items?: typeof items }).items ?? []
+  } catch {
+    return
+  }
+  const moduleId = moduleFor(c)
+  const have = list<{ title: string; module_id: string }>('assessments', { module_id: moduleId }).map((a) => a.title.toLowerCase())
+  const kinds = ['exam', 'quiz', 'assignment', 'presentation', 'lab', 'other']
+  for (const a of items) {
+    const title = String(a.title ?? '')
+      .trim()
+      .slice(0, 80)
+    const low = title.toLowerCase()
+    if (!title || have.some((h) => h === low || h.includes(low) || low.includes(h))) continue
+    const due = a.date && /^\d{4}-\d\d-\d\d$/.test(a.date) ? new Date(`${a.date}T09:00:00`) : week1 && a.week ? new Date(week1.getTime() + (a.week - 1) * 7 * 864e5) : null
+    create('assessments', { module_id: moduleId, title, kind: kinds.includes(a.kind) ? a.kind : 'other', weight_pct: a.weight_pct ?? null, due_at: due ? due.toISOString() : null })
+  }
+  setSetting('polite_tna', { ...seen, [String(t.id)]: Date.now() })
+  if (items.length) console.info(`T&A plan: ${items.length} assessments for ${courseName(c)}`)
 }

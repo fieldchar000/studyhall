@@ -2,13 +2,14 @@
 // monthly budget per category, see where it goes, and save towards goals.
 
 import { BudgetAlerts } from '@/components/LifeCards'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Budget, MoneyEntry, SavingsGoal } from '@shared/types'
 import { AutoNumber, AutoText } from '@/components/AutoField'
 import { Icon } from '@/components/ui'
 import { api, db, notifyChanged, track, useLive } from '@/lib/data'
 import { localDate } from '@/lib/dates'
 import { useProfile } from '@/lib/profile'
+import { isPhoneApp } from '@/lib/platform'
 
 export const EXPENSE_CATS = [
   { id: 'Food & drink', icon: '🍔' },
@@ -119,6 +120,7 @@ export function MoneyPage(): React.JSX.Element {
           </select>
         </div>
         {month === today.slice(0, 7) && <BudgetAlerts />}
+        {month === today.slice(0, 7) && !isPhoneApp() && <MoneyInsights />}
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Tile label="Spent" value={money(m.spent, cur)} hint={`${money(m.spent / Math.max(1, dayNow), cur)} a day`} />
@@ -314,6 +316,55 @@ function Goals({ goals, cur }: { goals: SavingsGoal[]; cur: string }): React.JSX
           </div>
         )
       })}
+    </section>
+  )
+}
+
+/** (PC) What's changed in your spending, subscriptions coming up, savings goals, and reading a receipt photo. */
+function MoneyInsights(): React.JSX.Element | null {
+  const [d, setD] = useState<Awaited<ReturnType<typeof api.moneyMore.insights>> | null>(null)
+  const [msg, setMsg] = useState('')
+  const load = (): void => void api.moneyMore.insights().then(setD).catch(() => {})
+  useEffect(load, [])
+  const scan = async (): Promise<void> => {
+    setMsg('Reading the receipt…')
+    const r = await api.moneyMore.receipt().catch(() => null)
+    if (!r) return setMsg('')
+    setMsg(r.error ?? `Added ${r.added.map((a) => `${a.amount.toFixed(2)} · ${a.category} · ${a.note}`).join('; ')}`)
+    notifyChanged('money_entries')
+    load()
+  }
+  if (!d) return null
+  return (
+    <section className="card p-4">
+      <div className="mb-2 flex items-center gap-2">
+        <h2 className="flex-1 font-semibold">This week</h2>
+        <button className="btn text-xs" onClick={() => void scan()}>
+          <Icon name="camera" /> Scan a receipt
+        </button>
+      </div>
+      {msg && <p className="mb-2 text-[12.5px] text-muted">{msg}</p>}
+      <ul className="flex flex-col gap-1 text-[13px]">
+        {[...d.insights, ...d.savings].map((t) => (
+          <li key={t}>{t}</li>
+        ))}
+        {!d.insights.length && !d.savings.length && <li className="text-muted">Log a few days of spending and Nova shows what’s changing here.</li>}
+      </ul>
+      {d.subscriptions.length > 0 && (
+        <>
+          <h3 className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted">Subscriptions</h3>
+          <ul className="mt-1 flex flex-col text-[13px]">
+            {d.subscriptions.map((s) => (
+              <li key={s.name} className="flex justify-between gap-2 border-t border-line py-1 first:border-t-0">
+                <span className="truncate">{s.name}</span>
+                <span className="shrink-0 text-muted">
+                  {s.amount.toFixed(2)} · renews {new Date(s.next).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </section>
   )
 }

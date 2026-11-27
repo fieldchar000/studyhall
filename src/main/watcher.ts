@@ -10,11 +10,16 @@
 //  • Big news on a topic you watch closely (news.ts).
 //  • After a class (of the courses chosen for it): an offer to go over it and test you; at 9:30 pm, the day's recall
 //    if it isn't done; the evening of a test (and two and five days on, until there's a mark): how did it go?
+//  • 10 pm: how was your day? (the diary, diary.ts), and later a follow-up on what you mentioned; two weeks before an
+//    exam, a revision plan; a subscription renewing in the next two days.
 // What it said last is kept for a few minutes, so "yes" or "go on" answers it.
 import { powerMonitor } from 'electron'
 import { getDb, getSetting, list, setSetting } from './db'
 import { courseAliases, courseName, isArchived, stemOf } from './courseNames'
-import { budgetUse, upcomingOccasions } from './lifeReminders'
+import { diaryDoneToday, threadDue } from './diary'
+import { nextExam } from './examPlan'
+import { budgetUse, formatMoney, upcomingOccasions } from './lifeReminders'
+import { renewingSoon } from './moneyMore'
 import { recallCourses } from './politeFiling'
 import { recallDoneToday, recallOverview, SIZES } from './recallQuiz'
 import { newsHooks, type Story } from './news'
@@ -50,7 +55,9 @@ export function hush(minutes = 60): void {
 }
 /** What Nova said on its own in the last few minutes, for <live-state> (so "yes" means do that). */
 export function lastSpokeUp(): string {
-  return last && Date.now() - last.at < 5 * MIN ? `You just said this on your own (out loud): "${last.text}". If they answer it ("yes", "go on", "do it"), do what you offered.${last.hint ? ` ${last.hint}` : ''}` : ''
+  return last && Date.now() - last.at < 5 * MIN
+    ? `You just said this on your own (out loud): "${last.text}". If they answer it ("yes", "go on", "do it"), do what you offered.${last.hint ? ` ${last.hint}` : ''}`
+    : ''
 }
 /** Each thing is said once (kept by key). */
 function once(key: string): boolean {
@@ -188,7 +195,7 @@ async function studyNudges(): Promise<boolean> {
 
 // ---------- Active recall and marks ----------
 
-const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\newsHooks.alert = (s: Story) => {')
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, (c) => `\\${c}`)
 /** A class of a course you get the after-class offer for, that ended 10 to 60 minutes ago: from your timetable, or a
  *  calendar event named after the course (your name for it, or PoliteMall's). */
 function classJustEnded(): { course: string; moduleId: string | null; key: string } | null {
@@ -279,6 +286,53 @@ async function testMarks(): Promise<boolean> {
   return false
 }
 
+// ---------- The diary, exams and subscriptions ----------
+
+/** 10 pm: how was the day? (they talk freely; Nova writes the diary from it) */
+async function eveningDiary(): Promise<boolean> {
+  const n = new Date()
+  const mins = n.getHours() * 60 + n.getMinutes()
+  if (mins < 22 * 60 || mins > 23 * 60 + 45 || getPrefs().novaDiary === false || !canSpeak() || diaryDoneToday() || !once(`diary:${ymd(n)}`)) return false
+  const jarvis = getPrefs().novaJarvis
+  return speak(jarvis ? `Good evening${sir()}. How was your day?` : 'Hey, how did your day go?', {
+    ask: true,
+    emote: 'wave',
+    hint: "It's their evening diary: let them talk freely, as long as they like, and answer like a friend (a short reaction, maybe one gentle follow-up question). When they've finished (or say that's it), call write_diary with everything they told you, in their words, and their mood and energy (1 to 5) if you can tell; check the mood with them in one line."
+  })
+}
+/** Something they mentioned in the diary, followed up on the day (early evening). */
+async function diaryThread(): Promise<boolean> {
+  const h = new Date().getHours()
+  if (h < 17 || h >= 21 || !canSpeak()) return false
+  const t = threadDue()
+  if (!t) return false
+  return speak(cap(`${Sir()}${t.ask}`), {
+    ask: true,
+    hint: `It's a follow-up on their diary (${t.about}). Listen, react like a friend; if it's worth keeping, add it to today's diary with write_diary.`
+  })
+}
+/** About two weeks before an exam: offer a revision plan in the calendar. */
+async function examPlanOffer(): Promise<boolean> {
+  if (!canSpeak() || new Date().getHours() < 10) return false
+  const ex = nextExam()
+  if (!ex || ex.days < 10 || ex.days > 15 || !once(`examplan:${ex.id}`)) return false
+  return speak(
+    `${Sir()}your ${ex.module} exam is in ${ex.days} days. Shall I put a revision plan in your calendar, your weakest topics first?`.replace(/^./, (c) => c.toUpperCase()),
+    {
+      ask: true,
+      hint: `If yes: plan_revision with module "${ex.module}".`
+    }
+  )
+}
+/** A subscription renewing in the next two days. */
+async function subscriptionsSoon(): Promise<boolean> {
+  if (!canSpeak() || new Date().getHours() < 9) return false
+  const s = renewingSoon().find((x) => once(`sub:${x.name}:${x.next}`))
+  if (!s) return false
+  const when = s.next === ymd(new Date()) ? 'today' : s.next === ymd(new Date(Date.now() + 864e5)) ? 'tomorrow' : new Date(s.next).toLocaleDateString('en-GB', { weekday: 'long' })
+  return speak(`${Sir() || 'Heads up: '}your ${s.name} subscription (${formatMoney(s.amount)}) renews ${when}.`.replace(/^./, (c) => c.toUpperCase()))
+}
+
 newsHooks.alert = (s: Story) => {
   const sure = s.trust === 'confirmed' ? (s.sources.length > 1 ? `${s.sources.length} sources confirm it.` : `It's from ${s.sources[0]}.`) : `Reported by ${s.sources[0]}, not confirmed yet.`
   void speak(
@@ -297,7 +351,8 @@ export function startWatcher(): void {
     const idle = powerMonitor.getSystemIdleTime()
     if (await backAgain(idle)) return
     if (idle > 5 * 60) return // (not at the PC)
-    for (const check of [classSoon, dueTonight, afterClass, dailyRecall, testMarks, studyNudges, moneyAndPeople, lateNight]) if (await check().catch(() => false)) return
+    for (const check of [classSoon, dueTonight, afterClass, dailyRecall, eveningDiary, testMarks, examPlanOffer, diaryThread, studyNudges, moneyAndPeople, subscriptionsSoon, lateNight])
+      if (await check().catch(() => false)) return
   }
   setInterval(() => void tick(), MIN).unref?.()
 }

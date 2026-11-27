@@ -1,4 +1,5 @@
-// DevKit → Briefing: one calm start page instead of doomscrolling. A short, balanced
+// GK's space (the DevKit) → Briefing: one calm start page instead of doomscrolling. At the top, Nova's TL;DR of the
+// last 24 hours from everything you follow (main/gkspace.ts). A short, balanced
 // selection of fresh articles, today's idea / model / paper, forecasts to resolve, and
 // how your own projects are doing.
 
@@ -124,7 +125,7 @@ export function BriefingPage(): React.JSX.Element {
         <div className="flex-1">
           <div className="text-sm text-muted">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
           <h1 className="text-4xl">
-            {greeting()}, <span className="text-gradient">builder</span>.
+            {greeting()}, <span className="text-gradient">GK</span>.
           </h1>
         </div>
         <div className="flex flex-col items-end gap-1.5">
@@ -146,6 +147,7 @@ export function BriefingPage(): React.JSX.Element {
         </div>
       </header>
       {mapIt && <MindmapGenerator articles={brief} onClose={() => setMapIt(false)} />}
+      <TldrCard />
 
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         {/* Today's reads */}
@@ -301,6 +303,76 @@ function ProjectsPulse({ projects, devlogs }: { projects: Project[]; devlogs: De
           })}
         </ul>
       )}
+    </section>
+  )
+}
+
+/** The TL;DR of the last 24 hours (Nova's, from the news you watch, your feeds, YouTube channels, subreddits, projects
+ *  and forecasts), and adding a YouTube channel or a subreddit to follow. */
+function TldrCard(): React.JSX.Element {
+  const [t, setT] = useState<Awaited<ReturnType<typeof api.gk.tldr>> | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [add, setAdd] = useState('')
+  const [msg, setMsg] = useState('')
+  useEffect(() => {
+    void api.gk
+      .tldr()
+      .then(setT)
+      .catch(() => setT({ at: Date.now(), bullets: [] }))
+  }, [])
+  const again = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      setT(await api.gk.tldr(true))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const follow = async (): Promise<void> => {
+    const v = add.trim()
+    if (!v) return
+    setMsg('Adding…')
+    setMsg(await api.gk.addSource(/^(r\/|\/r\/|https?:\/\/(www\.|old\.)?reddit\.com)/i.test(v) ? 'reddit' : 'youtube', v))
+    setAdd('')
+  }
+  return (
+    <section className="card p-5">
+      <div className="mb-2 flex items-center gap-2">
+        <h2 className="flex-1 text-lg font-bold">TL;DR · the last 24 hours</h2>
+        {t && t.bullets.length > 0 && <span className="text-xs text-muted">{ago(new Date(t.at).toISOString())} ago</span>}
+        <button className="btn-ghost text-xs" disabled={busy} onClick={() => void again()}>
+          <Icon name="refresh" className={busy ? 'animate-spin' : ''} /> {busy ? 'Writing…' : 'Again'}
+        </button>
+      </div>
+      {!t && <p className="text-sm text-muted">Writing your TL;DR…</p>}
+      {t && !t.bullets.length && <p className="text-sm text-muted">Nothing new in the last 24 hours from what you follow yet.</p>}
+      <ul className="flex flex-col gap-2">
+        {(t?.bullets ?? []).map((b, i) => (
+          <li key={i} className="flex items-start gap-2 text-[14px] leading-snug">
+            <span className="mt-0.5 shrink-0 rounded-full border border-line px-2 py-px text-[10.5px] uppercase tracking-wide text-muted">{b.source}</span>
+            {b.link ? (
+              <a className="hover:underline" href={b.link} target="_blank" rel="noreferrer">
+                {b.text}
+              </a>
+            ) : (
+              <span>{b.text}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      <form
+        className="mt-3 flex gap-2 border-t border-line/70 pt-3"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void follow()
+        }}
+      >
+        <input className="field-boxed min-w-0 flex-1 text-sm" value={add} onChange={(e) => setAdd(e.target.value)} placeholder="Follow a YouTube channel (@name or link) or a subreddit (r/name)" />
+        <button className="btn" type="submit">
+          Follow
+        </button>
+      </form>
+      {msg && <p className="mt-1.5 text-xs text-muted">{msg}</p>}
     </section>
   )
 }

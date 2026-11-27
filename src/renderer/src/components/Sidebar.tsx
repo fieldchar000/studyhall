@@ -26,7 +26,7 @@ export const MODES: { mode: Mode; label: string; icon: string }[] = [
   { mode: 'study', label: 'Study', icon: 'modules' },
   { mode: 'work', label: 'Work', icon: 'clients' },
   { mode: 'life', label: 'Life', icon: 'flame' },
-  { mode: 'dev', label: 'DevKit', icon: 'code' }
+  { mode: 'dev', label: "GK's space", icon: 'code' }
 ]
 
 // The category switch at the top changes which pages appear here.

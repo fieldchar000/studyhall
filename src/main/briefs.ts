@@ -10,6 +10,8 @@ import { net } from 'electron'
 import type { BauerCard } from '@shared/types'
 import { getDb, getProfileId, getSetting, setSetting } from './db'
 import { budgetUse, formatMoney, upcomingOccasions } from './lifeReminders'
+import { weekReflection } from './diary'
+import { savingsLines, spendingInsights } from './moneyMore'
 import { newsForBrief } from './news'
 import { schoolBrief } from './politemall'
 import { getPrefs } from './prefs'
@@ -331,6 +333,8 @@ export async function makeBrief(kind: BriefKind, now = new Date()): Promise<Brie
     }
     const money = moneyLine()
     if (money) parts.push(money)
+    // Money over the week, savings goals, and looking back on the week (moods and patterns, from the diary).
+    parts.push(...spendingInsights(), ...savingsLines(), ...weekReflection())
     const ppl = peopleLine(7)
     if (ppl) parts.push(ppl)
     const risk = habitsAtRisk()

@@ -52,6 +52,7 @@ import { InviteLinkHandler } from './components/InviteLinkHandler'
 import { VoiceOverlay } from './components/VoiceOverlay'
 import { AppSky, PageDock } from './components/AppSky'
 import { isPhoneApp } from './lib/platform'
+import { readNewFiles } from './lib/brain'
 
 export function App(): React.JSX.Element {
   const route = useRoute()
@@ -69,6 +70,27 @@ export function App(): React.JSX.Element {
     window.addEventListener('studyhall:back', onBack)
     return () => window.removeEventListener('studyhall:back', onBack)
   }, [route.name])
+  // The Brain reads new course files in the background (on the PC): a few minutes after starting, then every half
+  // hour, so what PoliteMall files into your modules joins it without opening the Brain first.
+  useEffect(() => {
+    if (isPhoneApp()) return
+    let stop = false
+    let busy = false
+    const read = (): void => {
+      if (busy || stop) return
+      busy = true
+      void readNewFiles(() => {}, () => stop)
+        .catch(() => 0)
+        .finally(() => (busy = false))
+    }
+    const first = setTimeout(read, 4 * 60_000)
+    const every = setInterval(read, 30 * 60_000)
+    return () => {
+      stop = true
+      clearTimeout(first)
+      clearInterval(every)
+    }
+  }, [])
   return (
     <div className="app-shell space-shell flex h-full">
       <AppSky />

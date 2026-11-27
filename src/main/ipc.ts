@@ -340,7 +340,7 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     if ('novaJarvis' in patch) clean.novaJarvis = !!patch.novaJarvis
     if ('novaLook' in patch && ['hologram', 'neural', 'globe'].includes(String(patch.novaLook))) clean.novaLook = String(patch.novaLook) as Prefs['novaLook']
     if ('novaColor' in patch && ['gold', 'blue'].includes(String(patch.novaColor))) clean.novaColor = String(patch.novaColor) as Prefs['novaColor']
-    for (const k of ['novaBriefEvening', 'novaWeather', 'novaNews'] as const) if (k in patch) clean[k] = !!patch[k]
+    for (const k of ['novaBriefEvening', 'novaWeekly', 'novaDiary', 'novaWeather', 'novaNews'] as const) if (k in patch) clean[k] = !!patch[k]
     if (typeof patch.novaCity === 'string') clean.novaCity = patch.novaCity.replace(/[^\p{L}\p{N} ,.'-]/gu, '').trim().slice(0, 60)
     if (typeof patch.novaAddress === 'string') clean.novaAddress = patch.novaAddress.replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 30)
     if ('novaWit' in patch && ['off', 'dry', 'cheeky'].includes(String(patch.novaWit))) clean.novaWit = String(patch.novaWit) as Prefs['novaWit']

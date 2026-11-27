@@ -270,6 +270,14 @@ const api: Api = {
     speak: (text, voice, speed) => ipcRenderer.invoke('mouth:speak', text, voice, speed),
     warm: () => ipcRenderer.invoke('mouth:warm')
   },
+  gk: {
+    tldr: (fresh) => ipcRenderer.invoke('gk:tldr', fresh),
+    addSource: (kind, value) => ipcRenderer.invoke('gk:addSource', kind, value)
+  },
+  moneyMore: {
+    receipt: () => ipcRenderer.invoke('money:receipt'),
+    insights: () => ipcRenderer.invoke('money:insights')
+  },
   recall: {
     overview: () => ipcRenderer.invoke('recall:overview'),
     build: (ask) => ipcRenderer.invoke('recall:build', ask),

@@ -110,7 +110,10 @@ async function briefTick(): Promise<void> {
   if (powerMonitor.getSystemIdleTime() > 60) return // you're not at the PC
   const now = new Date()
   const h = now.getHours()
-  const kind: BriefKind | null = h >= 5 && h < 14 && p.novaBrief !== false ? 'morning' : h >= 19 && h < 23 && p.novaBriefEvening === true ? (now.getDay() === 0 ? 'weekly' : 'evening') : null
+  // (Sundays from 7 pm: the week ahead and a look back on the week, on unless switched off; other evenings, the
+  // wrap-up if you switched it on)
+  const sunday = now.getDay() === 0 && h >= 19 && h < 22 && p.novaWeekly !== false
+  const kind: BriefKind | null = h >= 5 && h < 14 && p.novaBrief !== false ? 'morning' : sunday ? 'weekly' : h >= 19 && h < 23 && p.novaBriefEvening === true && now.getDay() !== 0 ? 'evening' : null
   if (!kind) return
   const key = `nova_brief_${kind === 'morning' ? 'day' : 'evening'}`
   if (getSetting<string>(key) === ymd(now)) return

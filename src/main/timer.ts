@@ -2,6 +2,7 @@
 // tray keeps counting down) while the window is hidden. State is saved on every
 // change, so a timer survives the app being closed and reopened.
 
+import { tickHabit } from './habitsAuto'
 import { create, get, getProfileId, getSetting, setSetting, softDelete, update } from './db'
 import { reward } from './game'
 import type { FocusSession, Profile, TimerContext, TimerPhase, TimerSettings, TimerState } from '@shared/types'
@@ -185,6 +186,7 @@ function finishSession(completed: boolean, endT: number): void {
     if (left > 0) reward('focus', left) // game gems for minutes not yet credited
     // A finished session of 15+ minutes earns a summon ticket
     if (completed && state.focusedMs >= 15 * 60_000) reward('session', 1)
+    if (completed && state.focusedMs >= 15 * 60_000) tickHabit('focus') // (a focus habit ticks itself)
   }
   state.sessionId = null
   state.focusedMs = 0
