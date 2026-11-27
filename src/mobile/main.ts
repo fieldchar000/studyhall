@@ -6,7 +6,8 @@ import { App } from '@capacitor/app'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import type { Material, Photo, ExamPaper } from '@shared/types'
 import { SYNC_TABLES } from '@shared/sync'
-import { get, onDbChange, openDb, setWriteGuard } from '../main/db'
+import { get, getSetting, onDbChange, openDb, setSetting, setWriteGuard } from '../main/db'
+import { recallDoneToday, recallOverview, SIZES } from '../main/recallQuiz'
 import { cloudStatus, currentUserId, onAccountChange, restoreSession } from '../main/cloud/account'
 import { describeMessage, guardWrite, publishPresence, startLive, stopLive } from '../main/cloud/social'
 import { configureSync, ensureLocalFile, fetchMissingFiles, requestSync } from '../main/cloud/sync'
@@ -37,6 +38,21 @@ async function notify(title: string, body: string, page?: string): Promise<void>
   } catch {
     /* notifications are a nicety */
   }
+}
+
+// ---------- 9:30 pm: today's active recall, if it isn't done (on the PC, Nova says it too) ----------
+
+function dailyRecall(): void {
+  const n = new Date()
+  const mins = n.getHours() * 60 + n.getMinutes()
+  if (mins < 21 * 60 + 30 || mins > 23 * 60 + 30) return
+  const day = n.toDateString()
+  if (getSetting<string>('recall_nudged') === day || recallDoneToday()) return
+  const ov = recallOverview()
+  if (!ov.modules.some((m) => m.total)) return
+  setSetting('recall_nudged', day)
+  const sz = SIZES[ov.settings.size]
+  void notify('Daily recall', `${sz.mcq} multiple choice and ${sz.saq} short answer${sz.saq > 1 ? 's' : ''}. Tap to start.`, 'recall')
 }
 
 // ---------- Files for <img>/<iframe> (the PC uses material:// for this) ----------
@@ -115,6 +131,7 @@ export function startMain(): void {
   const remind = (): void => {
     checkDeadlines((title, body) => void notify(title, body, 'home'))
     checkLifeReminders((title, body, page) => void notify(title, body, page))
+    dailyRecall()
   }
   setTimeout(remind, 10_000)
   setInterval(remind, 60_000)

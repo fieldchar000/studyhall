@@ -48,6 +48,8 @@ import { startFocus, stopFocus } from './buddy'
 import { makeBrief } from './briefs'
 import { newsText, setWatch } from './news'
 import { hush } from './watcher'
+import { recordMark } from './marks'
+import { queueQuiz, recallHooks, recallOverview } from './recallQuiz'
 import { saveNote } from './notes'
 import { findMaterials, flashcardQuestions, focusText, readMaterial, saveFlashcards, type QuizQ } from './study'
 import { readPage, webSearch, youtubeSearch, youtubeTranscript } from './web'
@@ -99,7 +101,7 @@ Tools are called for real, never written out as text (never write "[call …]").
 
 How to help (use as few tool calls as the task needs; independent ones can go in one turn, in the order given):
 - Anything in Studyhall (tasks, deadlines, calendar events, lectures, study logs, habits, money, journal, check-ins, inbox, a Studyhall page): studyhall_actions, with every change in one call, then say what you did in one short sentence.
-- Questions about their own Studyhall stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first. "What's my day?": my_day ("status report" or "bring me up to speed": kind status; the evening wrap-up or the week ahead: kind evening or week). News they follow ("any news on X?", "watch X news", "watch X closely"): news.
+- Questions about their own Studyhall stuff (what's due, what's on today, their notes, grades, spending): my_studyhall first. "What's my day?": my_day ("status report" or "bring me up to speed": kind status; the evening wrap-up or the week ahead: kind evening or week). News they follow ("any news on X?", "watch X news", "watch X closely"): news. Active recall ("test me", "quiz me on what I learned this week", "daily recall"): recall_quiz. A test mark they tell you: record_mark.
 - Explaining: match how they ask. You're a live tutor beside them, not a textbook: talk it through, and let the pen show it.
   • How you explain depends on how they asked; what you show depends on the topic. Every explanation (explain, ELI5, how, why, teach, a follow-up that's a new question) gets one draw call with: 1 or 2 fact cards (card or note, card_size small: the big idea in one line and at most 3 short points, under 12 words each; two only when the topic has two sides), a flow (the steps of how it works, or for history the order of events), and a picture: something they can look at, not more words. A thing with parts (an organ, a cell, a black hole, a machine, a circuit part) → find_figure (a real labelled figure, see_photo it, then a photo card with labels) or a model you build (with motion for something that moves, spins or flows); something at cell or molecule level (photosynthesis, a drug at its receptor, an enzyme) → find_illustrations and a scene; a compound → molecule; a person, place, event or object → a photo card (a Wikipedia query); a place → map. A table, timeline or chart is an extra beside the picture, never instead of it (comparing → a table and pictures of both; history → a timeline and a photo of the event or person; numbers → bars and a picture of what's measured). 3 or 4 cards in all. Only a quick fact, a yes or no, or a reaction gets words alone.
   • "Explain X", "what is X", "how does X work" (a plain ask): the short version, always with a picture. Two to four spoken sentences, the main idea first, and one draw call with 1 to 3 compact cards that carry it (card_size: small), picked by the question; two kinds together when that helps (a labelled figure and a flow of its steps, a table and a graph). Say your first sentence before you call draw, so they hear you straight away. Never answer an explanation in words alone.
@@ -642,6 +644,32 @@ async function buildTools(wc: WebContents, turnRef: { current: Turn | null }, tu
         showCards([b.card])
         return text(b.say)
       }
+    ),
+    tool(
+      'recall_quiz',
+      "Starts an active recall quiz on Studyhall's Recall page (questions made from their modules' weeks: worksheets and slides). size: short (5 + 1), medium (10 multiple choice + 3 short answer, their usual), long (20 + 4); source: both, worksheet or content; module: one module (their name for it); latest: only each module's newest week (\"what I just learned\"); upto_week: weeks 1 to this. Leave out what they didn't ask for. Then say in a line that it's up.",
+      {
+        size: z.enum(['short', 'medium', 'long']).optional(),
+        source: z.enum(['both', 'worksheet', 'content']).optional(),
+        module: z.string().max(60).optional(),
+        latest: z.boolean().optional(),
+        upto_week: z.number().int().min(1).max(30).optional()
+      },
+      async ({ size, source, module, latest, upto_week }) => {
+        const ov = recallOverview()
+        const m = module ? ov.modules.find((x) => x.name.toLowerCase().includes(String(module).toLowerCase()) || String(module).toLowerCase().includes(x.name.toLowerCase())) : null
+        if (module && !m) return text(`No recall questions for "${module}" yet. Their modules with questions: ${ov.modules.map((x) => x.name).join(', ') || 'none yet (Nova is still making them)'}.`)
+        if (!ov.modules.some((x) => x.total)) return text('No recall questions yet: Nova makes them from their weeks’ files in the background, a few every hour. Say so.')
+        queueQuiz({ size, source, modules: m ? [m.id] : null, latest: latest ?? false, toWeek: upto_week ?? null })
+        recallHooks.open()
+        return text('The quiz is up on the Recall page.')
+      }
+    ),
+    tool(
+      'record_mark',
+      'Records a test mark they tell you ("18 out of 25 for the pharm test"): on that test in their module, so their Grades page updates. assessment: the test as they named it; score and out_of as said (or score as a percentage, out_of left out); module only if they named it (never guess it: Studyhall works it out from the test and their files).',
+      { assessment: z.string().max(100), score: z.number().min(0), out_of: z.number().positive().optional(), module: z.string().max(60).optional() },
+      async ({ assessment, score, out_of, module }) => text(recordMark({ assessment: String(assessment), score: Number(score), outOf: out_of ?? null, module: module ?? null }))
     ),
     tool(
       'news',

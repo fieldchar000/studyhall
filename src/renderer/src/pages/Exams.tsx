@@ -48,7 +48,14 @@ function useExamData(): { papers: ExamPaper[]; modules: Module[]; attempts: Pape
         api.list('paper_attempts', {}, 'date'),
         api.list('quiz_questions', {}, 'sort')
       ])
-      return { papers, modules, attempts, questions }
+      // (Active recall keeps its question bank as practice papers: those live on the Active recall page, not here)
+      const recall = new Set(papers.filter((p) => p.notes.includes('"recall":1')).map((p) => p.id))
+      return {
+        papers: papers.filter((p) => !recall.has(p.id)),
+        modules,
+        attempts: attempts.filter((a) => !a.notes.includes('"recall":1')),
+        questions: questions.filter((q) => !q.paper_id || !recall.has(q.paper_id))
+      }
     },
     []
   ).data

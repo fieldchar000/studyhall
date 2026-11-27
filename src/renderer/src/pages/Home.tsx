@@ -17,8 +17,6 @@ import { SpotifyPanel } from '@/components/SpotifyPanel'
 import { StarredStrip } from '@/components/Star'
 import { LifeTodayCard } from './Habits'
 import { BudgetAlerts, CheckinCard, OccasionsCard } from '@/components/LifeCards'
-import { useRecallToday } from './Recall'
-import { doneToday } from '@/lib/recall'
 import { buildBrain, readNewFiles, type Brain } from '@/lib/brain'
 import { GalaxyScene, type Cat } from '@/lib/galaxy/scene'
 import { starsFromBrain } from '@/lib/galaxy/stars'
@@ -294,47 +292,30 @@ function Greeting({ onSearch }: { onSearch: (q: string) => void }): React.JSX.El
   )
 }
 
-/** Today's active recall, module by module. */
+/** Active recall: today's quiz, your streak, and how many questions are ready (pages/Recall.tsx). */
 function RecallHomeCard(): React.JSX.Element | null {
-  const modules = useRows('modules', { archived: 0 }, 'sort')
-  const { byModule, loading } = useRecallToday(modules)
-  if (!modules?.length) return null
-  const rows = modules.map((m) => ({ m, cards: byModule.get(m.id) ?? [] })).filter((r) => r.cards.length || loading)
-  const all = rows.flatMap((r) => r.cards)
-  const done = all.filter(doneToday).length
+  const { data: ov } = useLive(['quiz_questions', 'exam_papers', 'paper_attempts'], () => api.recall.overview(), [])
+  if (!ov) return null
+  const ready = ov.modules.reduce((n, m) => n + m.total, 0)
+  const due = ov.modules.reduce((n, m) => n + m.due, 0)
   return (
     <section className="card overflow-hidden">
-      <div className="flex items-center gap-3 px-5 pt-4 pb-3">
+      <div className="flex items-center gap-3 px-5 py-4">
         <Icon name="recall" size={22} className="text-brass" />
         <div className="flex-1">
           <h2 className="text-xl">Active recall</h2>
           <p className="text-xs text-muted">
-            {loading && !all.length ? 'Picking today’s pages…' : all.length ? `${done} of ${all.length} pages recalled today` : 'Add notes or files to your modules to get daily pages.'}
+            {ov.doneToday
+              ? `Done today${ov.lastScore ? ` · ${ov.lastScore.score}/${ov.lastScore.max}` : ''}${ov.streak > 1 ? ` · ${ov.streak}-day streak` : ''}`
+              : ready
+                ? `Today's quiz is ready · ${ready} questions${due ? `, ${due} due` : ''}`
+                : 'Nova is preparing questions from your weeks.'}
           </p>
         </div>
         <button className="btn-primary" onClick={() => navigate({ name: 'recall' })}>
-          {done && done === all.length ? 'Review' : done ? 'Continue' : 'Start'}
+          {ov.doneToday ? 'Another' : 'Start'}
         </button>
       </div>
-      {rows.length > 0 && (
-        <div className="grid gap-x-6 gap-y-2 border-t border-line/70 px-5 py-3 sm:grid-cols-2">
-          {rows.map(({ m, cards }) => {
-            const d = cards.filter(doneToday).length
-            return (
-              <button key={m.id} className="flex items-center gap-2.5 rounded-md py-1 text-left text-sm hover:text-accent" onClick={() => navigate({ name: 'recall' })}>
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: m.color }} />
-                <span className="min-w-0 flex-1 truncate">{m.code || m.name}</span>
-                <span className="h-1 w-16 overflow-hidden rounded-full bg-line">
-                  <span className="block h-full rounded-full bg-accent" style={{ width: cards.length ? `${(d / cards.length) * 100}%` : 0 }} />
-                </span>
-                <span className="w-9 text-right text-xs text-muted tabular-nums">
-                  {d}/{cards.length}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      )}
     </section>
   )
 }

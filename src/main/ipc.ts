@@ -1,5 +1,6 @@
 // IPC handlers: the only way the UI can reach the database, files and network.
 
+import { buildQuiz, recallOverview, recallSettings, saveQuiz, setRecallSettings, takeQueuedQuiz, type QuizAsk, type QuizResult, type RecallSettings, type RecallSize, type RecallSource } from './recallQuiz'
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { create, get, getDb, getProfileId, list, restore, softDelete, update } from './db'
 import { importMaterials, importPapers, importPaths, openExternal, openPaperExternal, paperDoc, pickAndImport, pickMaterials, pickPapers, readMaterial, savePhoto, showInFolder } from './files'
@@ -300,6 +301,13 @@ export function registerIpc(trustedOrigins: string[], deps: IpcDeps): void {
     }
     return timer.setSettings(clean)
   })
+
+  // Active recall (recallQuiz.ts): the same on the PC and the phone, from the synced question bank.
+  handle('recall:overview', () => recallOverview())
+  handle('recall:build', (_e, ask: QuizAsk) => buildQuiz(ask && typeof ask === 'object' ? ask : {}))
+  handle('recall:save', (_e, results: QuizResult[], o: { size: RecallSize; source: RecallSource; seconds: number }) => saveQuiz(Array.isArray(results) ? results : [], o))
+  handle('recall:take', () => takeQueuedQuiz())
+  handle('recall:settings', (_e, patch?: Partial<RecallSettings>) => (patch && typeof patch === 'object' ? setRecallSettings(patch) : recallSettings()))
 
   // Device preferences
   handle('prefs:get', () => getPrefs())

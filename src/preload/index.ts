@@ -270,6 +270,22 @@ const api: Api = {
     speak: (text, voice, speed) => ipcRenderer.invoke('mouth:speak', text, voice, speed),
     warm: () => ipcRenderer.invoke('mouth:warm')
   },
+  recall: {
+    overview: () => ipcRenderer.invoke('recall:overview'),
+    build: (ask) => ipcRenderer.invoke('recall:build', ask),
+    save: (results, o) => ipcRenderer.invoke('recall:save', results, o),
+    settings: (patch) => ipcRenderer.invoke('recall:settings', patch),
+    markSaq: (q, given) => ipcRenderer.invoke('recall:markSaq', q, given),
+    status: () => ipcRenderer.invoke('recall:status'),
+    courses: (patch) => ipcRenderer.invoke('recall:courses', patch),
+    fileNow: () => ipcRenderer.invoke('recall:fileNow'),
+    take: () => ipcRenderer.invoke('recall:take'),
+    onStart: (cb) => {
+      const l = (): void => cb()
+      ipcRenderer.on('recall:start', l)
+      return () => ipcRenderer.removeListener('recall:start', l)
+    }
+  },
   polite: {
     status: () => ipcRenderer.invoke('polite:status'),
     open: () => ipcRenderer.invoke('polite:open'),

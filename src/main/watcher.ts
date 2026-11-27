@@ -8,12 +8,17 @@
 //  • Late at night: a nudge to sleep, once.
 //  • Shaky lesson ideas due a check; an exam within a week (once a day).
 //  • Big news on a topic you watch closely (news.ts).
+//  • After a class (of the courses chosen for it): an offer to go over it and test you; at 9:30 pm, the day's recall
+//    if it isn't done; the evening of a test (and two and five days on, until there's a mark): how did it go?
 // What it said last is kept for a few minutes, so "yes" or "go on" answers it.
 import { powerMonitor } from 'electron'
-import { getDb, getSetting, setSetting } from './db'
+import { getDb, getSetting, list, setSetting } from './db'
+import { courseAliases, courseName, isArchived, stemOf } from './courseNames'
 import { budgetUse, upcomingOccasions } from './lifeReminders'
+import { recallCourses } from './politeFiling'
+import { recallDoneToday, recallOverview, SIZES } from './recallQuiz'
 import { newsHooks, type Story } from './news'
-import { schoolBrief } from './politemall'
+import { schoolBrief, schoolData } from './politemall'
 import { getPrefs } from './prefs'
 
 export const watchHooks = {
@@ -23,7 +28,9 @@ export const watchHooks = {
   /** Whether now is a bad time (a lesson, a focus session, Nova put away). */
   busy: (): boolean => false,
   /** What happened while they were away (agents finished, PoliteMall news): a line, or ''. */
-  whileAway: (_since: number): string => ''
+  whileAway: (_since: number): string => '',
+  /** A Windows notification (opens this page when clicked). */
+  notify: (_title: string, _body: string, _page?: string): void => {}
 }
 
 const MIN = 60_000
@@ -36,14 +43,14 @@ const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
 
 let lastSpoke = 0
 let mutedUntil = 0
-let last: { text: string; at: number } | null = null
+let last: { text: string; at: number; hint?: string } | null = null
 /** "Not now" / "quiet for a bit": no speaking up for an hour (or the minutes given). */
 export function hush(minutes = 60): void {
   mutedUntil = Date.now() + minutes * MIN
 }
 /** What Nova said on its own in the last few minutes, for <live-state> (so "yes" means do that). */
 export function lastSpokeUp(): string {
-  return last && Date.now() - last.at < 5 * MIN ? `You just said this on your own (out loud): "${last.text}". If they answer it ("yes", "go on", "do it"), do what you offered.` : ''
+  return last && Date.now() - last.at < 5 * MIN ? `You just said this on your own (out loud): "${last.text}". If they answer it ("yes", "go on", "do it"), do what you offered.${last.hint ? ` ${last.hint}` : ''}` : ''
 }
 /** Each thing is said once (kept by key). */
 function once(key: string): boolean {
@@ -55,10 +62,10 @@ function once(key: string): boolean {
 }
 /** Whether Nova may speak up now (urgent: a class about to start, something due within the hour and a half). */
 const canSpeak = (urgent = false): boolean => Date.now() >= mutedUntil && Date.now() - lastSpoke >= (urgent ? 5 : 15) * MIN && !watchHooks.busy()
-async function speak(text: string, o: { urgent?: boolean; ask?: boolean; emote?: string } = {}): Promise<boolean> {
+async function speak(text: string, o: { urgent?: boolean; ask?: boolean; emote?: string; hint?: string } = {}): Promise<boolean> {
   if (!canSpeak(o.urgent)) return false
   lastSpoke = Date.now()
-  last = { text, at: Date.now() }
+  last = { text, at: Date.now(), hint: o.hint }
   if (o.emote) watchHooks.emote(o.emote)
   if (o.ask) await watchHooks.sayThenListen(text)
   else watchHooks.say(text)
@@ -179,6 +186,99 @@ async function studyNudges(): Promise<boolean> {
   return false
 }
 
+// ---------- Active recall and marks ----------
+
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\newsHooks.alert = (s: Story) => {')
+/** A class of a course you get the after-class offer for, that ended 10 to 60 minutes ago: from your timetable, or a
+ *  calendar event named after the course (your name for it, or PoliteMall's). */
+function classJustEnded(): { course: string; moduleId: string | null; key: string } | null {
+  const now = new Date()
+  const want = recallCourses().afterClass
+  if (!want.length) return null
+  const courses = (schoolData()?.courses ?? []).filter((c) => !isArchived(c) && want.includes(stemOf(c)))
+  const mods = list<{ id: string; code: string; name: string }>('modules', { archived: 0 })
+  const ofStem = (stem: string): { id: string; name: string } | undefined => mods.find((m) => m.code.toUpperCase().includes(stem) || m.name.toUpperCase().includes(stem))
+  const ended = (end: Date): boolean => now.getTime() - end.getTime() >= 10 * MIN && now.getTime() - end.getTime() <= 60 * MIN
+  // Your timetable (weekday 1 = Monday).
+  const wd = ((now.getDay() + 6) % 7) + 1
+  for (const sl of list<{ module_id: string; weekday: number; end_time: string }>('timetable_slots')) {
+    if (sl.weekday !== wd) continue
+    const [h, m] = sl.end_time.split(':').map(Number)
+    const end = new Date(now)
+    end.setHours(h, m, 0, 0)
+    if (!ended(end)) continue
+    const stem = want.find((st) => ofStem(st)?.id === sl.module_id)
+    const c = courses.find((x) => stemOf(x) === stem)
+    if (stem) return { course: c ? courseName(c) : (ofStem(stem)?.name ?? stem), moduleId: sl.module_id, key: `${sl.module_id}:${ymd(now)}:${sl.end_time}` }
+  }
+  // Calendar events (your own, and calendar feeds) named after one of the courses.
+  const from = new Date(now.getTime() - 60 * MIN).toISOString()
+  const to = new Date(now.getTime() - 10 * MIN).toISOString()
+  const db = getDb()
+  let evs = db.prepare('SELECT title, end_at FROM events WHERE deleted_at IS NULL AND all_day = 0 AND end_at >= ? AND end_at <= ?').all(from, to) as unknown as { title: string; end_at: string }[]
+  try {
+    evs = [...evs, ...(db.prepare('SELECT title, end_at FROM subscription_events WHERE all_day = 0 AND end_at >= ? AND end_at <= ?').all(from, to) as unknown as { title: string; end_at: string }[])]
+  } catch {
+    /* no feeds */
+  }
+  for (const e of evs) {
+    if (/\b(due|deadline|closes?|quiz|submission)\b/i.test(e.title)) continue
+    const c = courses.find((x) => courseAliases(x).some((a) => a.length > 2 && new RegExp(`\\b${escapeRe(a)}\\b`, 'i').test(e.title)))
+    if (c) return { course: courseName(c), moduleId: ofStem(stemOf(c))?.id ?? null, key: `${stemOf(c)}:${e.end_at}` }
+  }
+  return null
+}
+/** After a class: offer to go over it and test them on it. */
+async function afterClass(): Promise<boolean> {
+  if (!canSpeak()) return false
+  const c = classJustEnded()
+  if (!c || !once(`after:${c.key}`)) return false
+  const week = c.moduleId ? Math.max(0, ...list<{ number: number }>('weeks', { module_id: c.moduleId }).map((w) => w.number)) : 0
+  return speak(`${Sir() || 'Hey, '}I see you've just finished ${c.course}. Want me to go over it and test you on ${week ? `week ${week}` : 'it'}?`, {
+    ask: true,
+    emote: 'remind',
+    hint: `If they say yes: first a one-minute recap of that week's key ideas (school, or its filed files), then recall_quiz with module "${c.course}" and latest: true.`
+  })
+}
+/** 9:30 pm: today's recall, if it isn't done (out loud and as a notification). */
+async function dailyRecall(): Promise<boolean> {
+  const n = new Date()
+  const mins = n.getHours() * 60 + n.getMinutes()
+  if (mins < 21 * 60 + 30 || mins > 23 * 60 + 30 || recallDoneToday()) return false
+  const ov = recallOverview()
+  if (!ov.modules.some((m) => m.total) || !once(`recall:${ymd(n)}`)) return false
+  const sz = SIZES[ov.settings.size]
+  const sir = getPrefs().novaJarvis ? `, ${(getPrefs().novaAddress ?? 'sir').trim() || 'sir'}` : ''
+  const saqs = `${sz.saq} short answer${sz.saq > 1 ? 's' : ''}`
+  watchHooks.notify('Daily recall', `${sz.mcq} multiple choice and ${saqs}. Tap to start.`, 'recall')
+  await speak(`Your daily recall is ready${sir}: ${sz.mcq} multiple choice and ${saqs}, about ${Math.round(sz.mcq * 0.5 + sz.saq * 1.5)} minutes. Shall we?`, {
+    ask: true,
+    hint: 'If they say yes: recall_quiz (their usual size and sources).'
+  })
+  return true
+}
+/** The evening of a test, and two and five days after if there's still no mark: how did it go? */
+async function testMarks(): Promise<boolean> {
+  const n = new Date()
+  if (n.getHours() < 18 || n.getHours() >= 23 || !canSpeak()) return false
+  const start = new Date(n)
+  start.setHours(0, 0, 0, 0)
+  for (const a of list<{ id: string; module_id: string; title: string; kind: string; due_at: string | null; score_pct: number | null }>('assessments')) {
+    if (!a.due_at || a.score_pct != null || !['exam', 'quiz', 'lab', 'presentation'].includes(a.kind)) continue
+    const due = new Date(a.due_at)
+    due.setHours(0, 0, 0, 0)
+    const days = Math.round((start.getTime() - due.getTime()) / 864e5)
+    if (![0, 2, 5].includes(days) || !once(`mark:${a.id}:${days}`)) continue
+    const mod = list<{ id: string; name: string }>('modules').find((m) => m.id === a.module_id)?.name ?? ''
+    const ask = days ? `any news on your ${mod} ${a.title}? ` : `how did the ${mod} ${a.title} go? `
+    return speak(cap(`${Sir()}${ask}Got your mark yet?`), {
+      ask: true,
+      hint: `If they give a mark (e.g. "18 out of 25"), record_mark with assessment "${a.title}"${mod ? ` (${mod})` : ''}. If it's not out yet, say you'll ask again in a couple of days.`
+    })
+  }
+  return false
+}
+
 newsHooks.alert = (s: Story) => {
   const sure = s.trust === 'confirmed' ? (s.sources.length > 1 ? `${s.sources.length} sources confirm it.` : `It's from ${s.sources[0]}.`) : `Reported by ${s.sources[0]}, not confirmed yet.`
   void speak(
@@ -197,7 +297,7 @@ export function startWatcher(): void {
     const idle = powerMonitor.getSystemIdleTime()
     if (await backAgain(idle)) return
     if (idle > 5 * 60) return // (not at the PC)
-    for (const check of [classSoon, dueTonight, studyNudges, moneyAndPeople, lateNight]) if (await check().catch(() => false)) return
+    for (const check of [classSoon, dueTonight, afterClass, dailyRecall, testMarks, studyNudges, moneyAndPeople, lateNight]) if (await check().catch(() => false)) return
   }
   setInterval(() => void tick(), MIN).unref?.()
 }

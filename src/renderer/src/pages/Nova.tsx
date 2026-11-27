@@ -1069,7 +1069,7 @@ export function NovaPage(): React.JSX.Element {
               </div>
               <Row
                 title="Look"
-                hint={`How ${name} looks, on your screen and on its main screen: a sphere of light (rings, circuit traces and sparks round a glowing core), a network of pixel nodes, or the globe of points.`}
+                hint={`Hologram: a sphere of light on ${name}’s main screen, and on your screen the LED globe with orbit rings round it. Neural: a network of pixel nodes, both places. Globe: the plain globe of points.`}
               >
                 <Seg
                   value={prefs?.novaLook ?? 'hologram'}

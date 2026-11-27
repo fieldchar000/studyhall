@@ -1341,6 +1341,24 @@ export interface Api {
   /** Nova's Claude brain (PC only). */
   /** Nova's conversation (PC): one fast Claude call per request, with Nova's tools, speaking as it streams. */
   /** PoliteMall (Brightspace): you sign in yourself in its window; Studyhall reads your courses (read-only). */
+  /** Active recall (main/recallQuiz.ts, recallMake.ts): short quizzes from your modules' weeks. */
+  recall: {
+    overview(): Promise<import('../main/recallQuiz').RecallOverview>
+    build(ask: import('../main/recallQuiz').QuizAsk): Promise<import('../main/recallQuiz').RecallQ[]>
+    save(results: import('../main/recallQuiz').QuizResult[], o: { size: import('../main/recallQuiz').RecallSize; source: import('../main/recallQuiz').RecallSource; seconds: number }): Promise<{ score: number; max: number }>
+    settings(patch?: Partial<import('../main/recallQuiz').RecallSettings>): Promise<import('../main/recallQuiz').RecallSettings>
+    /** (PC only) a short answer marked by Nova */
+    markSaq(q: { prompt: string; answer: string }, given: string): Promise<{ grade: 'got' | 'partly' | 'missed'; feedback: string }>
+    /** (PC only) the questions being prepared */
+    status(): Promise<{ pending: number; made: number; working: string | null; paused: string | null }>
+    /** (PC only) which courses are filed from PoliteMall, and which get the after-class offer */
+    courses(patch?: Partial<{ file: string[]; afterClass: string[] }>): Promise<{ file: string[]; afterClass: string[] }>
+    fileNow(): Promise<number>
+    /** The quiz Nova asked for (once), or null */
+    take(): Promise<import('../main/recallQuiz').QuizAsk | null>
+    /** Nova asked for a quiz while the page is open */
+    onStart(cb: () => void): () => void
+  }
   polite: {
     status(): Promise<PoliteStatus>
     open(): Promise<void>

@@ -644,3 +644,13 @@ export function addPictureParts(lessonId: string, page: number, parts: TextBox[]
 }
 /** The id of the lesson read most recently (for the study board). */
 export const lastLessonId = (): string | null => lastLesson()?.id ?? null
+
+/** A PDF's text, page by page (read by the same PDF library as lessons; for the recall questions). */
+export async function pdfPagesText(data: Uint8Array): Promise<string[]> {
+  const out = await pdfAsk('text', { data })
+  try {
+    return (JSON.parse(out) as { text: string }[]).map((p) => String(p.text ?? ''))
+  } catch {
+    return []
+  }
+}

@@ -16,13 +16,17 @@ import { startFeedRefresh } from './feeds'
 import { SYNC_TABLES } from '@shared/sync'
 import type { DeepLink } from '@shared/cloud'
 import { serveMaterial } from './files'
-import { refreshSubscriptions } from './ics'
+import { icsHooks, refreshSubscriptions } from './ics'
+import { withCourseNames } from './courseNames'
 import { currentSenderId, registerIpc } from './ipc'
 import { applyLoginItem, getPrefs, watchShortcut } from './prefs'
 import { checkDeadlines, checkDueNow } from './reminders'
 import { buddyHooks, focusState, lastOffered, startBuddy } from './buddy'
 import { briefHooks, makeBrief, type BriefKind } from './briefs'
 import { recentStories, setWatch, startNews, watches } from './news'
+import { fileFromPoliteMall, recallCourses, setRecallCourses, type RecallCourses } from './politeFiling'
+import { makeStatus, markSaq, startRecallMaking } from './recallMake'
+import { recallHooks } from './recallQuiz'
 import { lastSpokeUp, startWatcher, watchHooks } from './watcher'
 import { checkLifeReminders } from './lifeReminders'
 import * as timer from './timer'
@@ -54,7 +58,7 @@ async function brainChat(messages: AiMessage[], schema: object | undefined, maxT
 import { clearCards, closeBauerWindows, configureBauer, openApp, orbMirror, sendOrb, setBauerSuspended, showCards, startCircle, syncOrb, takeShot, wikiSummary , showPointer, hidePointer , liveCards, showHighlight, wikiIntro, orbAgent, orbEmote, emoteHooks, hiddenFromCaptures, novaInRecordings, orbPress, orbPressHooks, penButton, penHooks, shortcutHooks, penMode, penUndo, setPen } from './bauer'
 import { setCourseName } from './courseNames'
 import { hidePoliteView, politeAction, politeBack, politeGo, politePageData, readNew, showPoliteView, type PoliteRect } from './politePage'
-import { isPoliteContents, openPoliteMall, politeHooks, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
+import { isPoliteContents, openPoliteMall, politeHooks, schoolData, schoolStatus, signOutSchool, startSchool, syncSchool } from './politemall'
 import { conversationLine, convHooks, setConversation, toggleConversation } from './conversation'
 import { restoreAfterLesson } from './windowSplit'
 import { picture, warmLesson } from './lessonReader'
@@ -504,6 +508,11 @@ if (!app.requestSingleInstanceLock()) {
         })
         handle('nova:brief', (_e, kind: string) => makeBrief((['morning', 'evening', 'weekly', 'status'] as BriefKind[]).includes(kind as BriefKind) ? (kind as BriefKind) : 'status'))
         handle('nova:stories', () => recentStories(6))
+        // Active recall on the PC: marking short answers, what's being prepared, and which courses.
+        handle('recall:markSaq', (_e, q: { prompt: string; answer: string }, given: string) => markSaq(q, String(given ?? '')))
+        handle('recall:status', () => makeStatus())
+        handle('recall:courses', (_e, patch?: Partial<RecallCourses>) => (patch && typeof patch === 'object' ? setRecallCourses(patch) : recallCourses()))
+        handle('recall:fileNow', () => fileFromPoliteMall())
         orbMirror.send = (channel, payload) => {
           if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
         }
@@ -846,8 +855,27 @@ if (!app.requestSingleInstanceLock()) {
       const grades = fresh.filter((n) => n.kind === 'grade')
       return grades.length ? `There's a new grade in ${grades[0].course}${fresh.length > 1 ? `, and ${fresh.length - 1} more updates on PoliteMall` : ''}.` : `${fresh.length} new update${fresh.length > 1 ? 's' : ''} on PoliteMall, the latest from ${fresh[0].course}.`
     }
+    watchHooks.notify = (title, body, page) => notify(title, body, page)
+    // PoliteMall's calendar feed names courses by code: shown with your names for them (courseNames.ts).
+    icsHooks.rename = (url, text) => (/polite\.edu\.sg/i.test(url) ? withCourseNames(text, schoolData()?.courses ?? []) : text)
+    recallHooks.open = () => {
+      showWindow('recall')
+      setTimeout(() => mainWindow?.webContents.send('recall:start'), 400)
+    }
     startWatcher()
     startNews()
+    // Active recall: PoliteMall filed into your modules after each check (and soon after starting), and questions made
+    // from the files in the background (politeFiling.ts, recallMake.ts).
+    if (process.env.STUDYHALL_OFFSCREEN !== '1') {
+      const synced = politeHooks.synced
+      politeHooks.synced = (before, after) => {
+        synced(before, after)
+        void fileFromPoliteMall().catch((e) => console.warn('PoliteMall filing:', e))
+      }
+      setTimeout(() => void fileFromPoliteMall().catch(() => 0), 2 * 60_000)
+      setInterval(() => void fileFromPoliteMall().catch(() => 0), 6 * 3600_000).unref()
+    }
+    startRecallMaking()
     startSchool()
   })
 
